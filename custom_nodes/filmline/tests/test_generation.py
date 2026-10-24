@@ -66,6 +66,8 @@ class VideoWorkflowTest(unittest.TestCase):
         self.assertEqual(graph["7"]["inputs"]["length"], 124)
         self.assertEqual(graph["2"]["class_type"], "LoraLoaderModelOnly")
         self.assertEqual(graph["9"]["inputs"]["steps"], 4)
+        self.assertEqual(graph["9"]["inputs"]["sampler_name"], "res_multistep")
+        self.assertEqual(graph["9"]["inputs"]["scheduler"], "simple")
         self.assertEqual(graph["9"]["inputs"]["cfg"], 1.0)
         self.assertEqual(graph["9"]["inputs"]["negative"], ["8", 0])
         self.assertEqual(graph["13"]["class_type"], "SaveVideo")

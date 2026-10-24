@@ -409,7 +409,7 @@ const checks = [
   ['资产改名立即更新', afterAssetEdit.includes('第一幕（改）')],
   ['列表不展示提示词', !imageTabText.includes('雪夜长安街，红灯笼')],
   ['点击图片打开预览', previewText.includes('让他图1笑起来') && previewText.includes('1344×768')],
-  ['预览显示生成耗时', previewText.includes('耗时 101.4s') && previewText.includes('开始')],
+  ['预览显示生成耗时', previewText.includes('耗时 1 分 41 秒') && previewText.includes('开始')],
   ['复用提示词回填面板', reused],
   ['复用后「图1」还原为图片块', chipRestored],
   ['复制失败时兜底弹窗可手动复制', fallbackShown],

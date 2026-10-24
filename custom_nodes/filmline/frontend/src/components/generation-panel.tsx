@@ -6,6 +6,7 @@ import { ApiError, api, type Project } from '@/lib/api'
 import { buildPromptDoc, type RefAsset } from '@/lib/prompt'
 import { emitAssetsChanged, REUSE_PROMPT, type ReusePromptDetail } from '@/lib/events'
 import { cn } from '@/lib/utils'
+import { formatClock } from '@/lib/format'
 import { GenerationOptions } from './generation-options'
 import { PromptInput, type PromptInputHandle } from './prompt-input'
 import type { PromptValue } from './prompt-editor'
@@ -155,7 +156,11 @@ export function GenerationPanel({ project, episodeCode }: GenerationPanelProps) 
               ref={editorRef}
               disabled={running}
               maxRefs={maxRefs}
-              placeholder={mode === 'image' ? '描述画面，可把左侧图片拖进来' : '描述镜头，可拖入一张首帧图'}
+              placeholder={
+                mode === 'image'
+                  ? '描述画面，可把左侧图片拖进来'
+                  : '描述镜头、运镜与声音（对白 / 音效 / 配乐），可拖入一张首帧图'
+              }
               onChange={setValue}
               onSubmit={() => void handleSubmit()}
               onReject={setError}
@@ -215,7 +220,9 @@ export function GenerationPanel({ project, episodeCode }: GenerationPanelProps) 
 
               <div className="ml-auto flex items-center gap-2">
                 {running ? (
-                  <span className="font-mono text-[11px] text-muted-foreground">{elapsed}s</span>
+                  <span className="font-mono text-[11px] tabular-nums text-muted-foreground">
+                    {formatClock(elapsed)}
+                  </span>
                 ) : null}
                 <Button
                   type="submit"

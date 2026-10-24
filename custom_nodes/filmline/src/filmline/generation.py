@@ -60,8 +60,12 @@ MAX_VIDEO_REFS = 1
 IMAGE_STEPS = 30
 IMAGE_CFG = 1.0
 IMAGE_SHIFT = 3.1
+# 官方模板：SamplerCustomAdvanced + res_multistep + BasicScheduler(simple)
+# 这里用 KSampler 等价表达（cfg 1.0 等价于 BasicGuider）
 VIDEO_STEPS = 4
 VIDEO_CFG = 1.0
+VIDEO_SAMPLER = "res_multistep"
+VIDEO_SCHEDULER = "simple"
 VIDEO_FPS = 24
 
 
@@ -285,8 +289,8 @@ def video_workflow(
                 "seed": actual_seed,
                 "steps": VIDEO_STEPS,
                 "cfg": VIDEO_CFG,
-                "sampler_name": "euler",
-                "scheduler": "simple",
+                "sampler_name": VIDEO_SAMPLER,
+                "scheduler": VIDEO_SCHEDULER,
                 "positive": ["7", 0],
                 "negative": ["8", 0],
                 "latent_image": ["7", 1],

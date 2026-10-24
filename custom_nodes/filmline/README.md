@@ -98,6 +98,17 @@ ComfyUI/user/filmline/
 | `FILMLINE_DATA_DIR` | 数据根目录（未来放缩略图、导出文件） |
 | `FILMLINE_DB_PATH` | 直接指定数据库文件 |
 
+## 视频生成参数（对齐官方）
+
+| 项 | 取值 | 依据 |
+|---|---|---|
+| 分辨率 | 短边 768（1344×768 / 768×1344） | 官方原生画布，上限 768×1344 |
+| 时长 | 5 / 10 秒（帧数按 17k+5 网格对齐） | 官方 4–15 秒，24fps |
+| 采样 | `res_multistep` + `simple`，4 步 | 官方模板 SamplerCustomAdvanced |
+| cfg | 1.0（等价 BasicGuider） | 权重为 CFG 蒸馏 |
+| LoRA | `minimax_h3_fl2v_turbo_4step_v1.0_768p` | 与本地已有权重匹配 |
+| 提示词 | 建议包含镜头、运镜与声音（对白/音效/配乐） | 该模型联合生成音视频 |
+
 ## 目录
 
 ```

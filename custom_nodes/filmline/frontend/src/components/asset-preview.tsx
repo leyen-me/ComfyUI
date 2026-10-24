@@ -2,7 +2,7 @@ import { Copy, RotateCcw } from 'lucide-react'
 
 import type { Asset } from '@/lib/api'
 import { assetDimensions, assetPrompt, generationMeta } from '@/lib/asset-meta'
-import { formatTime } from '@/lib/format'
+import { formatSeconds, formatTime } from '@/lib/format'
 import { Button } from './ui/button'
 import { Dialog } from './ui/dialog'
 
@@ -70,7 +70,7 @@ export function AssetPreview({ asset, onClose, onCopyPrompt, onReusePrompt }: As
               {meta.duration !== undefined ? <span>{meta.duration}s</span> : null}
               {asset.gen_started_at ? <span>开始 {formatTime(asset.gen_started_at)}</span> : null}
               {asset.gen_elapsed_ms
-                ? <span>耗时 {(asset.gen_elapsed_ms / 1000).toFixed(1)}s</span>
+                ? <span>耗时 {formatSeconds(asset.gen_elapsed_ms / 1000)}</span>
                 : null}
             </div>
           ) : null}
