@@ -102,19 +102,24 @@ class ProjectServiceTest(DbTestCase):
         first = self._create("甲")
         second = self._create("乙")
         third = self._create("丙")
-        self.assertEqual([p.id for p in self.service.list().items], [first.id, second.id, third.id])
+        # 新建项目排在最前
+        self.assertEqual([p.id for p in self.service.list().items], [third.id, second.id, first.id])
 
         self.service.reorder([third.id, first.id, second.id])
         self.assertEqual(
             [p.name for p in self.service.list().items], ["丙", "甲", "乙"]
         )
 
-    def test_new_project_goes_last(self) -> None:
+    def test_new_project_goes_first(self) -> None:
         self._create("甲")
         self._create("乙")
         self.service.reorder([p.id for p in reversed(self.service.list().items)])
         newest = self._create("丙")
-        self.assertEqual(self.service.list().items[-1].id, newest.id)
+        self.assertEqual(self.service.list().items[0].id, newest.id)
+        # 再建一个，仍然在最前
+        newer = self._create("丁")
+        self.assertEqual(self.service.list().items[0].id, newer.id)
+        self.assertEqual(self.service.list().items[1].id, newest.id)
 
     def test_reorder_validates_payload(self) -> None:
         first = self._create("甲")

@@ -53,7 +53,7 @@ npm run test:logic   # 纯函数单测（页码、提示词、拖拽载荷等）
 | 方法 | 路径 | 说明 |
 |---|---|---|
 | GET | `/studio/api/projects` | 列表，支持 `q` / `limit` / `offset`，按手动排序返回 |
-| POST | `/studio/api/projects` | 新建，`{name, description?}`，编号由系统生成，追加到末尾 |
+| POST | `/studio/api/projects` | 新建，`{name, description?}`，编号由系统生成，排在最前 |
 | PUT | `/studio/api/projects/order` | 拖拽排序，`{ids: [...]}` 必须覆盖全部项目 |
 | GET | `/studio/api/projects/{ref}` | 详情，`ref` 可为数字 id 或项目编号 |
 | PATCH | `/studio/api/projects/{ref}` | 更新 `name` / `description` |
@@ -217,7 +217,8 @@ custom_nodes/filmline/
 2. **编号由系统生成**：`PRJ-0001` 自增，客户端传入 `code` 直接 400；只有 `name`
    必填，其余字段可选。
 3. **排序**：`sort_index` 由 `PUT /projects/order`、`PUT /episodes/order` 整体重写，
-   请求必须覆盖全部未删除项，否则 400——部分提交会让顺序静默错乱。
+   请求必须覆盖全部未删除项，否则 400——部分提交会让顺序静默错乱。新建项目取当前
+   最小 `sort_index` 减一，因此总排在列表最前，不会打乱既有顺序。
 4. **分集归属**：`assets.episode_id` 为空表示项目级资产，非空属于某一集；
    `episode_id` 用查询参数 `?episode=EP01` 表达，不额外开一套路由。
 5. **参考图**：图片最多 16 张（Qwen-Image 2.1 的槽位上限），视频首帧 1 张。

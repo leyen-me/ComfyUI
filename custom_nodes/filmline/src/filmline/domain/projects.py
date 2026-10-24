@@ -91,11 +91,15 @@ class ProjectService:
 
     # ---------------------------------------------------------------- 写入
     def create(self, payload: ProjectCreate) -> ProjectOut:
-        """编号由系统生成，不接受外部输入；新项目排在最后。"""
+        """编号由系统生成，不接受外部输入；新项目排在最前。"""
         with self._scope() as session:
             next_index = (
-                session.execute(select(func.coalesce(func.max(Project.sort_index), 0))).scalar_one()
-                + 1
+                session.execute(
+                    select(func.coalesce(func.min(Project.sort_index), 0)).where(
+                        Project.deleted_at.is_(None)
+                    )
+                ).scalar_one()
+                - 1
             )
             row = Project(
                 # 临时唯一值，拿到自增 id 后再生成正式编号，避免并发下的编号竞争
