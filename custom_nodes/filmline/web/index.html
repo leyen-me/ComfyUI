@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="zh-CN" class="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="dark light" />
+    <title>Filmline · 制片管线</title>
+    <script>
+      // 在首屏绘制前应用主题，避免深浅色闪烁
+      try {
+        var saved = localStorage.getItem('filmline-theme')
+        document.documentElement.classList.toggle('dark', saved !== 'light')
+      } catch (error) {
+        /* 隐私模式下 localStorage 不可用，保持默认深色 */
+      }
+    </script>
+    <script type="module" crossorigin src="/studio/static/assets/index-DKwWbXaC.js"></script>
+    <link rel="stylesheet" crossorigin href="/studio/static/assets/index-CLpnh_nM.css">
+  </head>
+  <body>
+    <div id="root"></div>
+  </body>
+</html>

@@ -1,0 +1,75 @@
+"""版本化迁移。
+
+约定：
+* **迁移一经发布即冻结**，必须写显式 DDL，不得引用 ORM 元数据——否则模型一改，
+  历史迁移的语义就变了，新库建出来的表和老库不一致；
+* 每次模型改动都追加一条新迁移，并补一条 ``test_migrations`` 断言。
+"""
+
+from __future__ import annotations
+
+import logging
+
+from sqlalchemy import Connection, Engine
+
+_LOG = logging.getLogger("filmline")
+
+
+def _migration_001_initial(conn: Connection) -> None:
+    """初始 schema（含当时的 status 列，v2 会删掉）。"""
+    conn.exec_driver_sql(
+        """
+        CREATE TABLE projects (
+            id INTEGER NOT NULL,
+            code VARCHAR(32) NOT NULL,
+            name VARCHAR(120) NOT NULL,
+            description TEXT DEFAULT '' NOT NULL,
+            status VARCHAR(16) DEFAULT 'draft' NOT NULL,
+            created_at DATETIME NOT NULL,
+            updated_at DATETIME NOT NULL,
+            deleted_at DATETIME,
+            PRIMARY KEY (id),
+            UNIQUE (code)
+        )
+        """
+    )
+    for index, column in (
+        ("ix_projects_code", "code"),
+        ("ix_projects_name", "name"),
+        ("ix_projects_status", "status"),
+        ("ix_projects_updated_at", "updated_at"),
+        ("ix_projects_deleted_at", "deleted_at"),
+    ):
+        conn.exec_driver_sql(f"CREATE INDEX {index} ON projects ({column})")
+
+
+def _migration_002_drop_project_status(conn: Connection) -> None:
+    """项目不再有状态。SQLite 要求先删掉列上的索引才能 DROP COLUMN。"""
+    conn.exec_driver_sql("DROP INDEX IF EXISTS ix_projects_status")
+    conn.exec_driver_sql("ALTER TABLE projects DROP COLUMN status")
+
+
+MIGRATIONS: list[tuple[int, object]] = [
+    (1, _migration_001_initial),
+    (2, _migration_002_drop_project_status),
+]
+
+
+def current_version(engine: Engine) -> int:
+    with engine.connect() as conn:
+        return int(conn.exec_driver_sql("PRAGMA user_version").scalar_one())
+
+
+def migrate(engine: Engine) -> int:
+    """把库升级到最新版本，返回最终版本号。"""
+    version = current_version(engine)
+    for target, step in MIGRATIONS:
+        if target <= version:
+            continue
+        _LOG.info("应用数据库迁移 v%s", target)
+        with engine.begin() as conn:
+            step(conn)  # type: ignore[operator]
+            # user_version 不支持参数绑定；target 来自本模块常量，非外部输入
+            conn.exec_driver_sql(f"PRAGMA user_version = {int(target)}")
+        version = target
+    return version
