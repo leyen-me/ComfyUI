@@ -19,14 +19,15 @@ function deleteActions(asset: Asset, onDelete: (asset: Asset) => void) {
   ]
 }
 
+/** 资产列宽度有限（约 1.4 倍导航宽度），因此统一单列纵向排列。 */
 export function AssetList({ kind, assets, onDelete }: AssetListProps) {
   if (kind === 'text') {
     return (
       <div className="divide-y divide-border overflow-hidden rounded-xl border border-border bg-card">
         {assets.map((asset) => (
-          <article key={asset.id} className="flex items-start gap-3 px-4 py-3.5">
+          <article key={asset.id} className="flex items-start gap-2 px-3 py-3">
             <div className="min-w-0 flex-1">
-              <div className="flex flex-wrap items-center gap-2">
+              <div className="flex flex-wrap items-center gap-1.5">
                 <h3 className="truncate text-sm font-medium">{asset.name}</h3>
                 <SourceBadge source={asset.source} kind={asset.kind} />
               </div>
@@ -35,14 +36,11 @@ export function AssetList({ kind, assets, onDelete }: AssetListProps) {
                   {asset.text_content}
                 </p>
               ) : null}
-              <div className="mt-1.5 font-mono text-[11px] text-muted-foreground/70">
+              <div className="mt-1 font-mono text-[11px] text-muted-foreground/70">
                 {formatTime(asset.created_at)}
               </div>
             </div>
-            <MoreMenu
-              actions={deleteActions(asset, onDelete)}
-              label={`${asset.name} 的操作`}
-            />
+            <MoreMenu actions={deleteActions(asset, onDelete)} label={`${asset.name} 的操作`} />
           </article>
         ))}
       </div>
@@ -50,7 +48,7 @@ export function AssetList({ kind, assets, onDelete }: AssetListProps) {
   }
 
   return (
-    <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+    <div className="flex flex-col gap-3">
       {assets.map((asset) => (
         <article
           key={asset.id}
@@ -73,10 +71,10 @@ export function AssetList({ kind, assets, onDelete }: AssetListProps) {
               />
             )}
 
-            <div className="absolute top-2 left-2">
+            <div className="absolute top-1.5 left-1.5">
               <SourceBadge source={asset.source} kind={asset.kind} />
             </div>
-            <div className="absolute top-2 right-2 rounded-md bg-background/70 backdrop-blur-sm">
+            <div className="absolute top-1.5 right-1.5 rounded-md bg-background/70 backdrop-blur-sm">
               <MoreMenu actions={deleteActions(asset, onDelete)} label={`${asset.name} 的操作`} />
             </div>
           </div>

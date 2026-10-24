@@ -95,35 +95,32 @@ export function ProjectPage() {
     <div className="flex h-full">
       <ProjectSidebar project={project} counts={counts} />
 
-      <section className="flex min-w-0 flex-1 flex-col">
-        <header className="flex items-center gap-3 border-b border-border px-6 py-3.5">
-          <div className="min-w-0">
-            <div className="flex items-baseline gap-2">
-              <h1 className="truncate text-sm font-medium">{project.name}</h1>
-              <span className="shrink-0 font-mono text-[11px] text-muted-foreground">
-                {project.code}
-              </span>
+      {/* 资产列：与导航同量级（导航 224px，这里 320px） */}
+      <section className="flex w-80 shrink-0 flex-col border-r border-border">
+        <header className="border-b border-border px-4 py-3">
+          <div className="flex items-start gap-2">
+            <div className="min-w-0 flex-1">
+              <div className="truncate text-sm font-medium" title={project.name}>
+                {project.name}
+              </div>
+              <div className="font-mono text-[11px] text-muted-foreground">{project.code}</div>
             </div>
-            {project.description ? (
-              <p className="truncate text-xs text-muted-foreground" title={project.description}>
-                {project.description}
-              </p>
-            ) : null}
-          </div>
-
-          <div className="ml-auto">
             <MoreMenu
               label="项目操作"
               actions={[
                 { label: '编辑', onSelect: () => setEditing(true) },
-                {
-                  label: '删除',
-                  onSelect: () => setPendingDelete(true),
-                  destructive: true,
-                },
+                { label: '删除', onSelect: () => setPendingDelete(true), destructive: true },
               ]}
             />
           </div>
+          {project.description ? (
+            <p
+              className="mt-1.5 line-clamp-2 text-xs leading-relaxed text-muted-foreground"
+              title={project.description}
+            >
+              {project.description}
+            </p>
+          ) : null}
         </header>
 
         <div className="min-h-0 flex-1">

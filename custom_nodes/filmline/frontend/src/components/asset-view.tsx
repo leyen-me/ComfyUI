@@ -83,7 +83,7 @@ export function AssetView({ project, onChanged }: AssetViewProps) {
 
   return (
     <div className="flex h-full flex-col">
-      <div className="flex items-center gap-3 border-b border-border px-6 py-3">
+      <div className="flex items-center gap-2 border-b border-border px-4 py-2.5">
         <h2 className="text-sm font-medium">{meta.label}</h2>
         <span className="font-mono text-[11px] text-muted-foreground">{total}</span>
 
@@ -91,7 +91,7 @@ export function AssetView({ project, onChanged }: AssetViewProps) {
           {kind === 'text' ? (
             <Button size="sm" variant="secondary" onClick={() => setTextOpen(true)}>
               <Plus className="size-3.5" />
-              新建文本
+              新建
             </Button>
           ) : (
             <>
@@ -117,14 +117,14 @@ export function AssetView({ project, onChanged }: AssetViewProps) {
                 ) : (
                   <Upload className="size-3.5" />
                 )}
-                {uploading ? '上传中…' : `上传${meta.label}`}
+                {uploading ? '上传中…' : '上传'}
               </Button>
             </>
           )}
         </div>
       </div>
 
-      <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5">
+      <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4">
         {error ? (
           <div className="mb-4 flex items-center gap-2 rounded-lg border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">
             <span>{error}</span>
