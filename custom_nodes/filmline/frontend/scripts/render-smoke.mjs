@@ -308,6 +308,21 @@ await wait(200)
 const previewDialog = document.querySelector('dialog[open]')
 const previewText = previewDialog?.textContent ?? ''
 
+// jsdom 没有剪贴板与 execCommand，应当弹出兜底弹窗并选中文本
+;[...document.querySelectorAll('dialog[open] button')]
+  .find((el) => el.textContent?.includes('复制提示词'))
+  ?.click()
+await wait(200)
+const fallbackArea = document.querySelector('dialog[open] textarea')
+const fallbackShown = fallbackArea?.value === '雪夜长安街，红灯笼'
+fallbackArea
+  ?.closest('dialog')
+  ?.querySelectorAll('button')
+  .forEach((el) => {
+    if (el.textContent?.trim() === '关闭') el.click()
+  })
+await wait(150)
+
 ;[...document.querySelectorAll('dialog[open] button')]
   .find((el) => el.textContent?.includes('用此提示词生成'))
   ?.click()
@@ -336,9 +351,10 @@ const checks = [
   ['资产菜单挂在 body 上（不被裁剪）', menuInBody && !menuInRoot],
   ['编辑弹窗回填文本内容', prefilled],
   ['资产改名立即更新', afterAssetEdit.includes('第一幕（改）')],
-  ['AI 资产展示提示词', imageTabText.includes('雪夜长安街，红灯笼')],
+  ['列表不展示提示词', !imageTabText.includes('雪夜长安街，红灯笼')],
   ['点击图片打开预览', previewText.includes('雪夜长安街，红灯笼') && previewText.includes('1344×768')],
   ['复用提示词回填面板', reused],
+  ['复制失败时兜底弹窗可手动复制', fallbackShown],
   ['无控制台错误', errors.length === 0],
 ]
 

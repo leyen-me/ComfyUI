@@ -33,26 +33,12 @@ function buildActions(
   return actions
 }
 
-/** 生成参数摘要：提示词 + 尺寸，供复用与排查。 */
-function GenerationInfo({ asset }: { asset: Asset }) {
-  const prompt = assetPrompt(asset)
+/** 列表只显示尺寸摘要；完整提示词在大图预览里看。 */
+function AssetDimensions({ asset }: { asset: Asset }) {
   const dimensions = assetDimensions(asset)
-  if (!prompt && !dimensions) return null
-
+  if (!dimensions) return null
   return (
-    <div className="mt-1.5 space-y-1">
-      {dimensions ? (
-        <div className="font-mono text-[10px] text-muted-foreground/80">{dimensions}</div>
-      ) : null}
-      {prompt ? (
-        <p
-          className="line-clamp-2 rounded-md bg-muted/60 px-2 py-1 text-[11px] leading-relaxed text-muted-foreground"
-          title={prompt}
-        >
-          {prompt}
-        </p>
-      ) : null}
-    </div>
+    <div className="mt-1 font-mono text-[10px] text-muted-foreground/80">{dimensions}</div>
   )
 }
 
@@ -83,7 +69,7 @@ export function AssetList({
                   {asset.text_content}
                 </p>
               ) : null}
-              <GenerationInfo asset={asset} />
+              <AssetDimensions asset={asset} />
               <div className="mt-1 font-mono text-[11px] text-muted-foreground/70">
                 {formatTime(asset.created_at)}
               </div>
@@ -110,7 +96,7 @@ export function AssetList({
                   <span>{formatTime(asset.created_at)}</span>
                   <span>{formatSize(asset.size_bytes)}</span>
                 </div>
-                <GenerationInfo asset={asset} />
+                <AssetDimensions asset={asset} />
               </div>
               <MoreMenu actions={buildActions(asset, handlers)} label={`${asset.name} 的操作`} />
             </div>
@@ -173,7 +159,7 @@ export function AssetList({
               <span>{formatTime(asset.created_at)}</span>
               <span>{formatSize(asset.size_bytes)}</span>
             </div>
-            <GenerationInfo asset={asset} />
+            <AssetDimensions asset={asset} />
           </div>
         </article>
       ))}

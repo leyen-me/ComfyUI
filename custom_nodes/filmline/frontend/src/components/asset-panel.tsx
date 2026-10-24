@@ -6,6 +6,7 @@ import { assetKindMeta } from '@/lib/asset-kinds'
 import { useAssetCounts, useAssets } from '@/hooks/use-assets'
 import { ASSETS_CHANGED, emitReusePrompt } from '@/lib/events'
 import { assetPrompt, generationMeta } from '@/lib/asset-meta'
+import { copyText } from '@/lib/clipboard'
 import { AssetDialog } from './asset-dialog'
 import { AssetPreview } from './asset-preview'
 import { AssetList } from './asset-list'
@@ -44,6 +45,7 @@ export function AssetPanel({
   const [editing, setEditing] = useState<Asset | null>(null)
   const [pendingDelete, setPendingDelete] = useState<Asset | null>(null)
   const [preview, setPreview] = useState<Asset | null>(null)
+  const [copyFallback, setCopyFallback] = useState<string | null>(null)
   const [deleting, setDeleting] = useState(false)
   const [uploading, setUploading] = useState(false)
   const [toast, setToast] = useState<ToastMessage | null>(null)
@@ -96,12 +98,9 @@ export function AssetPanel({
   }
 
   async function copyPrompt(prompt: string) {
-    try {
-      await navigator.clipboard.writeText(prompt)
-      notify('已复制提示词')
-    } catch {
-      notify('复制失败，请手动选择文本', 'error')
-    }
+    const copied = await copyText(prompt)
+    if (copied) notify('已复制提示词')
+    else setCopyFallback(prompt)
   }
 
   function reusePrompt(asset: Asset) {
@@ -292,6 +291,25 @@ export function AssetPanel({
         <p className="pb-4 text-sm text-muted-foreground">
           确定删除「<span className="text-foreground">{pendingDelete?.name}</span>」吗？
         </p>
+      </Dialog>
+
+      <Dialog
+        open={copyFallback !== null}
+        onOpenChange={(open) => {
+          if (!open) setCopyFallback(null)
+        }}
+        title="复制提示词"
+        description="浏览器拒绝了自动复制，文本已选中，请按 Ctrl / ⌘ + C。"
+        footer={<Button onClick={() => setCopyFallback(null)}>关闭</Button>}
+      >
+        <textarea
+          readOnly
+          autoFocus
+          value={copyFallback ?? ''}
+          rows={6}
+          className="mb-3 w-full resize-none rounded-lg border border-border bg-input p-2.5 text-sm leading-relaxed outline-none"
+          onFocus={(event) => event.currentTarget.select()}
+        />
       </Dialog>
 
       <Toast message={toast} />
