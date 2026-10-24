@@ -31,7 +31,8 @@ export function GenerationPanel({ project, episodeCode }: GenerationPanelProps) 
   const [mode, setMode] = useState<Mode>('image')
   const [value, setValue] = useState<PromptValue>(EMPTY_VALUE)
   const [imageSize, setImageSize] = useState<string>('16:9')
-  const [tier, setTier] = useState<string>('1k')
+  const [imageTier, setImageTier] = useState<string>('1k')
+  const [videoTier, setVideoTier] = useState<string>('768')
   const [videoSize, setVideoSize] = useState<string>('16:9')
   const [count, setCount] = useState(1)
   const [duration, setDuration] = useState(5)
@@ -56,15 +57,14 @@ export function GenerationPanel({ project, episodeCode }: GenerationPanelProps) 
       if (detail.kind === 'video') {
         setMode('video')
         if (detail.size === '16:9' || detail.size === '9:16') setVideoSize(detail.size)
+        if (detail.tier === '512' || detail.tier === '768') setVideoTier(detail.tier)
         if (detail.duration === 5 || detail.duration === 10) setDuration(detail.duration)
       } else {
         setMode('image')
         if (detail.size === '16:9' || detail.size === '9:16' || detail.size === '1:1') {
           setImageSize(detail.size)
         }
-        if (detail.tier === '1k' || detail.tier === '2k' || detail.tier === '4k') {
-          setTier(detail.tier)
-        }
+        if (detail.tier === '1k' || detail.tier === '2k') setImageTier(detail.tier)
         if (typeof detail.count === 'number' && detail.count >= 1 && detail.count <= 4) {
           setCount(detail.count)
         }
@@ -110,7 +110,7 @@ export function GenerationPanel({ project, episodeCode }: GenerationPanelProps) 
               kind: 'image',
               prompt: current.text,
               size: imageSize,
-              resolution: tier,
+              resolution: imageTier,
               count: hasRefs ? 1 : count,
               refs: current.refs,
             }
@@ -118,6 +118,7 @@ export function GenerationPanel({ project, episodeCode }: GenerationPanelProps) 
               kind: 'video',
               prompt: current.text,
               size: videoSize,
+              resolution: videoTier,
               duration,
               refs: current.refs,
             },
@@ -185,11 +186,11 @@ export function GenerationPanel({ project, episodeCode }: GenerationPanelProps) 
               <GenerationOptions
                 mode={mode}
                 size={mode === 'image' ? imageSize : videoSize}
-                tier={tier}
+                tier={mode === 'image' ? imageTier : videoTier}
                 onSizeChange={(next) =>
                   mode === 'image' ? setImageSize(next) : setVideoSize(next)
                 }
-                onTierChange={setTier}
+                onTierChange={mode === 'image' ? setImageTier : setVideoTier}
               />
 
               {mode === 'image' ? (

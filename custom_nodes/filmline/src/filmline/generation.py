@@ -34,9 +34,11 @@ IMAGE_TIERS: dict[str, dict[str, tuple[int, int]]] = {
     "1k": {"16:9": (1376, 768), "9:16": (768, 1376), "1:1": (1024, 1024)},
     "2k": {"16:9": (2752, 1536), "9:16": (1536, 2752), "1:1": (2048, 2048)},
 }
-VIDEO_SIZES: dict[str, tuple[int, int]] = {
-    "16:9": (1344, 768),
-    "9:16": (768, 1344),
+# 视频只有两档：512 短边（预览）与 768 短边（官方原生）。
+# 比例沿用官方的 1.75（1344×768），512 档等比缩到 896×512。
+VIDEO_TIERS: dict[str, dict[str, tuple[int, int]]] = {
+    "512": {"16:9": (896, 512), "9:16": (512, 896)},
+    "768": {"16:9": (1344, 768), "9:16": (768, 1344)},
 }
 # 24fps，且需落在模型要求的 17k+5 网格上
 VIDEO_DURATIONS: dict[int, int] = {5: 124, 10: 243}
@@ -229,12 +231,15 @@ def video_workflow(
     prompt: str,
     size: str,
     duration: int,
+    tier: str = "768",
     seed: int | None = None,
     refs: list[str] | None = None,
     prefix: str = "filmline/video",
 ) -> Workflow:
-    if size not in VIDEO_SIZES:
-        raise InvalidArgument(f"视频尺寸只支持: {', '.join(VIDEO_SIZES)}")
+    if size not in VIDEO_TIERS["768"]:
+        raise InvalidArgument(f"视频比例只支持: {', '.join(VIDEO_TIERS['768'])}")
+    if tier not in VIDEO_TIERS:
+        raise InvalidArgument(f"视频分辨率只支持: {', '.join(VIDEO_TIERS)}")
     if duration not in VIDEO_DURATIONS:
         raise InvalidArgument("视频时长只支持 5 或 10 秒")
     if not prompt.strip():
@@ -244,7 +249,7 @@ def video_workflow(
     if len(refs) > 1:
         raise InvalidArgument("视频首帧只支持 1 张")
 
-    width, height = VIDEO_SIZES[size]
+    width, height = VIDEO_TIERS[tier][size]
     length = VIDEO_DURATIONS[duration]
     actual_seed = _seed() if seed is None else seed
 
@@ -335,6 +340,7 @@ def video_workflow(
         meta={
             "prompt": prompt,
             "size": size,
+            "tier": tier,
             "width": width,
             "height": height,
             "duration": duration,
@@ -360,8 +366,14 @@ async def _submit(session: aiohttp.ClientSession, graph: dict[str, Any]) -> str:
         return str(body["prompt_id"])
 
 
-async def _wait(session: aiohttp.ClientSession, prompt_id: str, timeout: float) -> list[dict]:
-    """轮询 /history 直到该任务完成，返回输出文件列表。"""
+async def _wait(
+    session: aiohttp.ClientSession, prompt_id: str, timeout: float
+) -> tuple[list[dict], float | None]:
+    """轮询 /history 直到完成，返回（输出文件, 纯执行秒数）。
+
+    执行秒数取 ComfyUI 的 execution_start → execution_success，
+    不含排队等待，避免统计被前一个任务干扰。
+    """
     deadline = asyncio.get_event_loop().time() + timeout
     while True:
         if asyncio.get_event_loop().time() > deadline:
@@ -381,7 +393,7 @@ async def _wait(session: aiohttp.ClientSession, prompt_id: str, timeout: float) 
                     if isinstance(value, list):
                         files.extend(item for item in value if isinstance(item, dict) and "filename" in item)
             if files:
-                return files
+                return files, _execution_seconds(status)
 
         await asyncio.sleep(1.5)
 
@@ -405,13 +417,13 @@ class Product:
     data: bytes
 
 
-async def run(workflow: Workflow, *, timeout: float) -> list[Product]:
-    """提交并等待完成，返回内存中的产物（由调用方落盘）。"""
+async def run(workflow: Workflow, *, timeout: float) -> tuple[list[Product], float | None]:
+    """提交并等待完成，返回（产物, 纯执行秒数）。"""
     connector = aiohttp.TCPConnector(limit=4)
     async with aiohttp.ClientSession(connector=connector) as session:
         prompt_id = await _submit(session, workflow.prompt)
         _LOG.info("生成任务已提交: %s (%s)", prompt_id, workflow.kind)
-        files = await _wait(session, prompt_id, timeout)
+        files, exec_seconds = await _wait(session, prompt_id, timeout)
         products = []
         for item in files:
             data = await _download(session, item)
@@ -419,7 +431,7 @@ async def run(workflow: Workflow, *, timeout: float) -> list[Product]:
                 ".png" if workflow.kind == "image" else ".mp4"
             )
             products.append(Product(filename=item["filename"], suffix=suffix, data=data))
-        return products
+        return products, exec_seconds
 
 
 def timeout_for(kind: str) -> float:
@@ -433,3 +445,21 @@ def ratio_label(width: int, height: int) -> str:
         if abs(ratio - target) / target < 0.04:
             return label
     return f"{width}:{height}"
+
+
+def _execution_seconds(status: dict) -> float | None:
+    """从 history 的 status.messages 里取真实执行时长（毫秒时间戳）。"""
+    stamps: dict[str, float] = {}
+    for message in status.get("messages") or []:
+        if not isinstance(message, (list, tuple)) or len(message) < 2:
+            continue
+        name, payload = message[0], message[1]
+        if name in ("execution_start", "execution_success") and isinstance(payload, dict):
+            timestamp = payload.get("timestamp")
+            if isinstance(timestamp, (int, float)):
+                stamps[name] = float(timestamp)
+
+    start, end = stamps.get("execution_start"), stamps.get("execution_success")
+    if start is None or end is None or end < start:
+        return None
+    return (end - start) / 1000.0

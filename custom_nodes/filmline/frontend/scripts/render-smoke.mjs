@@ -137,6 +137,24 @@ const aiImage = {
   gen_elapsed_ms: 101400,
 }
 
+const videoAsset = {
+  id: 11,
+  project_id: 1,
+  episode_id: null,
+  kind: 'video',
+  source: 'ai',
+  name: 'project_video_00001_.mp4',
+  text_content: null,
+  mime_type: 'video/mp4',
+  size_bytes: 2_000_000,
+  content_url: '/studio/api/assets/11/content',
+  meta: { prompt: '雪夜长安街，红灯笼', size: '16:9', width: 1344, height: 768, seed: 7 },
+  gen_started_at: '2026-10-24T07:00:00.000Z',
+  gen_elapsed_ms: 51200,
+  created_at: '2026-10-24T07:00:00.000Z',
+  updated_at: '2026-10-24T07:00:00.000Z',
+}
+
 const asset = {
   id: 9,
   project_id: 1,
@@ -187,7 +205,12 @@ globalThis.fetch = async (input, init = {}) => {
     }
   } else if (path.endsWith('/assets')) {
     const kind = new URL(String(input), 'http://127.0.0.1:8188').searchParams.get('kind')
-    data = kind === 'image' ? { items: [{ ...aiImage }], total: 1 } : { items: [{ ...asset }], total: 1 }
+    data =
+      kind === 'image'
+        ? { items: [{ ...aiImage }], total: 1 }
+        : kind === 'video'
+          ? { items: [{ ...videoAsset }], total: 1 }
+          : { items: [{ ...asset }], total: 1 }
   } else if (/^\/studio\/api\/assets\/\d+$/.test(path)) {
     if (method === 'PATCH') Object.assign(asset, JSON.parse(init.body))
     data = { ...asset }
@@ -281,8 +304,18 @@ const videoTrigger = document.querySelector('button[aria-label="尺寸与分辨�
 const videoMode = {
   hasDuration: Boolean(document.querySelector('select[aria-label="视频时长"]')),
   noCount: !document.querySelector('select[aria-label="生成数量"]'),
-  noTier: !videoTrigger.includes('·'),
+  hasTier: videoTrigger.includes('768'),
 }
+
+// 视频面板里应当有 512 预览 / 768 原生 两档
+document.querySelector('button[aria-label="尺寸与分辨率"]')?.click()
+await wait(250)
+const videoPanel = [...document.querySelectorAll('[role="dialog"]')].find((el) =>
+  el.textContent?.includes('比例'),
+)
+const videoOptionsText = videoPanel?.textContent ?? ''
+document.body.dispatchEvent(new window.MouseEvent('mousedown', { bubbles: true }))
+await wait(150)
 ;[...document.querySelectorAll('button')]
   .find((el) => el.textContent?.includes('图片'))
   ?.click()
@@ -353,7 +386,7 @@ window.dispatchEvent(new window.PopStateEvent('popstate'))
 await wait(400)
 const imageTabText = rootText()
 
-document.querySelector('button[aria-label="预览 project_00001_.png"]')?.click()
+document.querySelector('button[aria-label="放大 project_00001_.png"]')?.click()
 await wait(200)
 const previewDialog = document.querySelector('dialog[open]')
 const previewText = previewDialog?.textContent ?? ''
@@ -383,6 +416,19 @@ const chipRestored =
   document.querySelectorAll('[data-image-chip]').length === 1 &&
   (promptField?.textContent ?? '').includes('让他')
 
+// —— 视频卡片：下半部分点开预览（缩略图被播放器占用）——
+window.history.pushState({}, '', '/studio/projects/PRJ-0001/assets/video')
+window.dispatchEvent(new window.PopStateEvent('popstate'))
+await wait(400)
+document.querySelector('button[aria-label="预览 project_video_00001_.mp4"]')?.click()
+await wait(250)
+const videoDialog = document.querySelector('dialog[open]')
+const videoPreviewOpened = Boolean(videoDialog?.querySelector('video'))
+videoDialog?.querySelectorAll('button').forEach((el) => {
+  if (el.textContent?.trim() === '关闭') el.click()
+})
+await wait(150)
+
 const checks = [
   ['列表页渲染品牌', listText.includes('Filmline')],
   ['列表页渲染项目', listText.includes('冒烟测试项目')],
@@ -398,7 +444,9 @@ const checks = [
   ['面板含比例与分辨率两组', optionsText.includes('比例') && optionsText.includes('分辨率')],
   ['只提供 1K/2K（无 4K）', optionsText.includes('1K') && optionsText.includes('2K') && !has4k],
   ['选择 2K 后按钮同步显示', triggerAfterTier.includes('2K')],
-  ['视频有尺寸与时长', videoMode.hasDuration && videoMode.noCount && videoMode.noTier],
+  ['视频有尺寸与时长', videoMode.hasDuration && videoMode.noCount],
+  ['视频默认 768 原生', videoMode.hasTier],
+  ['视频提供 512 预览/768 原生', videoOptionsText.includes('512') && videoOptionsText.includes('768')],
   ['项目资产页仅「资产」高亮', activeNavOnProject.length === 1 && activeNavOnProject[0] === '资产'],
   ['分集页仅当前集高亮', activeNavOnEpisode.length === 1 && activeNavOnEpisode[0].includes('EP01')],
   ['分集创建后出现在导航', afterEpisodeCreate.includes('EP01')],
@@ -413,6 +461,7 @@ const checks = [
   ['复用提示词回填面板', reused],
   ['复用后「图1」还原为图片块', chipRestored],
   ['复制失败时兜底弹窗可手动复制', fallbackShown],
+  ['视频卡片下半部分可打开预览', videoPreviewOpened],
   ['无控制台错误', errors.length === 0],
 ]
 

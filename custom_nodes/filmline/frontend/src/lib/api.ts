@@ -270,7 +270,15 @@ export const api = {
               count: number
               refs?: number[]
             }
-          | { kind: 'video'; prompt: string; size: string; duration: number; refs?: number[] },
+          |
+              {
+                kind: 'video'
+                prompt: string
+                size: string
+                resolution?: string
+                duration: number
+                refs?: number[]
+              },
         episode?: string,
       ) => {
         const query = episode ? `?episode=${encodeURIComponent(episode)}` : ''

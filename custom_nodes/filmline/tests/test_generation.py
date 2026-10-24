@@ -72,6 +72,29 @@ class VideoWorkflowTest(unittest.TestCase):
         self.assertEqual(graph["9"]["inputs"]["negative"], ["8", 0])
         self.assertEqual(graph["13"]["class_type"], "SaveVideo")
 
+    def test_video_tiers(self) -> None:
+        preview = generation.video_workflow(prompt="x", size="16:9", duration=5, tier="512", seed=1)
+        native = generation.video_workflow(prompt="x", size="16:9", duration=5, tier="768", seed=1)
+        self.assertEqual(
+            (preview.prompt["7"]["inputs"]["width"], preview.prompt["7"]["inputs"]["height"]),
+            (896, 512),
+        )
+        self.assertEqual(
+            (native.prompt["7"]["inputs"]["width"], native.prompt["7"]["inputs"]["height"]),
+            (1344, 768),
+        )
+        self.assertEqual(preview.meta["tier"], "512")
+        # 首帧也要缩放到所选档位对应的尺寸
+        withref = generation.video_workflow(
+            prompt="x", size="9:16", duration=5, tier="512", refs=["a.png"]
+        )
+        self.assertEqual(withref.prompt["15"]["inputs"]["width"], 512)
+        self.assertEqual(withref.prompt["15"]["inputs"]["height"], 896)
+
+    def test_rejects_bad_video_tier(self) -> None:
+        with self.assertRaises(InvalidArgument):
+            generation.video_workflow(prompt="x", size="16:9", duration=5, tier="2k")
+
     def test_ten_seconds(self) -> None:
         wf = generation.video_workflow(prompt="x", size="9:16", duration=10)
         self.assertEqual(wf.prompt["7"]["inputs"]["length"], 243)
@@ -180,3 +203,33 @@ class RatioLabelTest(unittest.TestCase):
         self.assertEqual(generation.ratio_label(1024, 1024), "1:1")
         self.assertEqual(generation.ratio_label(1000, 999), "1:1")
         self.assertEqual(generation.ratio_label(1200, 500), "1200:500")
+
+
+class ExecutionTimingTest(unittest.TestCase):
+    """耗时只统计 ComfyUI 的真实执行时间，排除排队。"""
+
+    def test_reads_execution_span(self) -> None:
+        status = {
+            "messages": [
+                ["execution_start", {"timestamp": 1_000_000}],
+                ["execution_cached", {"timestamp": 1_000_400}],
+                ["execution_success", {"timestamp": 1_051_500}],
+            ]
+        }
+        self.assertAlmostEqual(generation._execution_seconds(status), 51.5, places=1)
+
+    def test_missing_or_broken_returns_none(self) -> None:
+        self.assertIsNone(generation._execution_seconds({}))
+        self.assertIsNone(
+            generation._execution_seconds({"messages": [["execution_start", {"timestamp": 5}]]})
+        )
+        self.assertIsNone(
+            generation._execution_seconds(
+                {
+                    "messages": [
+                        ["execution_start", {"timestamp": 9}],
+                        ["execution_success", {"timestamp": 4}],
+                    ]
+                }
+            )
+        )

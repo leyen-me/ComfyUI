@@ -1,3 +1,5 @@
+import { Maximize2 } from 'lucide-react'
+
 import type { Asset, AssetKind } from '@/lib/api'
 import { assetDimensions, assetPrompt } from '@/lib/asset-meta'
 import { formatSize, formatTime } from '@/lib/format'
@@ -130,14 +132,14 @@ export function AssetList({
             )
             event.dataTransfer.setData('text/plain', asset.name)
           }}
-          className="cursor-grab overflow-hidden rounded-xl border border-border bg-card active:cursor-grabbing"
+          className="group cursor-grab overflow-hidden rounded-xl border border-border bg-card transition-colors hover:border-primary/40 active:cursor-grabbing"
         >
-          <div className="relative aspect-video bg-muted">
+          <div className="group/vid relative aspect-video bg-muted">
             {kind === 'image' ? (
               <button
                 type="button"
-                className="size-full cursor-zoom-in focus-visible:ring-2 focus-visible:ring-ring/60 focus-visible:outline-none"
-                aria-label={`预览 ${asset.name}`}
+                className="group/img size-full cursor-zoom-in focus-visible:ring-2 focus-visible:ring-ring/60 focus-visible:outline-none"
+                aria-label={`放大 ${asset.name}`}
                 onClick={() => onPreview(asset)}
               >
                 <img
@@ -145,16 +147,29 @@ export function AssetList({
                   alt={asset.name}
                   loading="lazy"
                   draggable={false}
-                  className="size-full object-cover"
+                  className="size-full object-cover transition-transform duration-200 group-hover/img:scale-[1.02]"
                 />
+                <span className="pointer-events-none absolute inset-0 flex items-center justify-center bg-black/0 opacity-0 transition-all group-hover/img:bg-black/25 group-hover/img:opacity-100">
+                  <span className="flex items-center gap-1 rounded-full bg-background/90 px-2 py-1 text-[11px] font-medium text-foreground shadow">
+                    <Maximize2 className="size-3" />
+                    放大
+                  </span>
+                </span>
               </button>
             ) : (
-              <video
-                src={asset.content_url ?? ''}
-                controls
-                preload="metadata"
-                className="size-full bg-black object-contain"
-              />
+              <>
+                <video
+                  src={asset.content_url ?? ''}
+                  controls
+                  preload="metadata"
+                  className="size-full bg-black object-contain"
+                />
+                <span className="pointer-events-none absolute inset-x-0 top-1/2 flex -translate-y-1/2 justify-center opacity-0 transition-opacity group-hover/vid:opacity-100">
+                  <span className="rounded-full bg-background/85 px-2 py-1 text-[11px] text-muted-foreground shadow">
+                    点下方信息栏看大图与提示词
+                  </span>
+                </span>
+              </>
             )}
 
             <div className="absolute top-1.5 left-1.5">
@@ -165,16 +180,25 @@ export function AssetList({
             </div>
           </div>
 
-          <div className="px-3 py-2">
-            <div className="truncate text-xs font-medium" title={asset.name}>
-              {asset.name}
-            </div>
-            <div className="mt-1 flex items-center justify-between gap-2 font-mono text-[11px] text-muted-foreground">
-              <span>{formatTime(asset.created_at)}</span>
-              <span>{formatSize(asset.size_bytes)}</span>
-            </div>
-            <AssetDimensions asset={asset} />
-          </div>
+          {/* 下半部分整体可点：视频的缩略图被播放器占用，这里是统一的预览入口 */}
+          <button
+            type="button"
+            aria-label={`预览 ${asset.name}`}
+            className="flex w-full items-start gap-2 px-3 py-2 text-left transition-colors hover:bg-muted focus-visible:bg-muted focus-visible:outline-none"
+            onClick={() => onPreview(asset)}
+          >
+            <span className="min-w-0 flex-1">
+              <span className="block truncate text-xs font-medium" title={asset.name}>
+                {asset.name}
+              </span>
+              <span className="mt-1 flex items-center justify-between gap-2 font-mono text-[11px] text-muted-foreground">
+                <span>{formatTime(asset.created_at)}</span>
+                <span>{formatSize(asset.size_bytes)}</span>
+              </span>
+              <AssetDimensions asset={asset} />
+            </span>
+            <Maximize2 className="mt-0.5 size-3 shrink-0 text-muted-foreground/0 transition-colors group-hover:text-muted-foreground" />
+          </button>
         </article>
       ))}
     </div>

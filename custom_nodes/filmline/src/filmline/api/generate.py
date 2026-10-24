@@ -81,6 +81,11 @@ def register_generate_routes(routes: web.RouteTableDef) -> None:
                 prefix=f"filmline/{project.code}/{scope}",
             )
         else:
+            video_tier = str(payload.get("resolution") or "768").lower()
+            if video_tier not in generation.VIDEO_TIERS:
+                raise InvalidArgument(
+                    f"视频分辨率只支持: {' / '.join(generation.VIDEO_TIERS)}"
+                )
             duration = payload.get("duration", 5)
             if not isinstance(duration, int):
                 raise InvalidArgument("duration 必须是整数")
@@ -88,6 +93,7 @@ def register_generate_routes(routes: web.RouteTableDef) -> None:
                 prompt=prompt,
                 size=size,
                 duration=duration,
+                tier=video_tier,
                 refs=ref_paths,
                 prefix=f"filmline/{project.code}/{scope}",
             )
@@ -95,7 +101,7 @@ def register_generate_routes(routes: web.RouteTableDef) -> None:
         started_wall = utcnow()
         started = time.monotonic()
         try:
-            products = await generation.run(
+            products, exec_seconds = await generation.run(
                 workflow, timeout=generation.timeout_for(workflow.kind)
             )
         except AppError:
@@ -104,7 +110,9 @@ def register_generate_routes(routes: web.RouteTableDef) -> None:
             _LOG.exception("生成失败")
             raise generation.GenerationFailed(f"生成失败: {exc}") from exc
 
-        elapsed = round(time.monotonic() - started, 1)
+        wall = round(time.monotonic() - started, 1)
+        # 对外展示的耗时只用 ComfyUI 的真实执行时间；排队时间另记
+        elapsed = round(exec_seconds, 1) if exec_seconds is not None else wall
         created = []
         for product in products:
             relative, target = storage.allocate(project.id, scope, product.suffix)
@@ -113,6 +121,7 @@ def register_generate_routes(routes: web.RouteTableDef) -> None:
             # 参考图模式下实际尺寸由参考图决定，以产物为准修正元数据
             meta = dict(workflow.meta)
             meta["ref_ids"] = raw_refs
+            meta["queue_ms"] = max(0, int(round((wall - elapsed) * 1000)))
             if workflow.kind == "image":
                 try:
                     from PIL import Image
