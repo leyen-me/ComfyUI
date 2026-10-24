@@ -13,6 +13,7 @@ import time
 from aiohttp import web
 
 from .. import generation, storage
+from ..clock import utcnow
 from ..domain.assets import AssetService
 from ..domain.episodes import EpisodeService
 from ..domain.projects import ProjectService
@@ -87,6 +88,7 @@ def register_generate_routes(routes: web.RouteTableDef) -> None:
                 prefix=f"filmline/{project.code}/{scope}",
             )
 
+        started_wall = utcnow()
         started = time.monotonic()
         try:
             products = await generation.run(
@@ -98,6 +100,7 @@ def register_generate_routes(routes: web.RouteTableDef) -> None:
             _LOG.exception("生成失败")
             raise generation.GenerationFailed(f"生成失败: {exc}") from exc
 
+        elapsed = round(time.monotonic() - started, 1)
         created = []
         for product in products:
             relative, target = storage.allocate(project.id, scope, product.suffix)
@@ -128,9 +131,10 @@ def register_generate_routes(routes: web.RouteTableDef) -> None:
                 size_bytes=len(product.data),
                 episode_id=episode_id,
                 meta=meta,
+                gen_started_at=started_wall,
+                gen_elapsed_ms=int(elapsed * 1000),
             )
             created.append(asset.model_dump(mode="json"))
 
-        elapsed = round(time.monotonic() - started, 1)
         _LOG.info("生成完成: %s 个 %s，耗时 %ss", len(created), kind, elapsed)
         return ok({"items": created, "kind": kind, "elapsed": elapsed}, status=201)

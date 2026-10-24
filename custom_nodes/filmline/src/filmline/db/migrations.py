@@ -121,12 +121,19 @@ def _migration_005_episodes(conn: Connection) -> None:
     conn.exec_driver_sql("CREATE INDEX ix_assets_episode_id ON assets (episode_id)")
 
 
+def _migration_006_generation_stats(conn: Connection) -> None:
+    """记录生成开始时间与耗时，便于统计与排查。"""
+    conn.exec_driver_sql("ALTER TABLE assets ADD COLUMN gen_started_at DATETIME")
+    conn.exec_driver_sql("ALTER TABLE assets ADD COLUMN gen_elapsed_ms INTEGER")
+
+
 MIGRATIONS: list[tuple[int, object]] = [
     (1, _migration_001_initial),
     (2, _migration_002_drop_project_status),
     (3, _migration_003_project_sort_index),
     (4, _migration_004_assets),
     (5, _migration_005_episodes),
+    (6, _migration_006_generation_stats),
 ]
 
 

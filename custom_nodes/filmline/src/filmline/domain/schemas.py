@@ -73,6 +73,8 @@ class AssetOut(BaseModel):
     size_bytes: int | None = None
     content_url: str | None = None
     meta: dict | None = None
+    gen_started_at: str | None = None
+    gen_elapsed_ms: int | None = None
     created_at: str
     updated_at: str
 

@@ -127,6 +127,8 @@ export interface Asset {
   size_bytes: number | null
   content_url: string | null
   meta: Record<string, unknown> | null
+  gen_started_at: string | null
+  gen_elapsed_ms: number | null
   created_at: string
   updated_at: string
 }

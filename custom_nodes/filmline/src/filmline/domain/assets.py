@@ -5,6 +5,8 @@
 
 from __future__ import annotations
 
+from datetime import datetime
+
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
@@ -45,6 +47,8 @@ def _to_out(row: Asset) -> AssetOut:
         size_bytes=row.size_bytes,
         content_url=content_url(row),
         meta=row.meta,
+        gen_started_at=to_iso(row.gen_started_at),
+        gen_elapsed_ms=row.gen_elapsed_ms,
         created_at=to_iso(row.created_at) or "",
         updated_at=to_iso(row.updated_at) or "",
     )
@@ -140,6 +144,8 @@ class AssetService:
         size_bytes: int,
         episode_id: int | None = None,
         meta: dict | None = None,
+        gen_started_at: datetime | None = None,
+        gen_elapsed_ms: int | None = None,
     ) -> AssetOut:
         clean_name = (name or "").strip() or "未命名"
         if len(clean_name) > MAX_NAME:
@@ -158,6 +164,8 @@ class AssetService:
                 mime_type=mime_type,
                 size_bytes=size_bytes,
                 meta=meta,
+                gen_started_at=gen_started_at,
+                gen_elapsed_ms=gen_elapsed_ms,
             )
             session.add(row)
             session.flush()

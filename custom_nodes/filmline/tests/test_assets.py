@@ -185,3 +185,30 @@ class AssetApiTest(ApiTestCase):
         self.assertEqual(res.status, 200)
         self.assertEqual(body["data"]["name"], asset["name"])
         self.assertEqual(body["data"]["content_url"], asset["content_url"])
+
+    def test_generation_stats_round_trip(self) -> None:
+        """生成开始时间与耗时必须能存能取（用于统计与排查）。"""
+        from datetime import datetime
+
+        from filmline.domain.assets import AssetService
+        from filmline.domain.projects import ProjectService
+        from filmline.domain.schemas import AssetKind, AssetSource, ProjectCreate
+
+        project = ProjectService().create(ProjectCreate(name="统计"))
+        service = AssetService()
+        asset = service.create_from_file(
+            project.id,
+            name="a.png",
+            kind=AssetKind.image,
+            source=AssetSource.ai,
+            relative_path="9/project/a.png",
+            mime_type="image/png",
+            size_bytes=10,
+            gen_started_at=datetime(2026, 10, 24, 17, 20, 31),
+            gen_elapsed_ms=101_400,
+        )
+        self.assertEqual(asset.gen_elapsed_ms, 101400)
+        self.assertEqual(asset.gen_started_at, "2026-10-24T17:20:31.000Z")
+
+        fetched = service.get(asset.id)
+        self.assertEqual(fetched.gen_elapsed_ms, 101400)

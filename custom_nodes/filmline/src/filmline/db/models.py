@@ -68,6 +68,10 @@ class Asset(Base):
     # 生成参数、来源工作流等扩展信息，结构随业务演进
     meta: Mapped[dict | None] = mapped_column(JSON, nullable=True)
 
+    # 生成统计：仅 AI 资产有值
+    gen_started_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    gen_elapsed_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, index=True)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
