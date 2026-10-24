@@ -322,6 +322,34 @@ const firstFramePicked = Boolean(
   document.querySelector('[data-keyframe-slot="first"] img'),
 )
 
+// 视频拖到尾帧槽位：应打开选帧对话框，而不是把视频当图片塞进去
+const videoDragData = {
+  types: ['application/x-filmline-asset'],
+  getData: (type) =>
+    type === 'application/x-filmline-asset'
+      ? JSON.stringify({
+          assetId: 11,
+          src: '/studio/api/assets/11/content',
+          name: 'project_video_00001_.mp4',
+          kind: 'video',
+        })
+      : '',
+  dropEffect: 'copy',
+  effectAllowed: 'copy',
+}
+const videoDrop = new window.Event('drop', { bubbles: true, cancelable: true })
+Object.defineProperty(videoDrop, 'dataTransfer', { value: videoDragData })
+document.querySelector('[data-keyframe-slot="last"]')?.dispatchEvent(videoDrop)
+await wait(250)
+const videoFrameDialog = document.querySelector('dialog[open]')
+const videoFrameDialogOpened = (videoFrameDialog?.textContent ?? '').includes(
+  '从视频选择尾帧',
+)
+;[...(videoFrameDialog?.querySelectorAll('button') ?? [])]
+  .find((el) => el.textContent?.trim() === '取消')
+  ?.click()
+await wait(150)
+
 // 参考生成：托盘 + 多选选择器 + 模式切换保留状态
 ;[...document.querySelectorAll('button')]
   .find((el) => el.textContent?.trim() === '参考生成')
@@ -500,6 +528,7 @@ const checks = [
   ['视频有首尾帧两个槽位', keyframeSlots.length === 2 && hasVideoModeTabs],
   ['首帧槽位可打开资产选择器', pickerOpened],
   ['选择图片后首帧槽位显示缩略图', firstFramePicked],
+  ['视频拖到槽位打开选帧对话框', videoFrameDialogOpened],
   ['参考模式显示参考素材托盘', referenceTrayShown],
   ['参考图选择器可多选', referencePickerOpened],
   ['选择参考图后显示图1', referenceAdded],

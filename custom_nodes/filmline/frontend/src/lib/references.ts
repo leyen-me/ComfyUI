@@ -18,6 +18,7 @@ export function addReference(
   asset: AssetDragPayload,
 ): ReferenceMutation {
   if (!asset.src) return { list, error: '该图片缺少文件内容' }
+  if (asset.kind !== 'image') return { list, error: '参考生成目前只支持图片' }
   if (list.some((item) => isSame(item, asset))) {
     return { list, error: '该图片已在参考列表中' }
   }
@@ -36,7 +37,7 @@ export function addReferences(
   let error: string | undefined
 
   for (const asset of assets) {
-    if (!asset.src) continue
+    if (!asset.src || asset.kind !== 'image') continue
     if (next.some((item) => isSame(item, asset))) continue
     if (next.length >= MAX_REFERENCE_IMAGES) {
       error = `参考图最多 ${MAX_REFERENCE_IMAGES} 张`

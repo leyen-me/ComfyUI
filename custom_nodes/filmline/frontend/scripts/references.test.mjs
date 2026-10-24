@@ -13,12 +13,16 @@ import {
   reorderReference,
 } from '../src/lib/references.ts'
 
-const img = (id) => ({ assetId: id, src: `/assets/${id}`, name: `图${id}.png` })
+const img = (id) => ({ assetId: id, src: `/assets/${id}`, name: `图${id}.png`, kind: 'image' })
 
 // 追加与去重
 assert.deepEqual(addReference([], img(1)).list, [img(1)])
 assert.equal(addReference([img(1)], img(1)).error, '该图片已在参考列表中')
 assert.equal(addReference([], { ...img(1), src: '' }).error, '该图片缺少文件内容')
+assert.equal(
+  addReference([], { ...img(1), kind: 'video' }).error,
+  '参考生成目前只支持图片',
+)
 
 // 上限
 const full = Array.from({ length: MAX_REFERENCE_IMAGES }, (_, index) => img(index + 1))

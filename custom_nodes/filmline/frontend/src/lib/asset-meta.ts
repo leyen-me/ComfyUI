@@ -16,6 +16,11 @@ export interface GenerationMeta {
   video_mode?: 'keyframes' | 'reference'
   first_frame_id?: number | null
   last_frame_id?: number | null
+  fps?: number
+  /** 从视频截帧时记录来源与时间 */
+  derived_from_asset_id?: number
+  frame_time?: number
+  origin?: string
   model?: string
 }
 

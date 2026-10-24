@@ -122,7 +122,7 @@ export function AssetList({
           key={asset.id}
           draggable
           onDragStart={(event) => {
-            if (asset.kind !== 'image') {
+            if (asset.kind !== 'image' && asset.kind !== 'video') {
               event.preventDefault()
               return
             }
@@ -131,7 +131,15 @@ export function AssetList({
               event.preventDefault()
               return
             }
-            setAssetDrag(event.dataTransfer, { assetId: asset.id, src, name: asset.name })
+            const meta = (asset.meta ?? {}) as { fps?: number }
+            setAssetDrag(event.dataTransfer, {
+              assetId: asset.id,
+              src,
+              name: asset.name,
+              kind: asset.kind,
+              source: asset.source,
+              fps: typeof meta.fps === 'number' ? meta.fps : undefined,
+            })
           }}
           className="group cursor-grab overflow-hidden rounded-xl border border-border bg-card transition-colors hover:border-primary/40 active:cursor-grabbing"
         >
@@ -163,11 +171,12 @@ export function AssetList({
                   src={asset.content_url ?? ''}
                   controls
                   preload="metadata"
+                  draggable={false}
                   className="size-full bg-black object-contain"
                 />
                 <span className="pointer-events-none absolute inset-x-0 top-1/2 flex -translate-y-1/2 justify-center opacity-0 transition-opacity group-hover/vid:opacity-100">
                   <span className="rounded-full bg-background/85 px-2 py-1 text-[11px] text-muted-foreground shadow">
-                    点下方信息栏看大图与提示词
+                    可拖到右侧首帧/尾帧；点信息栏预览
                   </span>
                 </span>
               </>

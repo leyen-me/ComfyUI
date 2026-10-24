@@ -1,10 +1,18 @@
-/** 资产拖拽的统一载荷：左侧列表写入，首尾帧槽位 / 提示词编辑器读取。 */
+import type { AssetSource } from './api'
+
+/** 资产拖拽的统一载荷：左侧列表写入，首尾帧槽位 / 提示词编辑器 / 参考托盘读取。 */
 export const ASSET_MIME = 'application/x-filmline-asset'
+
+export type DragAssetKind = 'image' | 'video' | 'audio'
 
 export interface AssetDragPayload {
   assetId: number
   src: string
   name: string
+  kind: DragAssetKind
+  source?: AssetSource
+  /** 视频帧率，用于逐帧选择；未知时按 24fps 处理 */
+  fps?: number
 }
 
 export function setAssetDrag(dataTransfer: DataTransfer, payload: AssetDragPayload): void {
@@ -28,10 +36,15 @@ export function readAssetDrag(dataTransfer: DataTransfer | null): AssetDragPaylo
     ) {
       return null
     }
+    const kind: DragAssetKind =
+      value.kind === 'video' || value.kind === 'audio' ? value.kind : 'image'
     return {
       assetId: value.assetId as number,
       src: value.src,
       name: typeof value.name === 'string' ? value.name : '',
+      kind,
+      source: value.source === 'ai' ? 'ai' : value.source === 'user' ? 'user' : undefined,
+      fps: typeof value.fps === 'number' && value.fps > 0 ? value.fps : undefined,
     }
   } catch {
     return null

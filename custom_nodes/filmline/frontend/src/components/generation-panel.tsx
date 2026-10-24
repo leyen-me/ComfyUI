@@ -23,6 +23,7 @@ import { KeyframeSlots } from './keyframe-slots'
 import { PromptInput, type PromptInputHandle } from './prompt-input'
 import type { PromptValue } from './prompt-editor'
 import { ReferenceTray } from './reference-tray'
+import { VideoFrameDialog } from './video-frame-dialog'
 import { Button } from './ui/button'
 
 type Mode = 'image' | 'video'
@@ -59,6 +60,10 @@ export function GenerationPanel({ project, episodeCode }: GenerationPanelProps) 
   const [keyframes, setKeyframes] = useState<Keyframes>(EMPTY_KEYFRAMES)
   const [references, setReferences] = useState<AssetDragPayload[]>([])
   const [picker, setPicker] = useState<PickerState>(null)
+  const [videoFrame, setVideoFrame] = useState<{
+    slot: KeyframeSlot
+    video: AssetDragPayload
+  } | null>(null)
   const [imageSize, setImageSize] = useState<string>('16:9')
   const [imageTier, setImageTier] = useState<string>('1k')
   const [videoSize, setVideoSize] = useState<string>('16:9')
@@ -240,6 +245,29 @@ export function GenerationPanel({ project, episodeCode }: GenerationPanelProps) 
     setKeyframes((previous) => ({ ...previous, [slot]: asset }))
   }
 
+  function handleKeyframeDrop(slot: KeyframeSlot, asset: AssetDragPayload) {
+    if (asset.kind === 'video') {
+      setVideoFrame({ slot, video: asset })
+      return
+    }
+    if (asset.kind !== 'image') {
+      setError('首尾帧只支持图片或视频')
+      return
+    }
+    setKeyframe(slot, asset)
+  }
+
+  function handleFrameExtracted(asset: Asset) {
+    if (!videoFrame) return
+    const payload = toDragPayload(asset)
+    if (!payload) {
+      setError('提取的帧缺少文件内容')
+      return
+    }
+    setKeyframe(videoFrame.slot, payload)
+    setVideoFrame(null)
+  }
+
   function addReferenceAsset(asset: AssetDragPayload) {
     const result = addReference(references, asset)
     setReferences(result.list)
@@ -381,7 +409,7 @@ export function GenerationPanel({ project, episodeCode }: GenerationPanelProps) 
                 onClear={(slot) =>
                   setKeyframes((previous) => ({ ...previous, [slot]: null }))
                 }
-                onDropAsset={setKeyframe}
+                onDropAsset={handleKeyframeDrop}
                 onSwap={() =>
                   setKeyframes((previous) => ({ first: previous.last, last: previous.first }))
                 }
@@ -414,7 +442,7 @@ export function GenerationPanel({ project, episodeCode }: GenerationPanelProps) 
               assetDropHint={
                 videoMode === 'reference'
                   ? '图片请拖到上方的参考素材区'
-                  : '图片请拖到上方的首帧或尾帧槽位'
+                  : '图片或视频请拖到上方的首帧或尾帧槽位'
               }
               placeholder={
                 mode === 'image'
@@ -552,13 +580,33 @@ export function GenerationPanel({ project, episodeCode }: GenerationPanelProps) 
         }}
         onSelectMany={addReferenceAssets}
       />
+
+      <VideoFrameDialog
+        open={videoFrame !== null}
+        video={videoFrame?.video ?? null}
+        slot={videoFrame?.slot ?? 'first'}
+        project={project}
+        episodeCode={episodeCode}
+        onOpenChange={(open) => {
+          if (!open) setVideoFrame(null)
+        }}
+        onExtracted={handleFrameExtracted}
+      />
     </aside>
   )
 }
 
 function toDragPayload(asset: Asset | null | undefined): AssetDragPayload | null {
   if (!asset?.content_url) return null
-  return { assetId: asset.id, src: asset.content_url, name: asset.name }
+  const meta = (asset.meta ?? {}) as { fps?: number }
+  return {
+    assetId: asset.id,
+    src: asset.content_url,
+    name: asset.name,
+    kind: asset.kind === 'video' ? 'video' : asset.kind === 'audio' ? 'audio' : 'image',
+    source: asset.source,
+    fps: typeof meta.fps === 'number' && meta.fps > 0 ? meta.fps : undefined,
+  }
 }
 
 function ModeButton({

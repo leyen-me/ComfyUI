@@ -231,7 +231,12 @@ export const api = {
       upload: async (
         ref: string | number,
         file: File,
-        options: { source?: AssetSource; name?: string; episode?: string } = {},
+        options: {
+          source?: AssetSource
+          name?: string
+          episode?: string
+          meta?: Record<string, unknown>
+        } = {},
       ): Promise<Asset> => {
         const form = new FormData()
         form.append('file', file)
@@ -240,6 +245,7 @@ export const api = {
         if (options.source) query.set('source', options.source)
         if (options.name) query.set('name', options.name)
         if (options.episode) query.set('episode', options.episode)
+        if (options.meta) query.set('meta', JSON.stringify(options.meta))
 
         const response = await fetch(
           `${BASE}/projects/${encodeURIComponent(ref)}/assets/upload?${query.toString()}`,

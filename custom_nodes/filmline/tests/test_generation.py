@@ -71,6 +71,7 @@ class VideoWorkflowTest(unittest.TestCase):
         self.assertEqual(graph["9"]["inputs"]["cfg"], 1.0)
         self.assertEqual(graph["9"]["inputs"]["negative"], ["8", 0])
         self.assertEqual(graph["13"]["class_type"], "SaveVideo")
+        self.assertEqual(wf.meta["fps"], 24)
 
     def test_video_native_tier_only(self) -> None:
         native = generation.video_workflow(prompt="x", size="16:9", duration=5, seed=1)
@@ -247,6 +248,7 @@ class ReferenceVideoWorkflowTest(unittest.TestCase):
         self.assertNotIn("16", graph)
         self.assertEqual(wf.meta["refs"], 2)
         self.assertEqual(wf.meta["steps"], 8)
+        self.assertEqual(wf.meta["fps"], 24)
 
     def test_ref_image_size_option(self) -> None:
         wf = generation.video_reference_workflow(
