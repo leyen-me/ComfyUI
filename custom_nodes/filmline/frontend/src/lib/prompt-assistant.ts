@@ -1,5 +1,8 @@
 /** 提示词结构助手：纯函数生成模板、快捷片段与格式检查。 */
 
+// 纯函数模块被 node 单测直接执行，相对导入需要写扩展名
+import { PROMPT_MAX_CHARS } from './limits.ts'
+
 export type AssistantMode = 'image' | 'video'
 export type AssistantVideoMode = 'keyframes' | 'reference'
 
@@ -345,11 +348,11 @@ export function lintPrompt({ mode, videoMode, prompt, counts }: LintInput): Prom
   const warnings: PromptWarning[] = []
   const text = prompt.trim()
 
-  if (text.length > 4000) {
+  if (text.length > PROMPT_MAX_CHARS) {
     warnings.push({
       id: 'length',
       level: 'error',
-      message: `提示词 ${text.length} 字符，超过 4000 上限。`,
+      message: `提示词 ${text.length} 字符，超过 ${PROMPT_MAX_CHARS} 上限。`,
     })
   }
 

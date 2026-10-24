@@ -9,6 +9,8 @@ from aiohttp import FormData
 
 from base import ApiTestCase
 
+from filmline.limits import OPTIMIZE_DRAFT_MAX_CHARS
+
 PNG_BYTES = b"\x89PNG\r\n\x1a\n" + b"\x00" * 32
 
 
@@ -133,3 +135,39 @@ class PromptOptimizeApiTest(ApiTestCase):
         )
         body = await res.json()
         self.assertEqual(res.status, 400, body)
+
+    async def test_long_draft_is_accepted_for_compression(self) -> None:
+        fake = AsyncMock(
+            return_value={
+                "enhanced_prompt": "compressed",
+                "warnings": [],
+                "notes": "",
+                "model": "deepseek-flash",
+            }
+        )
+        with patch("filmline.llm.optimize_prompt", new=fake):
+            res = await self.client.post(
+                "/studio/api/prompts/optimize",
+                json={
+                    "mode": "video",
+                    "video_mode": "keyframes",
+                    "prompt": "x" * 5000,
+                },
+            )
+        body = await res.json()
+        self.assertEqual(res.status, 200, body)
+        args, _kwargs = fake.await_args
+        self.assertEqual(len(args[0]["prompt"]), 5000)
+
+    async def test_rejects_draft_above_optimize_limit(self) -> None:
+        res = await self.client.post(
+            "/studio/api/prompts/optimize",
+            json={
+                "mode": "video",
+                "video_mode": "keyframes",
+                "prompt": "x" * (OPTIMIZE_DRAFT_MAX_CHARS + 1),
+            },
+        )
+        body = await res.json()
+        self.assertEqual(res.status, 400, body)
+        self.assertIn(str(OPTIMIZE_DRAFT_MAX_CHARS), body["error"]["message"])

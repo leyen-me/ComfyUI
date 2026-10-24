@@ -39,8 +39,27 @@ IMAGE_TIERS: dict[str, dict[str, tuple[int, int]]] = {
 VIDEO_TIERS: dict[str, dict[str, tuple[int, int]]] = {
     "768": {"16:9": (1344, 768), "9:16": (768, 1344)},
 }
-# 24fps，且需落在模型要求的 17k+5 网格上
-VIDEO_DURATIONS: dict[int, int] = {5: 124, 10: 243}
+# 24fps，帧数必须落在模型要求的 17k+5 网格上（向上对齐）。
+# 本地节点训练区间是 124–362 帧（≈5.2–15.1 秒），超出部分属于未验证区域。
+VIDEO_FPS = 24
+VIDEO_MIN_SECONDS = 5
+VIDEO_MAX_SECONDS = 15
+VIDEO_MIN_FRAMES = 124
+VIDEO_MAX_FRAMES = 362
+
+
+def video_length(duration: int) -> int:
+    """秒数 → 对齐到 17k+5 网格的帧数（向上取整到网格）。"""
+    if isinstance(duration, bool) or not isinstance(duration, int):
+        raise InvalidArgument("视频时长必须是整数秒")
+    if not VIDEO_MIN_SECONDS <= duration <= VIDEO_MAX_SECONDS:
+        raise InvalidArgument(
+            f"视频时长只支持 {VIDEO_MIN_SECONDS}–{VIDEO_MAX_SECONDS} 秒"
+        )
+    frames = duration * VIDEO_FPS
+    while frames % 17 != 5:
+        frames += 1
+    return frames
 
 IMAGE_MODEL = "qwen-image-2.1-Q6_K.gguf"
 IMAGE_CLIP = "qwen3vl_8b_int8_convrot.safetensors"
@@ -256,8 +275,7 @@ def video_workflow(
         raise InvalidArgument(f"视频比例只支持: {', '.join(VIDEO_TIERS['768'])}")
     if tier not in VIDEO_TIERS:
         raise InvalidArgument(f"视频分辨率只支持: {', '.join(VIDEO_TIERS)}")
-    if duration not in VIDEO_DURATIONS:
-        raise InvalidArgument("视频时长只支持 5 或 10 秒")
+    length = video_length(duration)
     if not prompt.strip():
         raise InvalidArgument("提示词不能为空")
 
@@ -270,7 +288,6 @@ def video_workflow(
         first_frame = refs[0]
 
     width, height = VIDEO_TIERS[tier][size]
-    length = VIDEO_DURATIONS[duration]
     actual_seed = _seed() if seed is None else seed
 
     graph: dict[str, Any] = {
@@ -416,8 +433,7 @@ def video_reference_workflow(
         raise InvalidArgument(f"视频比例只支持: {', '.join(VIDEO_TIERS['768'])}")
     if tier not in VIDEO_TIERS:
         raise InvalidArgument(f"视频分辨率只支持: {', '.join(VIDEO_TIERS)}")
-    if duration not in VIDEO_DURATIONS:
-        raise InvalidArgument("视频时长只支持 5 或 10 秒")
+    length = video_length(duration)
     if not prompt.strip():
         raise InvalidArgument("提示词不能为空")
     if ref_image_size not in ("match", "max"):
@@ -438,7 +454,6 @@ def video_reference_workflow(
         raise InvalidArgument("参考生成至少需要 1 个素材")
 
     width, height = VIDEO_TIERS[tier][size]
-    length = VIDEO_DURATIONS[duration]
     actual_seed = _seed() if seed is None else seed
 
     ref_images: dict[str, list[Any]] = {}

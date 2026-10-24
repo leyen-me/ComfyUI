@@ -11,6 +11,7 @@ from .. import llm, media, storage
 from ..domain.assets import AssetService
 from ..domain.projects import ProjectService
 from ..errors import InvalidArgument
+from ..limits import OPTIMIZE_DRAFT_MAX_CHARS
 from .http import handle_errors, ok, read_object
 
 API_PREFIX = "/studio/api"
@@ -79,8 +80,11 @@ def register_prompt_routes(routes: web.RouteTableDef) -> None:
         prompt = str(payload.get("prompt") or "").strip()
         if not prompt:
             raise InvalidArgument("请先写下提示词")
-        if len(prompt) > 4000:
-            raise InvalidArgument("提示词最长 4000 字符")
+        if len(prompt) > OPTIMIZE_DRAFT_MAX_CHARS:
+            # 草稿允许比上限长：优化阶段会压缩到 PROMPT_MAX_CHARS 以内
+            raise InvalidArgument(
+                f"提示词最长 {OPTIMIZE_DRAFT_MAX_CHARS} 字符，超出请先精简"
+            )
 
         image_items = _images(payload.get("images"))
         project_ref = str(payload.get("project_ref") or "").strip()

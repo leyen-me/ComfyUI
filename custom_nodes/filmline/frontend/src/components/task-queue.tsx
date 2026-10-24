@@ -174,7 +174,7 @@ export function TaskQueue() {
           />
         </div>
 
-        <div className="max-h-[64vh] space-y-2 overflow-y-auto pb-1">
+        <div data-scroll-region className="max-h-[64vh] space-y-2 overflow-y-auto pb-1">
           {tasks.length === 0 ? (
             <p className="px-2 py-8 text-center text-xs text-muted-foreground">
               当前没有任务

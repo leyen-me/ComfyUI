@@ -179,6 +179,22 @@ class GenerateApiTest(ApiTestCase):
         self.assertEqual(res.status, 400, body)
         self.assertIn("keyframes", body["error"]["message"])
 
+    async def test_rejects_duration_out_of_range(self) -> None:
+        project = await self._project()
+        for duration in (4, 16):
+            res = await self.client.post(
+                f"/studio/api/projects/{project['code']}/generate",
+                json={
+                    "kind": "video",
+                    "mode": "keyframes",
+                    "prompt": "x",
+                    "duration": duration,
+                },
+            )
+            body = await res.json()
+            self.assertEqual(res.status, 400, body)
+            self.assertIn("5–15", body["error"]["message"])
+
     async def test_reference_requires_images(self) -> None:
         project = await self._project()
         res = await self.client.post(

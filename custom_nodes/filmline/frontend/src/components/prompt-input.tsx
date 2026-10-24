@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useRef, type Ref } from 'react'
 import { EditorContent, useEditor } from '@tiptap/react'
 import Placeholder from '@tiptap/extension-placeholder'
+import type { EditorView } from '@tiptap/pm/view'
 import StarterKit from '@tiptap/starter-kit'
 
 import { ASSET_MIME, readAssetDrag, type AssetDragPayload } from '@/lib/asset-drag'
+import { TEXT_DROP_MAX_CHARS } from '@/lib/limits'
 import { ImageChip, serializePrompt, type PromptValue } from './prompt-editor'
 
 export interface PromptInputHandle {
@@ -87,24 +89,10 @@ export function PromptInput({
         }
         return false
       },
-      handleDrop: (view, event) => {
-        const raw = event.dataTransfer?.getData(ASSET_MIME)
-        if (!raw) return false
-        event.preventDefault()
-        if (disabledRef.current) return true
-        if (!allowDropRef.current) {
-          rejectRef.current?.(assetDropHintRef.current)
-          return true
-        }
-        const payload = readAssetDrag(event.dataTransfer)
-        if (!payload) return true
-        if (payload.kind !== 'image') {
-          rejectRef.current?.('这里只支持图片引用；视频请拖到首/尾帧，音频请拖到参考素材区')
-          return true
-        }
-        const coords = view.posAtCoords({ left: event.clientX, top: event.clientY })
-        insertChip(payload, coords?.pos ?? view.state.doc.content.size)
-        return true
+      handleDOMEvents: {
+        // 自己接管资产拖放：ProseMirror 默认 drop 需要 posAtCoords，拿不到位置时会直接忽略；
+        // 这里用 handleDOMEvents 抢先处理，坐标缺失也能落到文档末尾。
+        drop: (view, event) => handleAssetDrop(view as EditorView, event as DragEvent),
       },
       handlePaste: (_view, event) => {
         // 只接受纯文本，避免外部 HTML 带进样式
@@ -126,6 +114,30 @@ export function PromptInput({
     return serializePrompt(editor.state.doc).refs.length
   }
 
+  function handleAssetDrop(view: EditorView, event: DragEvent): boolean {
+    const raw = event.dataTransfer?.getData(ASSET_MIME)
+    if (!raw) return false
+    event.preventDefault()
+    if (disabledRef.current) return true
+    const payload = readAssetDrag(event.dataTransfer)
+    if (!payload) return true
+    // 文本资产：无论图片块是否禁用（视频模式）都应能整段插入
+    if (payload.kind === 'text') {
+      insertDroppedText(payload.text ?? '', dropPosition(view, event))
+      return true
+    }
+    if (!allowDropRef.current) {
+      rejectRef.current?.(assetDropHintRef.current)
+      return true
+    }
+    if (payload.kind !== 'image') {
+      rejectRef.current?.('这里只支持图片引用；视频请拖到首/尾帧，音频请拖到参考素材区')
+      return true
+    }
+    insertChip(payload, dropPosition(view, event))
+    return true
+  }
+
   function insertChip(payload: AssetDragPayload, pos: number) {
     if (!editor) return
     if (!payload.assetId || !payload.src) return
@@ -143,6 +155,19 @@ export function PromptInput({
       .run()
     renumber(editor)
     changeRef.current(serializePrompt(editor.state.doc))
+  }
+
+  function insertDroppedText(rawText: string, pos: number) {
+    if (!editor) return
+    const text = rawText.replace(/\r\n?/g, '\n')
+    const clipped = text.slice(0, TEXT_DROP_MAX_CHARS)
+    editor.chain().focus().insertContentAt(pos, textToContent(clipped)).run()
+    renumber(editor)
+    changeRef.current(serializePrompt(editor.state.doc))
+    if (clipped.length < text.length) {
+      // 不静默丢内容：明确告诉用户插入了多少
+      rejectRef.current?.(`文本 ${text.length} 字符，已插入前 ${TEXT_DROP_MAX_CHARS} 字符`)
+    }
   }
 
   const setText = useCallback(
@@ -176,12 +201,7 @@ export function PromptInput({
         },
         insertTemplate: (text) => {
           if (!editor) return
-          const blocks = text.split('\n').map((line) =>
-            line
-              ? { type: 'paragraph', content: [{ type: 'text', text: line }] }
-              : { type: 'paragraph' },
-          )
-          editor.chain().focus().insertContent(blocks).run()
+          editor.chain().focus().insertContent(paragraphs(text.replace(/\r\n?/g, '\n'))).run()
           changeRef.current(serializePrompt(editor.state.doc))
         },
       }
@@ -193,6 +213,32 @@ export function PromptInput({
   }, [editor, disabled])
 
   return <EditorContent editor={editor} />
+}
+
+/** 按段落拆分：空行保留为空段落，避免拖入的剧本丢换行。 */
+function paragraphs(text: string) {
+  return text.split('\n').map((line) =>
+    line ? { type: 'paragraph', content: [{ type: 'text', text: line }] } : { type: 'paragraph' },
+  )
+}
+
+/** 单行文本按行内文字插入（不打断当前句子），多行按段落插入。 */
+function textToContent(text: string) {
+  return text.includes('\n') ? paragraphs(text) : { type: 'text', text }
+}
+
+/**
+ * 拖放落点：优先用鼠标坐标换算光标位置；拿不到布局信息时（如 jsdom）退回文档末尾，
+ * 并且必须落在文本块内部，否则行内节点插入会被 schema 拒绝。
+ */
+function dropPosition(view: EditorView, event: DragEvent): number {
+  try {
+    const coords = view.posAtCoords({ left: event.clientX, top: event.clientY })
+    if (coords && coords.pos > 0) return coords.pos
+  } catch {
+    // 没有布局信息，走末尾兜底
+  }
+  return Math.max(1, view.state.doc.content.size - 1)
 }
 
 /** 按出现顺序把引用块编号成「图1」「图2」… */

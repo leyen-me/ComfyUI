@@ -19,7 +19,23 @@ interface AssetListProps {
 }
 
 function startAssetDrag(event: DragEvent<HTMLElement>, asset: Asset) {
-  if (asset.kind === 'text' || !asset.content_url) {
+  if (asset.kind === 'text') {
+    const text = asset.text_content ?? ''
+    if (!text.trim()) {
+      event.preventDefault()
+      return
+    }
+    setAssetDrag(event.dataTransfer, {
+      assetId: asset.id,
+      src: '',
+      name: asset.name,
+      kind: 'text',
+      text,
+      source: asset.source,
+    })
+    return
+  }
+  if (!asset.content_url) {
     event.preventDefault()
     return
   }
@@ -84,7 +100,13 @@ export function AssetList({
     return (
       <div className="divide-y divide-border overflow-hidden rounded-xl border border-border bg-card">
         {assets.map((asset) => (
-          <article key={asset.id} className="flex items-start gap-2 px-3 py-3">
+          <article
+            key={asset.id}
+            draggable={Boolean(asset.text_content?.trim())}
+            title="可拖到右侧提示词输入框"
+            onDragStart={(event) => startAssetDrag(event, asset)}
+            className="flex cursor-grab items-start gap-2 px-3 py-3 active:cursor-grabbing"
+          >
             <div className="min-w-0 flex-1">
               <div className="flex flex-wrap items-center gap-1.5">
                 <h3 className="truncate text-sm font-medium">{asset.name}</h3>

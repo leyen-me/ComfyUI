@@ -13,6 +13,7 @@ import {
   type TaskInfo,
 } from '@/lib/api'
 import type { AssetDragPayload } from '@/lib/asset-drag'
+import { isValidDuration } from '@/lib/duration'
 import type { KeyframeSlot } from '@/lib/keyframes'
 import { buildPromptDoc, type RefAsset } from '@/lib/prompt'
 import { readClientName } from '@/lib/client-name'
@@ -39,6 +40,7 @@ import { emitAssetsChanged, REUSE_PROMPT, type ReusePromptDetail } from '@/lib/e
 import { cn } from '@/lib/utils'
 import { formatClock } from '@/lib/format'
 import { AssetPickerDialog } from './asset-picker-dialog'
+import { DurationSelect } from './duration-select'
 import { GenerationOptions } from './generation-options'
 import { KeyframeSlots } from './keyframe-slots'
 import { PromptInput, type PromptInputHandle } from './prompt-input'
@@ -48,6 +50,7 @@ import type { PromptValue } from './prompt-editor'
 import { ReferenceTray } from './reference-tray'
 import { VideoFrameDialog } from './video-frame-dialog'
 import { Button } from './ui/button'
+import { Select } from './ui/select'
 
 type Mode = 'image' | 'video'
 type VideoMode = 'keyframes' | 'reference'
@@ -58,7 +61,6 @@ type PickerState =
   | null
 
 const COUNTS = [1, 2, 3, 4]
-const DURATIONS = [5, 10]
 /** 与后端 generation.MAX_IMAGE_REFS 保持一致 */
 const MAX_IMAGE_REFS = 10
 const EMPTY_VALUE: PromptValue = { text: '', refs: [] }
@@ -233,7 +235,9 @@ export function GenerationPanel({ project, episodeCode }: GenerationPanelProps) 
         switchModeRef.current('video')
         switchVideoModeRef.current(targetVideoMode)
         if (detail.size === '16:9' || detail.size === '9:16') setVideoSize(detail.size)
-        if (detail.duration === 5 || detail.duration === 10) setDuration(detail.duration)
+        if (typeof detail.duration === 'number' && isValidDuration(detail.duration)) {
+          setDuration(detail.duration)
+        }
 
         if (targetVideoMode === 'reference') {
           const imageIds = detail.refIds ?? []
@@ -428,6 +432,10 @@ export function GenerationPanel({ project, episodeCode }: GenerationPanelProps) 
   }
 
   async function addReferenceAsset(asset: AssetDragPayload) {
+    if (asset.kind === 'text') {
+      setError('文本资产请拖到提示词输入框')
+      return
+    }
     if (asset.kind === 'image') {
       const result = addReference(
         referenceListsRef.current.images,
@@ -943,22 +951,22 @@ export function GenerationPanel({ project, episodeCode }: GenerationPanelProps) 
               />
 
               {mode === 'image' ? (
-                <CompactSelect
+                <Select
                   aria-label="生成数量"
                   value={String(count)}
-                  options={COUNTS.map((item) => ({ value: String(item), label: `${item} 张` }))}
+                  options={COUNTS.map((item) => ({
+                    value: String(item),
+                    label: `${item} 张`,
+                  }))}
                   disabled={hasRefs}
+                  width={140}
                   onChange={(next) => setCount(Number(next))}
                 />
               ) : (
-                <CompactSelect
-                  aria-label="视频时长"
-                  value={String(duration)}
-                  options={DURATIONS.map((item) => ({
-                    value: String(item),
-                    label: `${item} 秒`,
-                  }))}
-                  onChange={(next) => setDuration(Number(next))}
+                <DurationSelect
+                  value={duration}
+                  disabled={running}
+                  onChange={setDuration}
                 />
               )}
 
@@ -1150,28 +1158,3 @@ function VideoModeTab({
   )
 }
 
-function CompactSelect({
-  value,
-  options,
-  onChange,
-  ...props
-}: {
-  value: string
-  options: readonly { value: string; label: string }[]
-  onChange: (value: string) => void
-} & { 'aria-label': string; disabled?: boolean }) {
-  return (
-    <select
-      {...props}
-      value={value}
-      className="h-7 cursor-pointer rounded-lg border border-border bg-input px-2 text-xs text-foreground outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/25 disabled:cursor-not-allowed disabled:opacity-50"
-      onChange={(event) => onChange(event.target.value)}
-    >
-      {options.map((option) => (
-        <option key={option.value} value={option.value}>
-          {option.label}
-        </option>
-      ))}
-    </select>
-  )
-}

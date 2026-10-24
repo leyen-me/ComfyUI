@@ -61,15 +61,22 @@ export function Popover({
     function close() {
       onOpenChange(false)
     }
+    // scroll 事件不冒泡，但捕获阶段会经过 window；面板内部滚动容器的滚动不能关闭面板，
+    // 否则任务队列等长列表一滚就消失。仅忽略源自面板内部的滚动。
+    function onScroll(event: Event) {
+      const target = event.target
+      if (target instanceof Node && panelRef.current?.contains(target)) return
+      close()
+    }
 
     document.addEventListener('mousedown', onPointerDown)
     document.addEventListener('keydown', onKeyDown)
-    window.addEventListener('scroll', close, true)
+    window.addEventListener('scroll', onScroll, true)
     window.addEventListener('resize', close)
     return () => {
       document.removeEventListener('mousedown', onPointerDown)
       document.removeEventListener('keydown', onKeyDown)
-      window.removeEventListener('scroll', close, true)
+      window.removeEventListener('scroll', onScroll, true)
       window.removeEventListener('resize', close)
     }
   }, [open, onOpenChange, anchorRef])

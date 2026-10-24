@@ -143,11 +143,35 @@ class VideoWorkflowTest(unittest.TestCase):
         self.assertEqual(wf.prompt["7"]["inputs"]["length"], 243)
         self.assertEqual(wf.prompt["7"]["inputs"]["height"], 1344)
 
+    def test_custom_duration_snaps_to_frame_grid(self) -> None:
+        # 帧数必须落在 17k+5 网格，且不越出模型训练区间
+        for seconds, frames in {5: 124, 8: 192, 10: 243, 12: 294, 15: 362}.items():
+            wf = generation.video_workflow(prompt="x", size="16:9", duration=seconds)
+            self.assertEqual(wf.prompt["7"]["inputs"]["length"], frames)
+            self.assertEqual(frames % 17, 5)
+            self.assertGreaterEqual(frames, generation.VIDEO_MIN_FRAMES)
+            self.assertLessEqual(frames, generation.VIDEO_MAX_FRAMES)
+
+    def test_reference_mode_uses_same_duration_grid(self) -> None:
+        wf = generation.video_reference_workflow(
+            prompt="x", size="16:9", duration=14, refs=["a.png"]
+        )
+        length = wf.prompt["7"]["inputs"]["length"]
+        self.assertEqual(length, 345)
+        self.assertEqual(wf.meta["duration"], 14)
+
     def test_rejects_bad_input(self) -> None:
         with self.assertRaises(InvalidArgument):
             generation.video_workflow(prompt="x", size="1:1", duration=5)
+
+    def test_rejects_duration_out_of_range(self) -> None:
+        for seconds in (4, 16, 0, -5, 30):
+            with self.assertRaises(InvalidArgument):
+                generation.video_workflow(prompt="x", size="16:9", duration=seconds)
         with self.assertRaises(InvalidArgument):
-            generation.video_workflow(prompt="x", size="16:9", duration=7)
+            generation.video_reference_workflow(
+                prompt="x", size="16:9", duration=16, refs=["a.png"]
+            )
 
 
 if __name__ == "__main__":

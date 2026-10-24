@@ -336,7 +336,7 @@ const panel = {
     el.textContent?.includes('图片'),
   ),
   hasOptions: Boolean(optionsTrigger) && (optionsTrigger?.textContent ?? '').includes('·'),
-  hasCount: Boolean(document.querySelector('select[aria-label="生成数量"]')),
+  hasCount: Boolean(document.querySelector('[role="combobox"][aria-label="生成数量"]')),
 }
 
 // 提示词助手：默认收起，展开后应出现结构片段与快速插入
@@ -380,11 +380,39 @@ await wait(150)
   ?.click()
 await wait()
 const videoTrigger = document.querySelector('button[aria-label="尺寸与分辨率"]')?.textContent ?? ''
+const durationTrigger = () =>
+  document.querySelector('[role="combobox"][aria-label="视频时长"]')
 const videoMode = {
-  hasDuration: Boolean(document.querySelector('select[aria-label="视频时长"]')),
-  noCount: !document.querySelector('select[aria-label="生成数量"]'),
+  hasDuration: Boolean(durationTrigger()),
+  noCount: !document.querySelector('[role="combobox"][aria-label="生成数量"]'),
   noTier: !videoTrigger.includes('·'),
 }
+
+// 时长：默认 5 秒 → 选预设 8 秒 → 自定义 13 秒
+const durationDefault = (durationTrigger()?.textContent ?? '').includes('5 秒')
+durationTrigger()?.click()
+await wait(200)
+;[...document.querySelectorAll('[role="option"]')]
+  .find((el) => el.textContent?.includes('8 秒'))
+  ?.click()
+await wait(150)
+const durationPreset = (durationTrigger()?.textContent ?? '').includes('8 秒')
+durationTrigger()?.click()
+await wait(200)
+const durationHintShown = (document.querySelector('[role="listbox"]')?.parentElement?.textContent ?? '')
+  .includes('帧 · 实际')
+const durationCustomInput = document.querySelector('input[aria-label="自定义视频时长（秒）"]')
+if (durationCustomInput) {
+  const setValue = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set
+  setValue?.call(durationCustomInput, '13')
+  durationCustomInput.dispatchEvent(new window.Event('input', { bubbles: true }))
+}
+await wait(100)
+;[...document.querySelectorAll('button')]
+  .find((el) => el.textContent?.trim() === '应用')
+  ?.click()
+await wait(200)
+const durationCustom = (durationTrigger()?.textContent ?? '').includes('13 秒')
 
 // 首尾帧：两个独立槽位 + 视频方式切换；点击槽位可从资产库选图
 const keyframeSlots = document.querySelectorAll('[data-keyframe-slot]')
@@ -524,6 +552,37 @@ const mediaTagsInserted = (
   document.querySelector('[aria-label="提示词"]')?.textContent ?? ''
 ).includes('<Video 1>') &&
   (document.querySelector('[aria-label="提示词"]')?.textContent ?? '').includes('<Audio 2>')
+
+// 文本资产拖进提示词输入框：直接变成文字（视频模式下图片块被禁用，文本仍应可插入）
+function dropTextAsset(text) {
+  const dataTransfer = {
+    types: ['application/x-filmline-asset'],
+    getData: (type) =>
+      type === 'application/x-filmline-asset'
+        ? JSON.stringify({
+            assetId: 31,
+            src: '',
+            name: '第一章第一节',
+            kind: 'text',
+            text,
+            source: 'user',
+          })
+        : '',
+    dropEffect: 'copy',
+    effectAllowed: 'copy',
+  }
+  const event = new window.Event('drop', { bubbles: true, cancelable: true })
+  Object.defineProperty(event, 'dataTransfer', { value: dataTransfer })
+  Object.defineProperty(event, 'clientX', { value: 12 })
+  Object.defineProperty(event, 'clientY', { value: 12 })
+  document.querySelector('[aria-label="提示词"]')?.dispatchEvent(event)
+}
+
+dropTextAsset('第一章正文：风起长安，灯影摇红。\n第二段：更鼓三声。')
+await wait(250)
+const droppedPromptText = document.querySelector('[aria-label="提示词"]')?.textContent ?? ''
+const textAssetDropped =
+  droppedPromptText.includes('风起长安') && droppedPromptText.includes('更鼓三声')
 
 ;[...document.querySelectorAll('button')]
   .find((el) => el.textContent?.trim() === '首尾帧')
@@ -667,6 +726,14 @@ const taskQueueVisible =
   queueText.includes('运行中') &&
   queueText.includes('已完成') &&
   queueText.includes('冒烟测试项目')
+// 面板内部滚动不能关闭面板（scroll 事件不冒泡，但捕获阶段会经过 window）
+document
+  .querySelector('[role="dialog"] [data-scroll-region]')
+  ?.dispatchEvent(new window.Event('scroll'))
+await wait(150)
+const queueSurvivesInnerScroll = Boolean(
+  document.querySelector('[role="dialog"] [data-scroll-region]'),
+)
 document.querySelector('button[aria-label="取消任务 100"]')?.click()
 await wait(250)
 const cancelUpdated = (
@@ -693,6 +760,10 @@ const checks = [
   ['只提供 1K/2K（无 4K）', optionsText.includes('1K') && optionsText.includes('2K') && !has4k],
   ['选择 2K 后按钮同步显示', triggerAfterTier.includes('2K')],
   ['视频有尺寸与时长', videoMode.hasDuration && videoMode.noCount],
+  ['时长默认 5 秒', durationDefault],
+  ['时长可选预设 8 秒', durationPreset],
+  ['时长面板显示帧数与实际时长', durationHintShown],
+  ['时长可自定义 13 秒', durationCustom],
   ['视频不展示分辨率档位', videoMode.noTier && !videoOptionsText.includes('分辨率')],
   ['视频有首尾帧两个槽位', keyframeSlots.length === 2 && hasVideoModeTabs],
   ['首帧槽位可打开资产选择器', pickerOpened],
@@ -707,6 +778,7 @@ const checks = [
   ['参考音频可拖入托盘', audioRefAdded],
   ['视频原声默认占用音轨', soundtrackDefault],
   ['视频/音频引用可插入提示词', mediaTagsInserted],
+  ['文本资产拖入输入框变成文字', textAssetDropped],
   ['切回首尾帧再切回参考模式保留素材', keyframeSlotsAgain === 2 && referencePersisted],
   ['切回图片模式隐藏首尾帧槽位', keyframeSlotsAfterImage === 0],
   ['切回图片模式隐藏参考托盘', !referenceTrayAfterImage],
@@ -727,6 +799,7 @@ const checks = [
   ['视频卡片下半部分可打开预览', videoPreviewOpened],
   ['右上角任务队列显示进行中/完成', taskQueueVisible],
   ['任务队列可取消进行中任务', cancelUpdated],
+  ['任务队列内部滚动不关闭面板', queueSurvivesInnerScroll],
   ['无控制台错误', errors.length === 0],
 ]
 

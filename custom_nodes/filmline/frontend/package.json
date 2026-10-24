@@ -9,7 +9,7 @@
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
     "smoke": "node scripts/render-smoke.mjs",
-    "test:logic": "node --experimental-strip-types scripts/pagination.test.mjs && node --experimental-strip-types scripts/prompt.test.mjs && node --experimental-strip-types scripts/format.test.mjs && node --experimental-strip-types scripts/keyframes.test.mjs && node --experimental-strip-types scripts/references.test.mjs && node --experimental-strip-types scripts/prompt-assistant.test.mjs"
+    "test:logic": "node --experimental-strip-types scripts/pagination.test.mjs && node --experimental-strip-types scripts/prompt.test.mjs && node --experimental-strip-types scripts/format.test.mjs && node --experimental-strip-types scripts/keyframes.test.mjs && node --experimental-strip-types scripts/references.test.mjs && node --experimental-strip-types scripts/prompt-assistant.test.mjs && node --experimental-strip-types scripts/asset-drag.test.mjs && node --experimental-strip-types scripts/duration.test.mjs"
   },
   "dependencies": {
     "@tiptap/extension-placeholder": "^3.32.0",

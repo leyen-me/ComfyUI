@@ -1,6 +1,11 @@
 """DeepSeek 提示词优化：后端代理，API Key 只从环境变量读取。
 
 LLM 只负责改提示词，不参与素材路由、标签编号、工作流选择或参数校验。
+
+响应格式的健壮性由三层保证：
+1. ``response_format=json_object`` + 明确的字符预算，降低跑题和超长；
+2. 余额足够的 ``max_tokens``（推理模型的思考 token 也算在内），避免 JSON 被截断；
+3. 截断 / 非法 JSON 时自动重试一次，超长时自动压缩一次。
 """
 
 from __future__ import annotations
@@ -13,8 +18,22 @@ import os
 import aiohttp
 
 from .errors import ServiceUnavailable
+from .limits import PROMPT_MAX_CHARS
 
 _LOG = logging.getLogger("filmline")
+
+# 给模型的目标长度留出余量，避免刚好越过硬上限
+_PROMPT_TARGET_CHARS = PROMPT_MAX_CHARS - 400
+
+_DEFAULT_MAX_TOKENS = 4096
+_MAX_TOKENS_CEILING = 8192
+
+# 重试时追加到系统提示末尾：不重复整段原文，成本可控
+_RETRY_NOTE = (
+    "\n\nImportant: the previous reply was unusable (truncated or not valid JSON). "
+    "Reply with exactly one JSON object and nothing else, without prose or markdown fences. "
+    f"Keep `enhanced_prompt` under {_PROMPT_TARGET_CHARS} characters."
+)
 
 SYSTEM_PROMPT = """You are a prompt editor for MiniMax H3 video generation.
 
@@ -28,7 +47,8 @@ Rules:
 - Output ONLY a JSON object with this exact shape:
   {"enhanced_prompt": "...", "warnings": ["..."], "notes": "..."}
 - `enhanced_prompt` must be the final prompt text, not an explanation.
-- Keep it under 3500 characters.
+- `enhanced_prompt` must be at most {budget} characters. This is a hard limit: longer output is rejected by the application. If the draft is longer than the budget, compress it: keep subjects, actions, dialogue, camera and audio decisions, and drop repetition and verbose adjectives.
+- `warnings` must contain at most 6 short items.
 - Use speaker IDs like (S1), (S2). Make it explicit who speaks and who stays silent.
 - Only assign a speaker ID to a subject who actually vocalizes. Do not give a speaker ID to a silent listener.
 - Silent subjects must never receive a speaker ID, even in descriptions or warnings. Write "the eagle stays silent" without (S2).
@@ -58,6 +78,26 @@ Rules:
   Do not invent a different setting or move a subject off-frame. If the intended speaker's mouth is not visible or open in the first frame, add a warning.
 """
 
+_SHORTEN_PROMPT = """You are a prompt compressor for MiniMax H3 video generation.
+
+The user gives you a finished prompt. Compress it without losing production decisions.
+
+Rules:
+- Output ONLY a JSON object: {"enhanced_prompt": "..."}
+- Keep every subject, speaker ID, dialogue line, camera instruction and audio decision.
+- Drop repetition, duplicated warnings and verbose adjectives. Do not add new content.
+- `enhanced_prompt` must be at most {budget} characters and must stay in English
+  (dialogue keeps its original language).
+"""
+
+
+class _UnusableResponse(ServiceUnavailable):
+    """响应不可用（截断 / 非法 JSON）：可安全地重试一次。"""
+
+    def __init__(self, reason: str, message: str) -> None:
+        super().__init__(message)
+        self.reason = reason
+
 
 def configured() -> bool:
     return bool(os.environ.get("DEEPSEEK_API_KEY", "").strip())
@@ -76,33 +116,79 @@ def _config() -> tuple[str, str, str, float]:
     return key, base, model, max(5.0, min(120.0, timeout))
 
 
-def _extract_json(content: str) -> dict:
-    text = content.strip()
-    if text.startswith("```"):
-        lines = text.splitlines()
-        if lines and lines[0].startswith("```"):
-            lines = lines[1:]
-        if lines and lines[-1].strip() == "```":
-            lines = lines[:-1]
-        text = "\n".join(lines).strip()
-    start = text.find("{")
-    end = text.rfind("}")
-    if start < 0 or end <= start:
-        raise ServiceUnavailable("AI 返回内容不是合法 JSON")
+def max_tokens() -> int:
+    """输出预算：推理模型的思考 token 也占用该额度，预留给完整 JSON。"""
+    raw = os.environ.get("DEEPSEEK_MAX_TOKENS", "").strip()
+    if not raw:
+        return _DEFAULT_MAX_TOKENS
     try:
-        value = json.loads(text[start : end + 1])
+        value = int(raw)
+    except ValueError:
+        return _DEFAULT_MAX_TOKENS
+    return max(1024, min(_MAX_TOKENS_CEILING, value))
+
+
+def _system_prompt(budget: int = _PROMPT_TARGET_CHARS) -> str:
+    return SYSTEM_PROMPT.replace("{budget}", str(budget))
+
+
+def _extract_json(content: str) -> dict:
+    """从响应里取出第一个完整的 JSON 对象。
+
+    模型可能加代码围栏、前后废话，或（截断时）只输出半个对象；
+    这里按花括号配对扫描，避免 ``rfind('}')`` 把多余文本一起吃进来。
+    """
+    text = content.strip().lstrip("\ufeff")
+    start = text.find("{")
+    if start < 0:
+        raise _UnusableResponse("no-json", "AI 返回内容不是合法 JSON")
+    candidate = _balanced_object(text, start)
+    if candidate is None:
+        raise _UnusableResponse("incomplete-json", "AI 返回的 JSON 不完整，请重试")
+    try:
+        # strict=False：允许字符串里出现裸换行等控制字符
+        value = json.loads(candidate, strict=False)
     except json.JSONDecodeError as exc:
-        raise ServiceUnavailable("AI 返回内容不是合法 JSON") from exc
+        raise _UnusableResponse("invalid-json", "AI 返回内容不是合法 JSON") from exc
     if not isinstance(value, dict):
-        raise ServiceUnavailable("AI 返回内容不是 JSON 对象")
+        raise _UnusableResponse("not-object", "AI 返回内容不是 JSON 对象")
     return value
 
 
-async def optimize_prompt(payload: dict, images: list[dict] | None = None) -> dict:
+def _balanced_object(text: str, start: int) -> str | None:
+    depth = 0
+    in_string = False
+    escaped = False
+    for index in range(start, len(text)):
+        char = text[index]
+        if in_string:
+            if escaped:
+                escaped = False
+            elif char == "\\":
+                escaped = True
+            elif char == '"':
+                in_string = False
+            continue
+        if char == '"':
+            in_string = True
+        elif char == "{":
+            depth += 1
+        elif char == "}":
+            depth -= 1
+            if depth == 0:
+                return text[start : index + 1]
+    return None
+
+
+async def _chat(
+    system: str,
+    payload: dict,
+    images: list[dict],
+    budget: int,
+) -> tuple[str, str | None]:
+    """调用 DeepSeek，返回 (content, finish_reason)。HTTP/网络错误直接抛出。"""
     key, base, model, timeout = _config()
-    images = images or []
-    user_text = json.dumps(payload, ensure_ascii=False)
-    content: list[dict] = [{"type": "text", "text": user_text}]
+    content: list[dict] = [{"type": "text", "text": json.dumps(payload, ensure_ascii=False)}]
     for image in images:
         content.append(
             {
@@ -113,11 +199,11 @@ async def optimize_prompt(payload: dict, images: list[dict] | None = None) -> di
     body = {
         "model": model,
         "messages": [
-            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "system", "content": system},
             {"role": "user", "content": content},
         ],
         "temperature": 0.3,
-        "max_tokens": 2500,
+        "max_tokens": budget,
         "response_format": {"type": "json_object"},
     }
     headers = {
@@ -150,20 +236,79 @@ async def optimize_prompt(payload: dict, images: list[dict] | None = None) -> di
 
     try:
         data = json.loads(raw)
-        content = data["choices"][0]["message"]["content"]
-        parsed = _extract_json(str(content))
-    except ServiceUnavailable:
-        raise
+        choice = data["choices"][0]
+        message = choice.get("message") or {}
+        reply = message.get("content")
+        # 少数兼容实现会返回内容分片
+        if isinstance(reply, list):
+            reply = "".join(
+                str(part.get("text", "")) for part in reply if isinstance(part, dict)
+            )
+        finish = choice.get("finish_reason")
     except Exception as exc:
         _LOG.warning("解析 DeepSeek 响应失败", exc_info=True)
         raise ServiceUnavailable("AI 返回格式异常") from exc
+    return str(reply or ""), str(finish) if finish else None
+
+
+async def _ask(payload: dict, images: list[dict]) -> dict:
+    """请求并解析；截断或 JSON 不可用时重试一次。"""
+    budget = max_tokens()
+    system = _system_prompt()
+    try:
+        return await _ask_once(system, payload, images, budget)
+    except _UnusableResponse as exc:
+        _LOG.info("DeepSeek 输出不可用（%s），重试一次", exc.reason)
+    # 截断多半是思考 token 吃掉了预算：重试时给到两倍（受天花板限制）
+    retry_budget = min(_MAX_TOKENS_CEILING, budget * 2)
+    return await _ask_once(system + _RETRY_NOTE, payload, images, retry_budget)
+
+
+async def _ask_once(
+    system: str,
+    payload: dict,
+    images: list[dict],
+    budget: int,
+) -> dict:
+    content, finish = await _chat(system, payload, images, budget)
+    _LOG.info("DeepSeek 响应: finish=%s 字符数=%d", finish, len(content))
+    if finish == "length":
+        raise _UnusableResponse("truncated", "AI 输出被截断，请稍后重试")
+    return _extract_json(content)
+
+
+async def _shorten(prompt: str, budget: int = _PROMPT_TARGET_CHARS) -> str:
+    """超长时压缩一次；仍然超长则交给调用方报错。"""
+    system = _SHORTEN_PROMPT.replace("{budget}", str(budget))
+    payload = {"enhanced_prompt": prompt, "max_characters": budget}
+    content, finish = await _chat(system, payload, [], max_tokens())
+    _LOG.info("DeepSeek 压缩: finish=%s 字符数=%d", finish, len(content))
+    if finish == "length":
+        raise ServiceUnavailable("AI 压缩时输出被截断，请稍后重试")
+    parsed = _extract_json(content)
+    shortened = parsed.get("enhanced_prompt")
+    if not isinstance(shortened, str) or not shortened.strip():
+        raise ServiceUnavailable("AI 没有返回有效的提示词")
+    return shortened.strip()
+
+
+async def optimize_prompt(payload: dict, images: list[dict] | None = None) -> dict:
+    images = images or []
+    _, _, model, _ = _config()
+    parsed = await _ask(payload, images)
 
     enhanced = parsed.get("enhanced_prompt")
     if not isinstance(enhanced, str) or not enhanced.strip():
         raise ServiceUnavailable("AI 没有返回有效的提示词")
     enhanced = enhanced.strip()
-    if len(enhanced) > 4000:
-        raise ServiceUnavailable("AI 结果超过 4000 字符，请缩短原文后重试")
+
+    if len(enhanced) > PROMPT_MAX_CHARS:
+        _LOG.info("AI 结果 %d 字符，超过上限，自动压缩", len(enhanced))
+        enhanced = await _shorten(enhanced)
+        if len(enhanced) > PROMPT_MAX_CHARS:
+            raise ServiceUnavailable(
+                f"AI 结果超过 {PROMPT_MAX_CHARS} 字符，请精简原文后重试"
+            )
 
     warnings = parsed.get("warnings")
     if not isinstance(warnings, list):
@@ -171,7 +316,7 @@ async def optimize_prompt(payload: dict, images: list[dict] | None = None) -> di
     notes = parsed.get("notes")
     return {
         "enhanced_prompt": enhanced,
-        "warnings": [str(item)[:300] for item in warnings if str(item).strip()],
+        "warnings": [str(item)[:300] for item in warnings[:12] if str(item).strip()],
         "notes": str(notes)[:500] if isinstance(notes, str) else "",
         "model": model,
     }

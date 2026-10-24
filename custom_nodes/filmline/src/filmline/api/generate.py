@@ -19,6 +19,7 @@ from ..domain.episodes import EpisodeService
 from ..domain.projects import ProjectService
 from ..domain.tasks import TaskService
 from ..errors import InvalidArgument
+from ..limits import PROMPT_MAX_CHARS
 from ..runner import RUNNER_KEY
 from .http import handle_errors, ok, read_object
 
@@ -88,8 +89,8 @@ def register_generate_routes(routes: web.RouteTableDef) -> None:
 
         if kind not in ("image", "video"):
             raise InvalidArgument("kind 只支持 image / video")
-        if len(prompt) > 4000:
-            raise InvalidArgument("提示词最长 4000 字符")
+        if len(prompt) > PROMPT_MAX_CHARS:
+            raise InvalidArgument(f"提示词最长 {PROMPT_MAX_CHARS} 字符")
 
         project = await asyncio.to_thread(ProjectService().get, request.match_info["ref"])
         episode_id, scope = await asyncio.to_thread(_episode_scope, request, project.id)
@@ -143,8 +144,15 @@ def register_generate_routes(routes: web.RouteTableDef) -> None:
                     f"视频分辨率只支持: {' / '.join(generation.VIDEO_TIERS)}"
                 )
             duration = payload.get("duration", 5)
-            if not isinstance(duration, int):
+            if isinstance(duration, bool) or not isinstance(duration, int):
                 raise InvalidArgument("duration 必须是整数")
+            if not (
+                generation.VIDEO_MIN_SECONDS <= duration <= generation.VIDEO_MAX_SECONDS
+            ):
+                raise InvalidArgument(
+                    f"视频时长只支持 {generation.VIDEO_MIN_SECONDS}–"
+                    f"{generation.VIDEO_MAX_SECONDS} 秒"
+                )
 
             if mode == "keyframes":
                 if payload.get("ref_videos") or payload.get("ref_audios"):
