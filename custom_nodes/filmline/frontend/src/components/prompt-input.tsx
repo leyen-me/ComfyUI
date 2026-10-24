@@ -17,6 +17,8 @@ export interface PromptInputHandle {
   getDoc: () => unknown
   /** 在光标处插入纯文本（参考图编号等） */
   insertText: (text: string) => void
+  /** 在光标处插入多行模板（按段落拆分，保留换行） */
+  insertTemplate: (text: string) => void
 }
 
 interface PromptInputProps {
@@ -170,6 +172,16 @@ export function PromptInput({
           if (!editor) return
           // 用文本节点插入，避免 <Picture 1> 被当成 HTML 解析
           editor.chain().focus().insertContent({ type: 'text', text }).run()
+          changeRef.current(serializePrompt(editor.state.doc))
+        },
+        insertTemplate: (text) => {
+          if (!editor) return
+          const blocks = text.split('\n').map((line) =>
+            line
+              ? { type: 'paragraph', content: [{ type: 'text', text: line }] }
+              : { type: 'paragraph' },
+          )
+          editor.chain().focus().insertContent(blocks).run()
           changeRef.current(serializePrompt(editor.state.doc))
         },
       }

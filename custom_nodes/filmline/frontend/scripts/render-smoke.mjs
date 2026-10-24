@@ -205,6 +205,8 @@ const doneTask = {
   queue_position: null,
 }
 
+let queueTask = { ...runningTask }
+
 globalThis.fetch = async (input, init = {}) => {
   const path = new URL(String(input), 'http://127.0.0.1:8188').pathname
   const method = (init.method ?? 'GET').toUpperCase()
@@ -213,16 +215,20 @@ globalThis.fetch = async (input, init = {}) => {
   if (path.endsWith('/health')) {
     data = { version: '0.1.0', db: ':memory:', schema_version: 4, projects: 1 }
   } else if (path.endsWith('/tasks')) {
-    data = { items: [{ ...runningTask }, { ...doneTask }], active: 1 }
-  } else if (/\/tasks\/\d+\/cancel$/.test(path) && method === 'POST') {
     data = {
-      ...runningTask,
+      items: [{ ...queueTask }, { ...doneTask }],
+      active: queueTask.status === 'running' ? 1 : 0,
+    }
+  } else if (/\/tasks\/\d+\/cancel$/.test(path) && method === 'POST') {
+    queueTask = {
+      ...queueTask,
       status: 'cancelled',
       finished_at: '2026-10-24T07:00:10.000Z',
       queue_position: null,
     }
+    data = { ...queueTask }
   } else if (/\/tasks\/\d+$/.test(path)) {
-    data = { ...runningTask }
+    data = { ...queueTask }
   } else if (path.endsWith('/assets/counts')) {
     data = { text: 1, image: 0, video: 0, audio: 0 }
   } else if (path.endsWith('/episodes')) {
@@ -324,6 +330,25 @@ const panel = {
   hasOptions: Boolean(optionsTrigger) && (optionsTrigger?.textContent ?? '').includes('·'),
   hasCount: Boolean(document.querySelector('select[aria-label="生成数量"]')),
 }
+
+// 提示词助手：默认收起，展开后应出现结构片段与快速插入
+;[...document.querySelectorAll('button')]
+  .find((el) => el.textContent?.trim() === '提示词助手')
+  ?.click()
+await wait(200)
+const assistantText =
+  document.querySelector('[aria-label="提示词结构助手"]')?.textContent ?? ''
+const assistantShown =
+  assistantText.includes('结构片段') && assistantText.includes('快速插入')
+;[...document.querySelectorAll('button')]
+  .find((el) => el.textContent?.trim() === '插入完整模板')
+  ?.click()
+await wait(200)
+const assistantTemplateInserted = (
+  document.querySelector('[aria-label="提示词"]')?.textContent ?? ''
+).includes('主体：')
+document.querySelector('button[aria-label="收起提示词助手"]')?.click()
+await wait(150)
 
 // 打开尺寸面板：应同时有「比例」「分辨率」两组，且不含 4K
 optionsTrigger?.click()
@@ -627,6 +652,8 @@ const checks = [
   ['项目页有资产导航', ['文本', '图片', '视频', '音频'].every((label) => detailText.includes(label))],
   ['项目页有文本资产', detailText.includes('第一幕')],
   ['生成面板有提示词输入', panel.hasPrompt],
+  ['提示词助手可展开', assistantShown],
+  ['提示词助手可插入模板', assistantTemplateInserted],
   ['默认图片模式', panel.imageDefault],
   ['尺寸选择是一个组合按钮', panel.hasOptions && panel.hasCount],
   ['面板含比例与分辨率两组', optionsText.includes('比例') && optionsText.includes('分辨率')],

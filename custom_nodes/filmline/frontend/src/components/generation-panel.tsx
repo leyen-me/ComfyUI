@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Image as ImageIcon, Loader2, Sparkles, Video } from 'lucide-react'
+import { Image as ImageIcon, ListTree, Loader2, Sparkles, Video } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 
 import { ApiError, api, type Asset, type Project, type TaskInfo } from '@/lib/api'
@@ -7,6 +7,7 @@ import type { AssetDragPayload } from '@/lib/asset-drag'
 import type { KeyframeSlot } from '@/lib/keyframes'
 import { buildPromptDoc, type RefAsset } from '@/lib/prompt'
 import { readClientName } from '@/lib/client-name'
+import { lintPrompt } from '@/lib/prompt-assistant'
 import {
   EMPTY_REFERENCES,
   MAX_REFERENCE_AUDIOS,
@@ -30,6 +31,7 @@ import { AssetPickerDialog } from './asset-picker-dialog'
 import { GenerationOptions } from './generation-options'
 import { KeyframeSlots } from './keyframe-slots'
 import { PromptInput, type PromptInputHandle } from './prompt-input'
+import { PromptAssistant } from './prompt-assistant'
 import type { PromptValue } from './prompt-editor'
 import { ReferenceTray } from './reference-tray'
 import { VideoFrameDialog } from './video-frame-dialog'
@@ -74,6 +76,7 @@ export function GenerationPanel({ project, episodeCode }: GenerationPanelProps) 
   const referenceListsRef = useRef<ReferenceLists>(EMPTY_REFERENCES)
   referenceListsRef.current = referenceLists
   const [picker, setPicker] = useState<PickerState>(null)
+  const [assistantOpen, setAssistantOpen] = useState(false)
   const [videoFrame, setVideoFrame] = useState<{
     slot: KeyframeSlot
     video: AssetDragPayload
@@ -135,6 +138,22 @@ export function GenerationPanel({ project, episodeCode }: GenerationPanelProps) 
   )
   const pickerTitle =
     pickerKind === 'image' ? '添加参考图片' : pickerKind === 'video' ? '添加参考视频' : '添加参考音频'
+  const assistantMode = mode === 'image' ? 'image' : 'video'
+  const assistantCounts = {
+    images: referenceLists.images.length,
+    videos: referenceLists.videos.length,
+    audios: referenceLists.audios.length,
+  }
+  const assistantKeyframes = {
+    first: Boolean(keyframes.first),
+    last: Boolean(keyframes.last),
+  }
+  const assistantWarnings = lintPrompt({
+    mode: assistantMode,
+    videoMode,
+    prompt: value.text,
+    counts: assistantCounts,
+  })
 
   useEffect(() => {
     return () => {
@@ -725,27 +744,60 @@ export function GenerationPanel({ project, episodeCode }: GenerationPanelProps) 
               />
             ) : null}
 
-            <PromptInput
-              ref={editorRef}
-              disabled={running}
-              maxRefs={maxRefs}
-              allowAssetDrop={mode === 'image'}
-              assetDropHint={
-                videoMode === 'reference'
-                  ? '素材请拖到上方的参考素材区'
-                  : '图片或视频请拖到上方的首帧或尾帧槽位'
-              }
-              placeholder={
-                mode === 'image'
-                  ? '描述画面，可把左侧图片拖进来'
-                  : videoMode === 'keyframes'
-                    ? '描述镜头、运镜与声音（对白 / 音效 / 配乐）；首尾帧可选'
-                    : '描述画面与参考素材用途；可插入 <Picture N> / <Video N> / <Audio N>'
-              }
-              onChange={setValue}
-              onSubmit={() => void handleSubmit()}
-              onReject={setError}
-            />
+            <div className="flex items-center justify-end px-1 pb-1">
+              <button
+                type="button"
+                aria-pressed={assistantOpen}
+                className="flex cursor-pointer items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/60 focus-visible:outline-none"
+                onClick={() => setAssistantOpen((value) => !value)}
+              >
+                <ListTree className="size-3" />
+                {assistantOpen ? '收起助手' : '提示词助手'}
+                {!assistantOpen && assistantWarnings.length > 0 ? (
+                  <span className="size-1.5 rounded-full bg-amber-500" title="提示词有格式建议" />
+                ) : null}
+              </button>
+            </div>
+
+            <div className="flex flex-col gap-2 lg:flex-row lg:items-stretch">
+              <div className="min-w-0 flex-1">
+                <PromptInput
+                  ref={editorRef}
+                  disabled={running}
+                  maxRefs={maxRefs}
+                  allowAssetDrop={mode === 'image'}
+                  assetDropHint={
+                    videoMode === 'reference'
+                      ? '素材请拖到上方的参考素材区'
+                      : '图片或视频请拖到上方的首帧或尾帧槽位'
+                  }
+                  placeholder={
+                    mode === 'image'
+                      ? '描述画面，可把左侧图片拖进来'
+                      : videoMode === 'keyframes'
+                        ? '描述镜头、运镜与声音（对白 / 音效 / 配乐）；首尾帧可选'
+                        : '描述画面与参考素材用途；可插入 <Picture N> / <Video N> / <Audio N>'
+                  }
+                  onChange={setValue}
+                  onSubmit={() => void handleSubmit()}
+                  onReject={setError}
+                />
+              </div>
+
+              {assistantOpen ? (
+                <PromptAssistant
+                  mode={assistantMode}
+                  videoMode={videoMode}
+                  keyframes={assistantKeyframes}
+                  counts={assistantCounts}
+                  prompt={value.text}
+                  disabled={running}
+                  onInsert={(text) => editorRef.current?.insertText(text)}
+                  onInsertTemplate={(text) => editorRef.current?.insertTemplate(text)}
+                  onClose={() => setAssistantOpen(false)}
+                />
+              ) : null}
+            </div>
 
             <div className="flex flex-wrap items-center gap-1.5 px-1 pt-1">
               <div
