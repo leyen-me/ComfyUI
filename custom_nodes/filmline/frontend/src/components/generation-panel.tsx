@@ -32,7 +32,6 @@ export function GenerationPanel({ project, episodeCode }: GenerationPanelProps) 
   const [value, setValue] = useState<PromptValue>(EMPTY_VALUE)
   const [imageSize, setImageSize] = useState<string>('16:9')
   const [imageTier, setImageTier] = useState<string>('1k')
-  const [videoTier, setVideoTier] = useState<string>('768')
   const [videoSize, setVideoSize] = useState<string>('16:9')
   const [count, setCount] = useState(1)
   const [duration, setDuration] = useState(5)
@@ -57,7 +56,6 @@ export function GenerationPanel({ project, episodeCode }: GenerationPanelProps) 
       if (detail.kind === 'video') {
         setMode('video')
         if (detail.size === '16:9' || detail.size === '9:16') setVideoSize(detail.size)
-        if (detail.tier === '512' || detail.tier === '768') setVideoTier(detail.tier)
         if (detail.duration === 5 || detail.duration === 10) setDuration(detail.duration)
       } else {
         setMode('image')
@@ -118,7 +116,6 @@ export function GenerationPanel({ project, episodeCode }: GenerationPanelProps) 
               kind: 'video',
               prompt: current.text,
               size: videoSize,
-              resolution: videoTier,
               duration,
               refs: current.refs,
             },
@@ -186,11 +183,11 @@ export function GenerationPanel({ project, episodeCode }: GenerationPanelProps) 
               <GenerationOptions
                 mode={mode}
                 size={mode === 'image' ? imageSize : videoSize}
-                tier={mode === 'image' ? imageTier : videoTier}
+                tier={mode === 'image' ? imageTier : '768'}
                 onSizeChange={(next) =>
                   mode === 'image' ? setImageSize(next) : setVideoSize(next)
                 }
-                onTierChange={mode === 'image' ? setImageTier : setVideoTier}
+                onTierChange={setImageTier}
               />
 
               {mode === 'image' ? (

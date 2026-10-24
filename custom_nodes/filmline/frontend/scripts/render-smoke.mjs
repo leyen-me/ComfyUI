@@ -304,7 +304,7 @@ const videoTrigger = document.querySelector('button[aria-label="尺寸与分辨�
 const videoMode = {
   hasDuration: Boolean(document.querySelector('select[aria-label="视频时长"]')),
   noCount: !document.querySelector('select[aria-label="生成数量"]'),
-  hasTier: videoTrigger.includes('768'),
+  noTier: !videoTrigger.includes('·'),
 }
 
 // 视频面板里应当有 512 预览 / 768 原生 两档
@@ -445,8 +445,7 @@ const checks = [
   ['只提供 1K/2K（无 4K）', optionsText.includes('1K') && optionsText.includes('2K') && !has4k],
   ['选择 2K 后按钮同步显示', triggerAfterTier.includes('2K')],
   ['视频有尺寸与时长', videoMode.hasDuration && videoMode.noCount],
-  ['视频默认 768 原生', videoMode.hasTier],
-  ['视频提供 512 预览/768 原生', videoOptionsText.includes('512') && videoOptionsText.includes('768')],
+  ['视频不展示分辨率档位', videoMode.noTier && !videoOptionsText.includes('分辨率')],
   ['项目资产页仅「资产」高亮', activeNavOnProject.length === 1 && activeNavOnProject[0] === '资产'],
   ['分集页仅当前集高亮', activeNavOnEpisode.length === 1 && activeNavOnEpisode[0].includes('EP01')],
   ['分集创建后出现在导航', afterEpisodeCreate.includes('EP01')],

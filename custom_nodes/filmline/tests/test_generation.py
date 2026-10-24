@@ -72,28 +72,24 @@ class VideoWorkflowTest(unittest.TestCase):
         self.assertEqual(graph["9"]["inputs"]["negative"], ["8", 0])
         self.assertEqual(graph["13"]["class_type"], "SaveVideo")
 
-    def test_video_tiers(self) -> None:
-        preview = generation.video_workflow(prompt="x", size="16:9", duration=5, tier="512", seed=1)
-        native = generation.video_workflow(prompt="x", size="16:9", duration=5, tier="768", seed=1)
-        self.assertEqual(
-            (preview.prompt["7"]["inputs"]["width"], preview.prompt["7"]["inputs"]["height"]),
-            (896, 512),
-        )
+    def test_video_native_tier_only(self) -> None:
+        native = generation.video_workflow(prompt="x", size="16:9", duration=5, seed=1)
         self.assertEqual(
             (native.prompt["7"]["inputs"]["width"], native.prompt["7"]["inputs"]["height"]),
             (1344, 768),
         )
-        self.assertEqual(preview.meta["tier"], "512")
-        # 首帧也要缩放到所选档位对应的尺寸
+        self.assertEqual(native.meta["tier"], "768")
+        # 首帧与画布同尺寸
         withref = generation.video_workflow(
-            prompt="x", size="9:16", duration=5, tier="512", refs=["a.png"]
+            prompt="x", size="9:16", duration=5, refs=["a.png"]
         )
-        self.assertEqual(withref.prompt["15"]["inputs"]["width"], 512)
-        self.assertEqual(withref.prompt["15"]["inputs"]["height"], 896)
+        self.assertEqual(withref.prompt["15"]["inputs"]["width"], 768)
+        self.assertEqual(withref.prompt["15"]["inputs"]["height"], 1344)
 
-    def test_rejects_bad_video_tier(self) -> None:
-        with self.assertRaises(InvalidArgument):
-            generation.video_workflow(prompt="x", size="16:9", duration=5, tier="2k")
+    def test_rejects_non_native_video_tier(self) -> None:
+        for bad in ("512", "2k"):
+            with self.assertRaises(InvalidArgument):
+                generation.video_workflow(prompt="x", size="16:9", duration=5, tier=bad)
 
     def test_ten_seconds(self) -> None:
         wf = generation.video_workflow(prompt="x", size="9:16", duration=10)
