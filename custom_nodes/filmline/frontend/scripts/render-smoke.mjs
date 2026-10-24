@@ -97,6 +97,22 @@ const project = {
 
 const episodes = []
 
+const aiImage = {
+  id: 10,
+  project_id: 1,
+  episode_id: null,
+  kind: 'image',
+  source: 'ai',
+  name: 'project_00001_.png',
+  text_content: null,
+  mime_type: 'image/png',
+  size_bytes: 123456,
+  content_url: '/studio/api/assets/10/content',
+  meta: { prompt: '雪夜长安街，红灯笼', size: '16:9', width: 1344, height: 768, seed: 42, steps: 20 },
+  created_at: '2026-10-24T07:00:00.000Z',
+  updated_at: '2026-10-24T07:00:00.000Z',
+}
+
 const asset = {
   id: 9,
   project_id: 1,
@@ -139,7 +155,8 @@ globalThis.fetch = async (input, init = {}) => {
       data = { items: episodes, total: episodes.length }
     }
   } else if (path.endsWith('/assets')) {
-    data = { items: [{ ...asset }], total: 1 }
+    const kind = new URL(String(input), 'http://127.0.0.1:8188').searchParams.get('kind')
+    data = kind === 'image' ? { items: [{ ...aiImage }], total: 1 } : { items: [{ ...asset }], total: 1 }
   } else if (/^\/studio\/api\/assets\/\d+$/.test(path)) {
     if (method === 'PATCH') Object.assign(asset, JSON.parse(init.body))
     data = { ...asset }
@@ -280,6 +297,24 @@ if (assetName) {
 }
 const afterAssetEdit = rootText()
 
+// —— 图片资产：提示词可见、点图预览、复用回填 ——
+window.history.pushState({}, '', '/studio/projects/PRJ-0001/assets/image')
+window.dispatchEvent(new window.PopStateEvent('popstate'))
+await wait(400)
+const imageTabText = rootText()
+
+document.querySelector('button[aria-label="预览 project_00001_.png"]')?.click()
+await wait(200)
+const previewDialog = document.querySelector('dialog[open]')
+const previewText = previewDialog?.textContent ?? ''
+
+;[...document.querySelectorAll('dialog[open] button')]
+  .find((el) => el.textContent?.includes('用此提示词生成'))
+  ?.click()
+await wait(200)
+const promptField = document.querySelector('textarea[aria-label="提示词"]')
+const reused = promptField?.value === '雪夜长安街，红灯笼'
+
 const checks = [
   ['列表页渲染品牌', listText.includes('Filmline')],
   ['列表页渲染项目', listText.includes('冒烟测试项目')],
@@ -301,6 +336,9 @@ const checks = [
   ['资产菜单挂在 body 上（不被裁剪）', menuInBody && !menuInRoot],
   ['编辑弹窗回填文本内容', prefilled],
   ['资产改名立即更新', afterAssetEdit.includes('第一幕（改）')],
+  ['AI 资产展示提示词', imageTabText.includes('雪夜长安街，红灯笼')],
+  ['点击图片打开预览', previewText.includes('雪夜长安街，红灯笼') && previewText.includes('1344×768')],
+  ['复用提示词回填面板', reused],
   ['无控制台错误', errors.length === 0],
 ]
 

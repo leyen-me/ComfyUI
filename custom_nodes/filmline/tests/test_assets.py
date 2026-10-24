@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from urllib.parse import quote
+
 from aiohttp import FormData
 
 from base import ApiTestCase
@@ -155,3 +157,22 @@ class AssetApiTest(ApiTestCase):
     async def test_update_unknown_asset(self) -> None:
         res = await self.client.patch("/studio/api/assets/9999", json={"name": "甲"})
         self.assertEqual(res.status, 404)
+
+    async def test_generation_meta_round_trips(self) -> None:
+        """AI 资产的生成参数（提示词、尺寸、种子）必须原样返回，供复用。"""
+        project = await self._project()
+        meta = '{"prompt":"雪夜长安街","size":"16:9","width":1344,"height":768,"seed":42}'
+        data = FormData()
+        data.add_field("file", PNG_BYTES, filename="a.png", content_type="image/png")
+        res = await self.client.post(
+            f"/studio/api/projects/{project['code']}/assets/upload?source=ai&meta={quote(meta)}",
+            data=data,
+        )
+        self.assertEqual(res.status, 201)
+        asset = (await res.json())["data"]
+        self.assertEqual(asset["source"], "ai")
+        self.assertEqual(asset["meta"]["prompt"], "雪夜长安街")
+        self.assertEqual(asset["meta"]["seed"], 42)
+
+        listed = (await (await self.client.get(f"/studio/api/projects/{project['code']}/assets?kind=image")).json())["data"]
+        self.assertEqual(listed["items"][0]["meta"]["prompt"], "雪夜长安街")

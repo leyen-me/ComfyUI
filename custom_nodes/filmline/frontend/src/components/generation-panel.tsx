@@ -3,7 +3,7 @@ import { Image as ImageIcon, Loader2, Sparkles, Video } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 
 import { ApiError, api, type Project } from '@/lib/api'
-import { emitAssetsChanged } from '@/lib/events'
+import { emitAssetsChanged, REUSE_PROMPT, type ReusePromptDetail } from '@/lib/events'
 import { cn } from '@/lib/utils'
 import { Button } from './ui/button'
 
@@ -47,6 +47,29 @@ export function GenerationPanel({ project, episodeCode }: GenerationPanelProps) 
     return () => {
       if (timerRef.current) window.clearInterval(timerRef.current)
     }
+  }, [])
+
+  // 资产预览里点“用此提示词生成”：回填模式与参数
+  useEffect(() => {
+    function onReuse(event: Event) {
+      const detail = (event as CustomEvent<ReusePromptDetail>).detail
+      setPrompt(detail.prompt)
+      if (detail.kind === 'video') {
+        setMode('video')
+        if (detail.size === '16:9' || detail.size === '9:16') setVideoSize(detail.size)
+        if (detail.duration === 5 || detail.duration === 10) setDuration(detail.duration)
+      } else {
+        setMode('image')
+        if (detail.size === '16:9' || detail.size === '9:16' || detail.size === '1:1') {
+          setImageSize(detail.size)
+        }
+        if (typeof detail.count === 'number' && detail.count >= 1 && detail.count <= 4) {
+          setCount(detail.count)
+        }
+      }
+    }
+    window.addEventListener(REUSE_PROMPT, onReuse)
+    return () => window.removeEventListener(REUSE_PROMPT, onReuse)
   }, [])
 
   async function handleSubmit(event?: FormEvent) {

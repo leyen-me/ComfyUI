@@ -4,8 +4,10 @@ import { Loader2, Plus, Upload } from 'lucide-react'
 import { ApiError, api, type Asset, type AssetKind, type Episode, type Project } from '@/lib/api'
 import { assetKindMeta } from '@/lib/asset-kinds'
 import { useAssetCounts, useAssets } from '@/hooks/use-assets'
-import { ASSETS_CHANGED } from '@/lib/events'
+import { ASSETS_CHANGED, emitReusePrompt } from '@/lib/events'
+import { assetPrompt, generationMeta } from '@/lib/asset-meta'
 import { AssetDialog } from './asset-dialog'
+import { AssetPreview } from './asset-preview'
 import { AssetList } from './asset-list'
 import { KindTabs } from './kind-tabs'
 import { Toast, type ToastMessage } from './toast'
@@ -41,6 +43,7 @@ export function AssetPanel({
   const [creating, setCreating] = useState(false)
   const [editing, setEditing] = useState<Asset | null>(null)
   const [pendingDelete, setPendingDelete] = useState<Asset | null>(null)
+  const [preview, setPreview] = useState<Asset | null>(null)
   const [deleting, setDeleting] = useState(false)
   const [uploading, setUploading] = useState(false)
   const [toast, setToast] = useState<ToastMessage | null>(null)
@@ -90,6 +93,30 @@ export function AssetPanel({
     } finally {
       setUploading(false)
     }
+  }
+
+  async function copyPrompt(prompt: string) {
+    try {
+      await navigator.clipboard.writeText(prompt)
+      notify('已复制提示词')
+    } catch {
+      notify('复制失败，请手动选择文本', 'error')
+    }
+  }
+
+  function reusePrompt(asset: Asset) {
+    const prompt = assetPrompt(asset)
+    if (!prompt) return
+    const meta = generationMeta(asset)
+    emitReusePrompt({
+      prompt,
+      kind: asset.kind === 'video' ? 'video' : 'image',
+      size: meta.size,
+      count: meta.count ?? 1,
+      duration: meta.duration ?? 5,
+    })
+    setPreview(null)
+    notify('已填入生成面板')
   }
 
   async function confirmDelete() {
@@ -207,11 +234,21 @@ export function AssetPanel({
           <AssetList
             kind={kind}
             assets={assets}
+            onPreview={setPreview}
             onEdit={setEditing}
             onDelete={setPendingDelete}
+            onCopyPrompt={copyPrompt}
+            onReusePrompt={reusePrompt}
           />
         ) : null}
       </div>
+
+      <AssetPreview
+        asset={preview}
+        onClose={() => setPreview(null)}
+        onCopyPrompt={copyPrompt}
+        onReusePrompt={reusePrompt}
+      />
 
       <AssetDialog
         open={creating || editing !== null}
