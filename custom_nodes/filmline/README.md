@@ -74,7 +74,8 @@ npm run test:logic   # 纯函数单测（页码计算）
 | GET | `/studio/api/tasks` | 生成任务列表（合并 ComfyUI 外部队列），`?active=1&limit=30` |
 | GET | `/studio/api/tasks/{id}` | 单个任务状态；前端提交后轮询 |
 | POST | `/studio/api/tasks/{id}/cancel` | 取消排队/运行中的 Filmline 任务 |
-| GET | `/studio/api/health` | 版本、库路径、schema 版本、项目数 |
+| POST | `/studio/api/prompts/optimize` | DeepSeek 提示词优化（仅视频，后端代理） |
+| GET | `/studio/api/health` | 版本、库路径、schema 版本、项目数、LLM 是否配置 |
 
 统一响应信封：
 
@@ -139,7 +140,28 @@ ComfyUI/user/filmline/
 - 按当前模式给出结构片段：图片模式是主体/构图/环境/风格/约束；首尾帧是首帧对齐、画面、动作、对白、环境声、配乐、禁止项；参考生成是官方六段式。
 - 提供 `<d>[Chinese] ...</d>`、`(S1)`、`<Picture N>` / `<Video N>` / `<Audio N>`、无字幕、运镜、环境声等快速插入。
 - 内置确定性 Lint：裸引号对白、缺少说话人、缺少“无字幕”、参考托盘有素材但提示词没标签、误用 `图1` / `<imageN>`、超长等。
-- 只做结构提示和插入，不自动改写提示词；没有接 LLM，也不会自动提交。
+- 结构插入和 Lint 都是确定性的，不会自动改写或提交；AI 优化需显式点击并预览确认。
+
+### AI 提示词优化（DeepSeek，可选）
+
+- `提示词助手` 里的「AI 优化提示词」会把当前视频提示词、参考标签和首尾帧状态发给后端，
+  由后端代理调用 DeepSeek；前端永远不接触 API Key。
+- 目前只支持视频提示词；图片模式因为含图片块，不做自动替换。
+- 输出先在对比弹窗里预览（原文 / 优化后可编辑），用户点「应用并替换」才写入输入框，不会自动提交。
+- 环境变量（也可写入运行环境或 `.env`，参考 `.env.example`）：
+
+```env
+DEEPSEEK_API_KEY=
+DEEPSEEK_BASE_URL=https://api.deepseek.com
+DEEPSEEK_MODEL=deepseek-flash
+DEEPSEEK_TIMEOUT=45
+```
+
+- 不配置 `DEEPSEEK_API_KEY` 时接口返回 503，按钮会显示不可用提示，不影响普通生成。
+- 会附带当前首尾帧或参考图片（最多 4 张）给 DeepSeek，让它理解画面里谁在说话、嘴/喙是否张开、构图和背景；**不上传视频/音频文件**。
+- 图片由后端按资产 id 读取并转 data URL，前端只传 id 和标签；发送前会限制单张/总大小。
+- 发送给 DeepSeek 的还有提示词文本和参考标签（`<Picture 1>` 等）。
+- 失败、超时、返回格式异常都会保留原文，不阻塞生成；应用前可人工修改。
 
 ### 任务队列
 

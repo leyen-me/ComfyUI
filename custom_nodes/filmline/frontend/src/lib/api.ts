@@ -40,6 +40,7 @@ export interface HealthInfo {
   db: string
   schema_version: number
   projects: number
+  llm_configured?: boolean
 }
 
 export interface FieldIssue {
@@ -204,6 +205,37 @@ export interface TaskInfo {
 export interface TaskList {
   items: TaskInfo[]
   active: number
+}
+
+export interface PromptOptimizeReference {
+  label: string
+  kind: 'image' | 'video' | 'audio'
+}
+
+export interface PromptOptimizeImage {
+  asset_id: number
+  label: string
+  role: 'first_frame' | 'last_frame' | 'reference'
+}
+
+export interface PromptOptimizeInput {
+  mode: 'video'
+  video_mode: 'keyframes' | 'reference'
+  prompt: string
+  project_ref?: string
+  keyframes: { first: boolean; last: boolean }
+  references: PromptOptimizeReference[]
+  images?: PromptOptimizeImage[]
+  size?: string
+  duration?: number
+  no_subtitles?: boolean
+}
+
+export interface PromptOptimizeResult {
+  enhanced_prompt: string
+  warnings: string[]
+  notes?: string
+  model?: string
 }
 
 export const api = {
@@ -397,5 +429,13 @@ export const api = {
 
     cancel: (taskId: number) =>
       request<TaskInfo>(`/tasks/${taskId}/cancel`, { method: 'POST' }),
+  },
+
+  prompts: {
+    optimize: (input: PromptOptimizeInput) =>
+      request<PromptOptimizeResult>('/prompts/optimize', {
+        method: 'POST',
+        body: JSON.stringify(input),
+      }),
   },
 }

@@ -34,3 +34,9 @@ class Conflict(AppError):
     code = "conflict"
     status = 409
     default_message = "资源冲突"
+
+
+class ServiceUnavailable(AppError):
+    code = "service_unavailable"
+    status = 503
+    default_message = "服务暂不可用"

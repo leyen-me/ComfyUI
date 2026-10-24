@@ -5,10 +5,22 @@
 
 from __future__ import annotations
 
+import base64
+import io
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
 from .errors import InvalidArgument
+
+SUPPORTED_IMAGE_MIME = {
+    ".png": "image/png",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".webp": "image/webp",
+    ".gif": "image/gif",
+}
+MAX_INLINE_IMAGE_BYTES = 6 * 1024 * 1024
+MAX_INLINE_IMAGE_PIXELS = 1600
 
 
 @dataclass(frozen=True)
@@ -31,6 +43,34 @@ def _stream_duration(stream, container) -> float:
     if container.duration is not None:
         return float(container.duration / 1_000_000)  # av.time_base
     return 0.0
+
+
+def _image_payload(raw: bytes, mime: str) -> str:
+    return f"data:{mime};base64,{base64.b64encode(raw).decode('ascii')}"
+
+
+def image_data_url(path: Path) -> str:
+    """把资产图片转成 DeepSeek 可接受的 data URL。
+
+    原生支持的格式直接发送；BMP/AVIF 或过大的图片用 Pillow 转成压缩 JPEG。
+    """
+    suffix = path.suffix.lower()
+    raw = path.read_bytes()
+    mime = SUPPORTED_IMAGE_MIME.get(suffix)
+    if mime and len(raw) <= MAX_INLINE_IMAGE_BYTES:
+        return _image_payload(raw, mime)
+
+    try:
+        from PIL import Image, ImageOps
+
+        with Image.open(path) as source:
+            image = ImageOps.exif_transpose(source).convert("RGB")
+            image.thumbnail((MAX_INLINE_IMAGE_PIXELS, MAX_INLINE_IMAGE_PIXELS))
+            buffer = io.BytesIO()
+            image.save(buffer, format="JPEG", quality=88, optimize=True)
+        return _image_payload(buffer.getvalue(), "image/jpeg")
+    except Exception as exc:
+        raise InvalidArgument("无法读取图片，不能发送给 AI 优化") from exc
 
 
 def probe(path: Path) -> MediaInfo:

@@ -9,7 +9,7 @@ import logging
 
 from aiohttp import web
 
-from .. import __version__, config, db
+from .. import __version__, config, db, llm
 from ..domain.projects import ProjectService
 from ..runner import TaskRunner, RUNNER_KEY
 from .assets import register_asset_routes
@@ -17,6 +17,7 @@ from .episodes import register_episode_routes
 from .generate import register_generate_routes
 from .http import handle_errors, ok
 from .projects import register_project_routes
+from .prompts import register_prompt_routes
 from .tasks import register_task_routes
 
 _LOG = logging.getLogger("filmline")
@@ -35,6 +36,7 @@ def register_routes(app: web.Application) -> None:
     register_episode_routes(routes)
     register_generate_routes(routes)
     register_task_routes(routes)
+    register_prompt_routes(routes)
 
     runner = TaskRunner()
     app[RUNNER_KEY] = runner
@@ -51,6 +53,7 @@ def register_routes(app: web.Application) -> None:
                 "db": str(config.db_path()),
                 "schema_version": _schema_version(),
                 "projects": projects.total,
+                "llm_configured": llm.configured(),
             }
         )
 

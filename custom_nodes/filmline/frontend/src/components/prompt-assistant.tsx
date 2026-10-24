@@ -1,4 +1,4 @@
-import { AlertTriangle, ListTree, Plus, X } from 'lucide-react'
+import { AlertTriangle, ListTree, Loader2, Plus, Sparkles, X } from 'lucide-react'
 
 import {
   fullTemplate,
@@ -21,6 +21,10 @@ interface PromptAssistantProps {
   counts: AssistantCounts
   prompt: string
   disabled?: boolean
+  canOptimize: boolean
+  optimizing: boolean
+  optimizeError: string | null
+  onOptimize: () => void
   onInsert: (text: string) => void
   onInsertTemplate: (text: string) => void
   onClose: () => void
@@ -34,6 +38,10 @@ export function PromptAssistant({
   counts,
   prompt,
   disabled = false,
+  canOptimize,
+  optimizing,
+  optimizeError,
+  onOptimize,
   onInsert,
   onInsertTemplate,
   onClose,
@@ -64,6 +72,43 @@ export function PromptAssistant({
       </div>
 
       <p className="px-0.5 pb-2 text-[10px] leading-relaxed text-muted-foreground">{hint}</p>
+
+      {canOptimize ? (
+        <>
+          <Button
+            size="sm"
+            variant="primary"
+            className="mb-1.5 h-7 justify-center text-[11px]"
+            disabled={disabled || optimizing}
+            onClick={onOptimize}
+          >
+            {optimizing ? (
+              <>
+                <Loader2 className="size-3.5 animate-spin" />
+                优化中…
+              </>
+            ) : (
+              <>
+                <Sparkles className="size-3.5" />
+                AI 优化提示词
+              </>
+            )}
+          </Button>
+          <p className="mb-2 px-0.5 text-[9px] leading-relaxed text-muted-foreground">
+            会把当前首尾帧/参考图发送给 DeepSeek；不上传视频/音频。
+          </p>
+        </>
+      ) : (
+        <p className="mb-2 rounded-md bg-muted/40 px-1.5 py-1 text-[10px] leading-relaxed text-muted-foreground">
+          AI 优化目前只支持视频提示词。
+        </p>
+      )}
+
+      {optimizeError ? (
+        <p className="mb-2 rounded-md border border-destructive/30 bg-destructive/10 px-1.5 py-1 text-[10px] leading-relaxed text-destructive">
+          {optimizeError}
+        </p>
+      ) : null}
 
       {warnings.length > 0 ? (
         <div className="mb-2 space-y-1 rounded-md border border-amber-500/30 bg-amber-500/5 p-1.5">

@@ -2,7 +2,16 @@ import { useEffect, useRef, useState } from 'react'
 import { Image as ImageIcon, ListTree, Loader2, Sparkles, Video } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 
-import { ApiError, api, type Asset, type Project, type TaskInfo } from '@/lib/api'
+import {
+  ApiError,
+  api,
+  type Asset,
+  type Project,
+  type PromptOptimizeImage,
+  type PromptOptimizeReference,
+  type PromptOptimizeResult,
+  type TaskInfo,
+} from '@/lib/api'
 import type { AssetDragPayload } from '@/lib/asset-drag'
 import type { KeyframeSlot } from '@/lib/keyframes'
 import { buildPromptDoc, type RefAsset } from '@/lib/prompt'
@@ -21,6 +30,8 @@ import {
   moveReference,
   reorderReference,
   removeReference,
+  soundtrackOrdinal,
+  standaloneAudioOrdinal,
   totalReferences,
   type ReferenceLists,
 } from '@/lib/references'
@@ -32,6 +43,7 @@ import { GenerationOptions } from './generation-options'
 import { KeyframeSlots } from './keyframe-slots'
 import { PromptInput, type PromptInputHandle } from './prompt-input'
 import { PromptAssistant } from './prompt-assistant'
+import { PromptOptimizeDialog } from './prompt-optimize-dialog'
 import type { PromptValue } from './prompt-editor'
 import { ReferenceTray } from './reference-tray'
 import { VideoFrameDialog } from './video-frame-dialog'
@@ -77,6 +89,11 @@ export function GenerationPanel({ project, episodeCode }: GenerationPanelProps) 
   referenceListsRef.current = referenceLists
   const [picker, setPicker] = useState<PickerState>(null)
   const [assistantOpen, setAssistantOpen] = useState(false)
+  const [optimizing, setOptimizing] = useState(false)
+  const [optimizeError, setOptimizeError] = useState<string | null>(null)
+  const [optimizeOpen, setOptimizeOpen] = useState(false)
+  const [optimizeOriginal, setOptimizeOriginal] = useState('')
+  const [optimizeResult, setOptimizeResult] = useState<PromptOptimizeResult | null>(null)
   const [videoFrame, setVideoFrame] = useState<{
     slot: KeyframeSlot
     video: AssetDragPayload
@@ -541,6 +558,102 @@ export function GenerationPanel({ project, episodeCode }: GenerationPanelProps) 
     setPicker(null)
   }
 
+  function optimizeReferences(): PromptOptimizeReference[] {
+    const result: PromptOptimizeReference[] = []
+    referenceLists.images.forEach((_, index) => {
+      result.push({ label: `<Picture ${index + 1}>`, kind: 'image' })
+    })
+    referenceLists.videos.forEach((_, index) => {
+      result.push({ label: `<Video ${index + 1}>`, kind: 'video' })
+      const ordinal = soundtrackOrdinal(referenceLists.videos, index)
+      if (ordinal) result.push({ label: `<Audio ${ordinal}>`, kind: 'audio' })
+    })
+    referenceLists.audios.forEach((_, index) => {
+      result.push({
+        label: `<Audio ${standaloneAudioOrdinal(referenceLists.videos, referenceLists.audios, index)}>`,
+        kind: 'audio',
+      })
+    })
+    return result
+  }
+
+  function optimizeImages(): PromptOptimizeImage[] {
+    if (videoMode === 'keyframes') {
+      const images: PromptOptimizeImage[] = []
+      if (keyframes.first) {
+        images.push({
+          asset_id: keyframes.first.assetId,
+          label: '<Picture 1>',
+          role: 'first_frame',
+        })
+      }
+      if (keyframes.last) {
+        images.push({
+          asset_id: keyframes.last.assetId,
+          label: keyframes.first ? '<Picture 2>' : '<Picture 1>',
+          role: 'last_frame',
+        })
+      }
+      return images
+    }
+    return referenceLists.images.slice(0, 4).map((item, index) => ({
+      asset_id: item.assetId,
+      label: `<Picture ${index + 1}>`,
+      role: 'reference' as const,
+    }))
+  }
+
+  async function handleOptimize() {
+    if (optimizing) return
+    if (mode !== 'video') {
+      setOptimizeError('AI 优化目前只支持视频提示词')
+      return
+    }
+    const prompt = value.text.trim()
+    if (!prompt) {
+      setOptimizeError('请先写下提示词，再让 AI 优化')
+      return
+    }
+
+    setOptimizing(true)
+    setOptimizeError(null)
+    try {
+      const result = await api.prompts.optimize({
+        mode: 'video',
+        video_mode: videoMode,
+        prompt,
+        project_ref: project.code,
+        keyframes: assistantKeyframes,
+        references: optimizeReferences(),
+        images: optimizeImages(),
+        size: videoSize,
+        duration,
+        no_subtitles: true,
+      })
+      setOptimizeOriginal(prompt)
+      setOptimizeResult(result)
+      setOptimizeOpen(true)
+    } catch (cause) {
+      setOptimizeError(
+        cause instanceof ApiError
+          ? cause.fullMessage
+          : cause instanceof Error
+            ? cause.message
+            : 'AI 优化失败',
+      )
+    } finally {
+      setOptimizing(false)
+    }
+  }
+
+  function applyOptimized(text: string) {
+    editorRef.current?.setText(text)
+    editorRef.current?.focus()
+    setOptimizeOpen(false)
+    setOptimizeResult(null)
+    setOptimizeError(null)
+  }
+
   async function waitForTask(taskId: number, token: number): Promise<TaskInfo> {
     let failures = 0
     while (token === taskTokenRef.current) {
@@ -792,6 +905,10 @@ export function GenerationPanel({ project, episodeCode }: GenerationPanelProps) 
                   counts={assistantCounts}
                   prompt={value.text}
                   disabled={running}
+                  canOptimize={mode === 'video'}
+                  optimizing={optimizing}
+                  optimizeError={optimizeError}
+                  onOptimize={() => void handleOptimize()}
                   onInsert={(text) => editorRef.current?.insertText(text)}
                   onInsertTemplate={(text) => editorRef.current?.insertTemplate(text)}
                   onClose={() => setAssistantOpen(false)}
@@ -937,6 +1054,20 @@ export function GenerationPanel({ project, episodeCode }: GenerationPanelProps) 
           if (!open) setVideoFrame(null)
         }}
         onExtracted={handleFrameExtracted}
+      />
+
+      <PromptOptimizeDialog
+        open={optimizeOpen}
+        original={optimizeOriginal}
+        result={optimizeResult}
+        mode="video"
+        videoMode={videoMode}
+        counts={assistantCounts}
+        onOpenChange={(open) => {
+          setOptimizeOpen(open)
+          if (!open) setOptimizeResult(null)
+        }}
+        onApply={applyOptimized}
       />
     </aside>
   )

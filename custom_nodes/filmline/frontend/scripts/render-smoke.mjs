@@ -219,6 +219,14 @@ globalThis.fetch = async (input, init = {}) => {
       items: [{ ...queueTask }, { ...doneTask }],
       active: queueTask.status === 'running' ? 1 : 0,
     }
+  } else if (path.endsWith('/prompts/optimize') && method === 'POST') {
+    data = {
+      enhanced_prompt:
+        'integrated_multimodal_description: AI优化结果 <d>[Chinese] 测试对白</d> No subtitles, no captions, no on-screen text.',
+      warnings: [],
+      notes: 'mock optimizer',
+      model: 'deepseek-chat',
+    }
   } else if (/\/tasks\/\d+\/cancel$/.test(path) && method === 'POST') {
     queueTask = {
       ...queueTask,
@@ -419,6 +427,31 @@ const videoFrameDialogOpened = (videoFrameDialog?.textContent ?? '').includes(
 ;[...(videoFrameDialog?.querySelectorAll('button') ?? [])]
   .find((el) => el.textContent?.trim() === '取消')
   ?.click()
+await wait(150)
+
+// AI 优化：视频模式展开助手、插入模板、优化、预览并应用
+;[...document.querySelectorAll('button')]
+  .find((el) => el.textContent?.trim() === '提示词助手')
+  ?.click()
+await wait(200)
+;[...document.querySelectorAll('button')]
+  .find((el) => el.textContent?.trim() === '插入完整模板')
+  ?.click()
+await wait(200)
+;[...document.querySelectorAll('button')]
+  .find((el) => el.textContent?.includes('AI 优化提示词'))
+  ?.click()
+await wait(300)
+const optimizeDialog = document.querySelector('dialog[open]')
+const optimizePreviewShown = (optimizeDialog?.textContent ?? '').includes('优化后（可编辑）')
+;[...document.querySelectorAll('dialog[open] button')]
+  .find((el) => el.textContent?.trim() === '应用并替换')
+  ?.click()
+await wait(250)
+const optimizeApplied = (
+  document.querySelector('[aria-label="提示词"]')?.textContent ?? ''
+).includes('AI优化结果')
+document.querySelector('button[aria-label="收起提示词助手"]')?.click()
 await wait(150)
 
 // 参考生成：托盘 + 多选选择器 + 模式切换保留状态
@@ -665,6 +698,7 @@ const checks = [
   ['首帧槽位可打开资产选择器', pickerOpened],
   ['选择图片后首帧槽位显示缩略图', firstFramePicked],
   ['视频拖到槽位打开选帧对话框', videoFrameDialogOpened],
+  ['AI 优化可预览并应用', optimizePreviewShown && optimizeApplied],
   ['参考模式显示参考素材托盘', referenceTrayShown],
   ['参考图选择器可多选', referencePickerOpened],
   ['选择参考图后显示图1', referenceAdded],
