@@ -22,9 +22,8 @@ export interface CardOrderHelpers {
 
 const GRID = 'grid gap-4 sm:grid-cols-2 xl:grid-cols-3'
 
-function sameOrder(a: Project[], b: Project[]): boolean {
-  if (a.length !== b.length) return false
-  return a.every((item, index) => item.id === b[index]?.id)
+function sameIds(a: number[], b: number[]): boolean {
+  return a.length === b.length && a.every((id, index) => id === b[index])
 }
 
 function SkeletonCards() {
@@ -51,16 +50,33 @@ export function ProjectGrid({
   onOpen,
   onReorder,
 }: ProjectGridProps) {
-  const [items, setItems] = useState<Project[]>(projects)
+  /*
+   * 本地只保留「id 的顺序」，卡片数据每次渲染都从 props 里取。
+   * 早先这里缓存了整份 Project 对象，导致改名后 id 顺序没变、判断成“没变化”，
+   * 界面上一直是旧名称，必须刷新浏览器才更新。
+   */
+  const [order, setOrder] = useState<number[]>(() => projects.map((project) => project.id))
   const [draggingId, setDraggingId] = useState<number | null>(null)
   const draggingRef = useRef<number | null>(null)
-  const itemsRef = useRef<Project[]>(items)
-  itemsRef.current = items
+  const orderRef = useRef(order)
+  orderRef.current = order
 
-  // 服务端数据变化时同步本地顺序；顺序相同则不触发渲染，避免死循环
+  // 数据变化时对齐顺序：保留已有次序，剔除消失的，新增的追加到末尾
   useEffect(() => {
-    setItems((prev) => (sameOrder(prev, projects) ? prev : projects))
+    const incoming = projects.map((project) => project.id)
+    setOrder((prev) => {
+      const kept = prev.filter((id) => incoming.includes(id))
+      const added = incoming.filter((id) => !kept.includes(id))
+      const next = [...kept, ...added]
+      return sameIds(prev, next) ? prev : next
+    })
   }, [projects])
+
+  const byId = new Map(projects.map((project) => [project.id, project]))
+  const items = order.flatMap((id) => {
+    const project = byId.get(id)
+    return project ? [project] : []
+  })
 
   function handleDragStart(event: DragEvent<HTMLElement>, project: Project) {
     draggingRef.current = project.id
@@ -74,14 +90,14 @@ export function ProjectGrid({
     if (fromId === null || fromId === project.id) return
 
     // 拖过谁就插到谁的位置，实时预览最终顺序
-    setItems((prev) => {
-      const fromIndex = prev.findIndex((item) => item.id === fromId)
-      const toIndex = prev.findIndex((item) => item.id === project.id)
+    setOrder((prev) => {
+      const fromIndex = prev.indexOf(fromId)
+      const toIndex = prev.indexOf(project.id)
       if (fromIndex === -1 || toIndex === -1 || fromIndex === toIndex) return prev
 
       const next = [...prev]
       const [moved] = next.splice(fromIndex, 1)
-      if (!moved) return prev
+      if (moved === undefined) return prev
       next.splice(toIndex, 0, moved)
       return next
     })
@@ -98,22 +114,23 @@ export function ProjectGrid({
     setDraggingId(null)
     if (fromId === null) return
 
-    const ids = itemsRef.current.map((item) => item.id)
-    if (!sameOrder(itemsRef.current, projects)) onReorder(ids)
+    if (!sameIds(orderRef.current, projects.map((project) => project.id))) {
+      onReorder(orderRef.current)
+    }
   }
 
   function move(index: number, delta: number) {
-    const current = itemsRef.current
+    const current = orderRef.current
     const target = index + delta
     if (target < 0 || target >= current.length) return
 
     const next = [...current]
     const [moved] = next.splice(index, 1)
-    if (!moved) return
+    if (moved === undefined) return
     next.splice(target, 0, moved)
 
-    setItems(next)
-    onReorder(next.map((item) => item.id))
+    setOrder(next)
+    onReorder(next)
   }
 
   if (empty) {
