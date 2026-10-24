@@ -15,6 +15,8 @@ export interface PromptInputHandle {
   getValue: () => PromptValue
   /** 取出完整文档，用于按模式暂存草稿 */
   getDoc: () => unknown
+  /** 在光标处插入纯文本（参考图编号等） */
+  insertText: (text: string) => void
 }
 
 interface PromptInputProps {
@@ -24,6 +26,8 @@ interface PromptInputProps {
   maxRefs: number
   /** 视频模式下图片应拖到首尾帧槽位，禁用编辑器内的图片块 */
   allowAssetDrop?: boolean
+  /** 禁用图片块时，拖入编辑器给出的提示 */
+  assetDropHint?: string
   onChange: (value: PromptValue) => void
   onSubmit: () => void
   onReject?: (message: string) => void
@@ -38,6 +42,7 @@ export function PromptInput({
   placeholder = '描述画面',
   maxRefs,
   allowAssetDrop = true,
+  assetDropHint = '图片请拖到上方的图片槽位',
   onChange,
   onSubmit,
   onReject,
@@ -52,6 +57,8 @@ export function PromptInput({
   maxRefsRef.current = maxRefs
   const allowDropRef = useRef(allowAssetDrop)
   allowDropRef.current = allowAssetDrop
+  const assetDropHintRef = useRef(assetDropHint)
+  assetDropHintRef.current = assetDropHint
   const disabledRef = useRef(disabled)
   disabledRef.current = disabled
 
@@ -84,7 +91,7 @@ export function PromptInput({
         event.preventDefault()
         if (disabledRef.current) return true
         if (!allowDropRef.current) {
-          rejectRef.current?.('图片请拖到上方的首帧或尾帧槽位')
+          rejectRef.current?.(assetDropHintRef.current)
           return true
         }
         const payload = readAssetDrag(event.dataTransfer)
@@ -98,7 +105,7 @@ export function PromptInput({
         const text = event.clipboardData?.getData('text/plain')
         if (!text) return false
         event.preventDefault()
-        editor?.commands.insertContent(text)
+        editor?.commands.insertContent({ type: 'text', text })
         return true
       },
     },
@@ -155,6 +162,12 @@ export function PromptInput({
         },
         getValue: () => (editor ? serializePrompt(editor.state.doc) : EMPTY),
         getDoc: () => editor?.getJSON() ?? null,
+        insertText: (text) => {
+          if (!editor) return
+          // 用文本节点插入，避免 <Picture 1> 被当成 HTML 解析
+          editor.chain().focus().insertContent({ type: 'text', text }).run()
+          changeRef.current(serializePrompt(editor.state.doc))
+        },
       }
     }
   }, [ref, editor, setText])

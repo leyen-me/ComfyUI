@@ -52,8 +52,15 @@ VIDEO_VAE = "minimax_h3_video_vae_fp16.safetensors"
 VIDEO_AUDIO_VAE = "minimax_h3_audio_vae_fp32.safetensors"
 VIDEO_LORA = "minimax_h3_fl2v_turbo_4step_v1.0_768p_comfyui_bf16.safetensors"
 
+# Ref2VA 是另一套权重：参考图/视频/音频不会锁定首帧
+VIDEO_REF_MODEL = "minimax_h3_ref2va_pruned_fp8_scaled.safetensors"
+VIDEO_REF_LORA = "minimax_h3_ref2v_turbo_8step_v1.1_768p_comfyui_bf16.safetensors"
+VIDEO_REF_STEPS = 8
+
 # 官方说明：参考图最多 10 张（image_1…image_10），image_1 是编辑目标
 MAX_IMAGE_REFS = 10
+# H3 Ref2VA：参考图 ≤9（视频/音频参考后续接入）
+MAX_VIDEO_REFS = 9
 
 # 官方参数：cfg 固定 1（不用负面提示词），euler/simple，步数 40-50；
 # 这里取 30 兼顾质量与速度
@@ -372,6 +379,143 @@ def video_workflow(
             "steps": VIDEO_STEPS,
             "cfg": VIDEO_CFG,
             "refs": frames,
+        },
+    )
+
+
+def video_reference_workflow(
+    *,
+    prompt: str,
+    size: str,
+    duration: int,
+    tier: str = "768",
+    seed: int | None = None,
+    refs: list[str] | None = None,
+    ref_image_size: str = "match",
+    prefix: str = "filmline/video",
+) -> Workflow:
+    """Ref2VA：参考图保持身份/风格，不锁定第 0 帧。
+
+    参考图顺序决定提示词里的 ``<Picture 1>`` … ``<Picture N>``，因此必须保持
+    调用方传入的顺序；视频/音频参考后续再接入。
+    """
+    if size not in VIDEO_TIERS["768"]:
+        raise InvalidArgument(f"视频比例只支持: {', '.join(VIDEO_TIERS['768'])}")
+    if tier not in VIDEO_TIERS:
+        raise InvalidArgument(f"视频分辨率只支持: {', '.join(VIDEO_TIERS)}")
+    if duration not in VIDEO_DURATIONS:
+        raise InvalidArgument("视频时长只支持 5 或 10 秒")
+    if not prompt.strip():
+        raise InvalidArgument("提示词不能为空")
+    if ref_image_size not in ("match", "max"):
+        raise InvalidArgument("ref_image_size 只支持 match / max")
+
+    refs = refs or []
+    if not refs:
+        raise InvalidArgument("参考生成至少需要 1 张图片")
+    if len(refs) > MAX_VIDEO_REFS:
+        raise InvalidArgument(f"参考图最多 {MAX_VIDEO_REFS} 张")
+
+    width, height = VIDEO_TIERS[tier][size]
+    length = VIDEO_DURATIONS[duration]
+    actual_seed = _seed() if seed is None else seed
+
+    ref_images: dict[str, list[Any]] = {}
+    graph: dict[str, Any] = {
+        "1": {
+            "class_type": "UNETLoader",
+            "inputs": {"unet_name": VIDEO_REF_MODEL, "weight_dtype": "fp8_e4m3fn"},
+        },
+        "2": {
+            "class_type": "LoraLoaderModelOnly",
+            "inputs": {"model": ["1", 0], "lora_name": VIDEO_REF_LORA, "strength_model": 1.0},
+        },
+        "3": {
+            "class_type": "MiniMaxH3SigmaShift",
+            "inputs": {"model": ["2", 0], "shift_video": 12.0, "shift_audio": 3.0},
+        },
+        "4": {
+            "class_type": "CLIPLoader",
+            "inputs": {"clip_name": VIDEO_CLIP, "type": "minimax"},
+        },
+        "5": {"class_type": "VAELoader", "inputs": {"vae_name": VIDEO_VAE}},
+        "6": {"class_type": "VAELoader", "inputs": {"vae_name": VIDEO_AUDIO_VAE}},
+        "7": {
+            "class_type": "MiniMaxH3ReferenceToVideo",
+            "inputs": {
+                "clip": ["4", 0],
+                "vae": ["5", 0],
+                "audio_vae": ["6", 0],
+                "prompt": prompt,
+                "width": width,
+                "height": height,
+                "length": length,
+                "ref_image_size": ref_image_size,
+                "ref_images": ref_images,
+            },
+        },
+        "8": {
+            "class_type": "ConditioningZeroOut",
+            "inputs": {"conditioning": ["7", 0]},
+        },
+        # 参考 token 参与每一步采样；4 步 turbo 很难锁住参考，这里用 8 步档
+        "9": {
+            "class_type": "KSampler",
+            "inputs": {
+                "model": ["3", 0],
+                "seed": actual_seed,
+                "steps": VIDEO_REF_STEPS,
+                "cfg": VIDEO_CFG,
+                "sampler_name": VIDEO_SAMPLER,
+                "scheduler": VIDEO_SCHEDULER,
+                "positive": ["7", 0],
+                "negative": ["8", 0],
+                "latent_image": ["7", 1],
+                "denoise": 1.0,
+            },
+        },
+        "10": {
+            "class_type": "VAEDecode",
+            "inputs": {"samples": ["9", 0], "vae": ["5", 0]},
+        },
+        "11": {
+            "class_type": "VAEDecodeAudio",
+            "inputs": {"samples": ["9", 0], "vae": ["6", 0]},
+        },
+        "12": {
+            "class_type": "CreateVideo",
+            "inputs": {"images": ["10", 0], "audio": ["11", 0], "fps": VIDEO_FPS},
+        },
+        "13": {
+            "class_type": "SaveVideo",
+            "inputs": {"video": ["12", 0], "filename_prefix": prefix, "format": "auto"},
+        },
+    }
+
+    # 参考图不做画布裁切：让 Ref2VA 自己按 ref_image_size 等比缩放，保留完整构图
+    for index, path in enumerate(refs):
+        node_id = str(14 + index)
+        graph[node_id] = {"class_type": "FilmlineLoadImage", "inputs": {"path": path}}
+        ref_images[f"ref_image_{index}"] = [node_id, 0]
+
+    return Workflow(
+        prompt=graph,
+        kind="video",
+        meta={
+            "prompt": prompt,
+            "size": size,
+            "tier": tier,
+            "width": width,
+            "height": height,
+            "duration": duration,
+            "frames": length,
+            "seed": actual_seed,
+            "model": VIDEO_REF_MODEL,
+            "lora": VIDEO_REF_LORA,
+            "steps": VIDEO_REF_STEPS,
+            "cfg": VIDEO_CFG,
+            "refs": len(refs),
+            "ref_image_size": ref_image_size,
         },
     )
 

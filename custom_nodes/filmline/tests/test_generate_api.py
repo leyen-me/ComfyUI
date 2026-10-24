@@ -95,11 +95,72 @@ class GenerateApiTest(ApiTestCase):
         project = await self._project()
         res = await self.client.post(
             f"/studio/api/projects/{project['code']}/generate",
-            json={"kind": "video", "mode": "reference", "prompt": "x", "duration": 5},
+            json={"kind": "video", "mode": "magic", "prompt": "x", "duration": 5},
         )
         body = await res.json()
         self.assertEqual(res.status, 400, body)
         self.assertIn("keyframes", body["error"]["message"])
+
+    async def test_reference_requires_images(self) -> None:
+        project = await self._project()
+        res = await self.client.post(
+            f"/studio/api/projects/{project['code']}/generate",
+            json={"kind": "video", "mode": "reference", "prompt": "x", "duration": 5},
+        )
+        body = await res.json()
+        self.assertEqual(res.status, 400, body)
+        self.assertIn("至少需要 1 张图片", body["error"]["message"])
+
+    async def test_reference_payload_and_meta(self) -> None:
+        project = await self._project()
+        ref = project["code"]
+        first = await self._image(ref, "one.png")
+        second = await self._image(ref, "two.png")
+
+        fake = AsyncMock(
+            return_value=(
+                [generation.Product(filename="ref.mp4", suffix=".mp4", data=b"fake")],
+                2.0,
+            )
+        )
+        with patch("filmline.generation.run", new=fake):
+            res = await self.client.post(
+                f"/studio/api/projects/{ref}/generate",
+                json={
+                    "kind": "video",
+                    "mode": "reference",
+                    "prompt": "让 <Picture 1> 的人物站在 <Picture 2> 的场景里",
+                    "size": "16:9",
+                    "duration": 5,
+                    "refs": [first["id"], second["id"]],
+                },
+            )
+
+        body = await res.json()
+        self.assertEqual(res.status, 201, body)
+        meta = body["data"]["items"][0]["meta"]
+        self.assertEqual(meta["video_mode"], "reference")
+        self.assertEqual(meta["ref_ids"], [first["id"], second["id"]])
+        self.assertNotIn("first_frame_id", meta)
+        self.assertEqual(meta["ref_image_size"], "match")
+
+    async def test_reference_rejects_keyframe_fields(self) -> None:
+        project = await self._project()
+        ref = project["code"]
+        first = await self._image(ref, "one.png")
+        res = await self.client.post(
+            f"/studio/api/projects/{ref}/generate",
+            json={
+                "kind": "video",
+                "mode": "reference",
+                "prompt": "x",
+                "duration": 5,
+                "refs": [first["id"]],
+                "first_frame_id": first["id"],
+            },
+        )
+        body = await res.json()
+        self.assertEqual(res.status, 400, body)
 
     async def test_rejects_mixed_refs_and_keyframes(self) -> None:
         project = await self._project()

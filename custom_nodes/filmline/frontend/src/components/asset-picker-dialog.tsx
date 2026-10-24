@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Loader2, RefreshCw, Search } from 'lucide-react'
+import { Check, Loader2, RefreshCw, Search } from 'lucide-react'
 
 import { ApiError, api, type Asset, type Project } from '@/lib/api'
 import { assetDimensions } from '@/lib/asset-meta'
 import { formatTime } from '@/lib/format'
+import { cn } from '@/lib/utils'
 import { Button } from './ui/button'
 import { Dialog } from './ui/dialog'
 import { Input } from './ui/field'
@@ -15,10 +16,18 @@ interface AssetPickerDialogProps {
   /** 为空表示项目级资产 */
   episodeCode?: string
   onOpenChange: (open: boolean) => void
-  onSelect: (asset: Asset) => void
+  /** 单选模式 */
+  onSelect?: (asset: Asset) => void
+  /** 多选模式：确认后一次回调，顺序与用户勾选顺序一致 */
+  multiple?: boolean
+  /** 多选剩余可选数量 */
+  max?: number
+  /** 已在别处选中的 id，显示为已添加且不可再选 */
+  selectedIds?: number[]
+  onSelectMany?: (assets: Asset[]) => void
 }
 
-/** 首尾帧等槽位的资产选择器：拖拽之外的键盘/触屏入口。 */
+/** 图片资产选择器：拖拽之外的键盘/触屏入口，支持单选与多选。 */
 export function AssetPickerDialog({
   open,
   title,
@@ -26,11 +35,16 @@ export function AssetPickerDialog({
   episodeCode,
   onOpenChange,
   onSelect,
+  multiple = false,
+  max,
+  selectedIds = [],
+  onSelectMany,
 }: AssetPickerDialogProps) {
   const [assets, setAssets] = useState<Asset[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [keyword, setKeyword] = useState('')
+  const [picked, setPicked] = useState<number[]>([])
   const [reloadToken, setReloadToken] = useState(0)
 
   useEffect(() => {
@@ -56,7 +70,9 @@ export function AssetPickerDialog({
   }, [open, project.code, episodeCode, reloadToken])
 
   useEffect(() => {
-    if (!open) setKeyword('')
+    if (!open) return
+    setKeyword('')
+    setPicked([])
   }, [open])
 
   const filtered = useMemo(() => {
@@ -65,14 +81,54 @@ export function AssetPickerDialog({
     return assets.filter((asset) => asset.name.toLowerCase().includes(query))
   }, [assets, keyword])
 
+  const existing = useMemo(() => new Set(selectedIds), [selectedIds])
+  const remaining = max ?? Number.POSITIVE_INFINITY
+
+  function toggle(asset: Asset) {
+    if (existing.has(asset.id)) return
+    setPicked((previous) => {
+      if (previous.includes(asset.id)) return previous.filter((id) => id !== asset.id)
+      if (previous.length >= remaining) return previous
+      return [...previous, asset.id]
+    })
+  }
+
+  function confirm() {
+    if (!onSelectMany) return
+    const chosen = picked
+      .map((id) => assets.find((asset) => asset.id === id))
+      .filter((asset): asset is Asset => Boolean(asset))
+    if (chosen.length === 0) return
+    onSelectMany(chosen)
+  }
+
+  const footer = multiple ? (
+    <>
+      <span className="mr-auto self-center text-xs text-muted-foreground">
+        已选 {picked.length} 张
+        {Number.isFinite(remaining) ? ` · 还可选 ${Math.max(0, remaining - picked.length)}` : ''}
+      </span>
+      <Button onClick={() => onOpenChange(false)}>取消</Button>
+      <Button variant="primary" disabled={picked.length === 0} onClick={confirm}>
+        添加 {picked.length} 张
+      </Button>
+    </>
+  ) : (
+    <Button onClick={() => onOpenChange(false)}>取消</Button>
+  )
+
   return (
     <Dialog
       open={open}
       onOpenChange={onOpenChange}
       title={title}
-      description="只显示图片资产；生成结果和上传的图片都在这里。"
+      description={
+        multiple
+          ? '可多选；勾选顺序就是 <Picture N> 的编号顺序。'
+          : '只显示图片资产；生成结果和上传的图片都在这里。'
+      }
       className="w-[min(680px,94vw)]"
-      footer={<Button onClick={() => onOpenChange(false)}>取消</Button>}
+      footer={footer}
     >
       <div className="relative mb-3">
         <Search className="pointer-events-none absolute top-1/2 left-3 size-3.5 -translate-y-1/2 text-muted-foreground" />
@@ -112,32 +168,52 @@ export function AssetPickerDialog({
 
         {!loading && !error && filtered.length > 0 ? (
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-            {filtered.map((asset) => (
-              <button
-                key={asset.id}
-                type="button"
-                className="group overflow-hidden rounded-lg border border-border bg-card text-left transition-colors hover:border-primary/50 focus-visible:ring-2 focus-visible:ring-ring/60 focus-visible:outline-none"
-                onClick={() => onSelect(asset)}
-              >
-                <span className="block aspect-video overflow-hidden bg-muted">
-                  <img
-                    src={asset.content_url ?? ''}
-                    alt={asset.name}
-                    loading="lazy"
-                    draggable={false}
-                    className="size-full object-cover transition-transform duration-200 group-hover:scale-[1.02]"
-                  />
-                </span>
-                <span className="block px-2 py-1.5">
-                  <span className="block truncate text-xs font-medium" title={asset.name}>
-                    {asset.name}
+            {filtered.map((asset) => {
+              const isExisting = existing.has(asset.id)
+              const isPicked = picked.includes(asset.id)
+              const disabled = isExisting || (!isPicked && picked.length >= remaining)
+              return (
+                <button
+                  key={asset.id}
+                  type="button"
+                  disabled={disabled}
+                  aria-pressed={multiple ? isExisting || isPicked : undefined}
+                  className={cn(
+                    'group relative overflow-hidden rounded-lg border bg-card text-left transition-colors focus-visible:ring-2 focus-visible:ring-ring/60 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-45',
+                    isPicked || isExisting ? 'border-primary ring-2 ring-primary/25' : 'border-border hover:border-primary/50',
+                  )}
+                  onClick={() => (multiple ? toggle(asset) : onSelect?.(asset))}
+                >
+                  <span className="block aspect-video overflow-hidden bg-muted">
+                    <img
+                      src={asset.content_url ?? ''}
+                      alt={asset.name}
+                      loading="lazy"
+                      draggable={false}
+                      className="size-full object-cover transition-transform duration-200 group-hover:scale-[1.02]"
+                    />
                   </span>
-                  <span className="mt-0.5 block font-mono text-[10px] text-muted-foreground">
-                    {assetDimensions(asset) ?? formatTime(asset.created_at)}
+                  {isPicked || isExisting ? (
+                    <span className="absolute top-1 right-1 flex size-5 items-center justify-center rounded-full bg-primary text-primary-foreground shadow">
+                      <Check className="size-3" />
+                    </span>
+                  ) : null}
+                  {isExisting ? (
+                    <span className="absolute top-1 left-1 rounded bg-background/85 px-1.5 py-0.5 text-[10px] text-muted-foreground">
+                      已添加
+                    </span>
+                  ) : null}
+                  <span className="block px-2 py-1.5">
+                    <span className="block truncate text-xs font-medium" title={asset.name}>
+                      {asset.name}
+                    </span>
+                    <span className="mt-0.5 block font-mono text-[10px] text-muted-foreground">
+                      {assetDimensions(asset) ?? formatTime(asset.created_at)}
+                    </span>
                   </span>
-                </span>
-              </button>
-            ))}
+                </button>
+              )
+            })}
           </div>
         ) : null}
       </div>

@@ -216,6 +216,62 @@ class ReferenceWorkflowTest(unittest.TestCase):
             )
 
 
+class ReferenceVideoWorkflowTest(unittest.TestCase):
+    def test_default_shape(self) -> None:
+        wf = generation.video_reference_workflow(
+            prompt="让 <Picture 1> 的人物站在 <Picture 2> 的场景里",
+            size="16:9",
+            duration=5,
+            refs=["4/project/a.png", "4/project/b.png"],
+            seed=11,
+        )
+        graph = wf.prompt
+
+        self.assertEqual(wf.kind, "video")
+        self.assertEqual(graph["1"]["inputs"]["unet_name"], generation.VIDEO_REF_MODEL)
+        self.assertEqual(graph["2"]["inputs"]["lora_name"], generation.VIDEO_REF_LORA)
+        self.assertEqual(graph["9"]["inputs"]["steps"], 8)
+        self.assertEqual(graph["9"]["inputs"]["sampler_name"], "res_multistep")
+        self.assertEqual(graph["9"]["inputs"]["scheduler"], "simple")
+        self.assertEqual(graph["9"]["inputs"]["cfg"], 1.0)
+        self.assertEqual(graph["7"]["class_type"], "MiniMaxH3ReferenceToVideo")
+        self.assertEqual(graph["7"]["inputs"]["ref_image_size"], "match")
+        self.assertEqual(graph["7"]["inputs"]["width"], 1344)
+        self.assertEqual(graph["7"]["inputs"]["height"], 768)
+        self.assertEqual(graph["7"]["inputs"]["length"], 124)
+        self.assertEqual(graph["7"]["inputs"]["ref_images"]["ref_image_0"], ["14", 0])
+        self.assertEqual(graph["7"]["inputs"]["ref_images"]["ref_image_1"], ["15", 0])
+        self.assertEqual(graph["14"]["inputs"]["path"], "4/project/a.png")
+        self.assertEqual(graph["15"]["inputs"]["path"], "4/project/b.png")
+        # 参考图不经过首尾帧的裁切节点，直接交给 Ref2VA 等比缩放
+        self.assertNotIn("16", graph)
+        self.assertEqual(wf.meta["refs"], 2)
+        self.assertEqual(wf.meta["steps"], 8)
+
+    def test_ref_image_size_option(self) -> None:
+        wf = generation.video_reference_workflow(
+            prompt="x", size="9:16", duration=10, refs=["a.png"], ref_image_size="max"
+        )
+        self.assertEqual(wf.prompt["7"]["inputs"]["ref_image_size"], "max")
+        self.assertEqual(wf.prompt["7"]["inputs"]["height"], 1344)
+        self.assertEqual(wf.prompt["7"]["inputs"]["length"], 243)
+
+    def test_rejects_bad_refs(self) -> None:
+        with self.assertRaises(InvalidArgument):
+            generation.video_reference_workflow(prompt="x", size="16:9", duration=5, refs=[])
+        with self.assertRaises(InvalidArgument):
+            generation.video_reference_workflow(
+                prompt="x",
+                size="16:9",
+                duration=5,
+                refs=[f"a{i}.png" for i in range(generation.MAX_VIDEO_REFS + 1)],
+            )
+        with self.assertRaises(InvalidArgument):
+            generation.video_reference_workflow(
+                prompt="x", size="16:9", duration=5, refs=["a.png"], ref_image_size="huge"
+            )
+
+
 class DimensionsTest(unittest.TestCase):
     def test_tiers(self) -> None:
         # 2K 行与官方原生表一致

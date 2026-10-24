@@ -63,7 +63,8 @@ def register_generate_routes(routes: web.RouteTableDef) -> None:
         if kind == "image":
             raw_refs = payload.get("refs") or []
             if not isinstance(raw_refs, list) or not all(
-                isinstance(item, int) and item > 0 for item in raw_refs
+                isinstance(item, int) and not isinstance(item, bool) and item > 0
+                for item in raw_refs
             ):
                 raise InvalidArgument("refs 必须是资产 id 数组")
             ref_paths = await asyncio.to_thread(
@@ -91,35 +92,13 @@ def register_generate_routes(routes: web.RouteTableDef) -> None:
             )
         else:
             mode = str(payload.get("mode") or "keyframes")
-            if mode != "keyframes":
-                raise InvalidArgument("视频生成方式只支持 keyframes")
+            if mode not in ("keyframes", "reference"):
+                raise InvalidArgument("视频生成方式只支持 keyframes / reference")
 
             first_id = _optional_asset_id(payload.get("first_frame_id"), "first_frame_id")
             last_id = _optional_asset_id(payload.get("last_frame_id"), "last_frame_id")
-
-            # 旧客户端只发 refs（最多 1 张），按首帧解释
-            legacy_refs = payload.get("refs")
-            if legacy_refs is not None:
-                if first_id is not None or last_id is not None:
-                    raise InvalidArgument("refs 与 first_frame_id / last_frame_id 不能同时使用")
-                if not isinstance(legacy_refs, list) or not all(
-                    isinstance(item, int) and item > 0 for item in legacy_refs
-                ):
-                    raise InvalidArgument("refs 必须是资产 id 数组")
-                if len(legacy_refs) > 1:
-                    raise InvalidArgument("视频首帧只支持 1 张")
-                if legacy_refs:
-                    first_id = legacy_refs[0]
-
-            frame_ids = [asset_id for asset_id in (first_id, last_id) if asset_id is not None]
-            frame_paths = await asyncio.to_thread(
-                assets.resolve_ref_paths,
-                project.id,
-                frame_ids,
-                limit=2,
-                label="首尾帧图片",
-            )
-            paths_by_id = dict(zip(frame_ids, frame_paths))
+            raw_refs: list[int] = []
+            frame_ids: list[int] = []
 
             video_tier = str(payload.get("resolution") or "768").lower()
             if video_tier not in generation.VIDEO_TIERS:
@@ -129,15 +108,70 @@ def register_generate_routes(routes: web.RouteTableDef) -> None:
             duration = payload.get("duration", 5)
             if not isinstance(duration, int):
                 raise InvalidArgument("duration 必须是整数")
-            workflow = generation.video_workflow(
-                prompt=prompt,
-                size=size,
-                duration=duration,
-                tier=video_tier,
-                first_frame=paths_by_id.get(first_id) if first_id is not None else None,
-                last_frame=paths_by_id.get(last_id) if last_id is not None else None,
-                prefix=f"filmline/{project.code}/{scope}",
-            )
+
+            if mode == "keyframes":
+                # 旧客户端只发 refs（最多 1 张），按首帧解释
+                legacy_refs = payload.get("refs")
+                if legacy_refs is not None:
+                    if first_id is not None or last_id is not None:
+                        raise InvalidArgument(
+                            "refs 与 first_frame_id / last_frame_id 不能同时使用"
+                        )
+                    if not isinstance(legacy_refs, list) or not all(
+                        isinstance(item, int) and not isinstance(item, bool) and item > 0
+                        for item in legacy_refs
+                    ):
+                        raise InvalidArgument("refs 必须是资产 id 数组")
+                    if len(legacy_refs) > 1:
+                        raise InvalidArgument("视频首帧只支持 1 张")
+                    if legacy_refs:
+                        first_id = legacy_refs[0]
+
+                frame_ids = [
+                    asset_id for asset_id in (first_id, last_id) if asset_id is not None
+                ]
+                frame_paths = await asyncio.to_thread(
+                    assets.resolve_ref_paths,
+                    project.id,
+                    frame_ids,
+                    limit=2,
+                    label="首尾帧图片",
+                )
+                paths_by_id = dict(zip(frame_ids, frame_paths))
+                workflow = generation.video_workflow(
+                    prompt=prompt,
+                    size=size,
+                    duration=duration,
+                    tier=video_tier,
+                    first_frame=paths_by_id.get(first_id) if first_id is not None else None,
+                    last_frame=paths_by_id.get(last_id) if last_id is not None else None,
+                    prefix=f"filmline/{project.code}/{scope}",
+                )
+            else:
+                if first_id is not None or last_id is not None:
+                    raise InvalidArgument("参考生成不能使用 first_frame_id / last_frame_id")
+
+                raw_refs = payload.get("refs") or []
+                if not isinstance(raw_refs, list) or not raw_refs or not all(
+                    isinstance(item, int) and not isinstance(item, bool) and item > 0
+                    for item in raw_refs
+                ):
+                    raise InvalidArgument("参考生成至少需要 1 张图片")
+                ref_paths = await asyncio.to_thread(
+                    assets.resolve_ref_paths,
+                    project.id,
+                    raw_refs,
+                    limit=generation.MAX_VIDEO_REFS,
+                    label="参考图",
+                )
+                workflow = generation.video_reference_workflow(
+                    prompt=prompt,
+                    size=size,
+                    duration=duration,
+                    tier=video_tier,
+                    refs=ref_paths,
+                    prefix=f"filmline/{project.code}/{scope}",
+                )
 
         started_wall = utcnow()
         started = time.monotonic()
@@ -165,10 +199,10 @@ def register_generate_routes(routes: web.RouteTableDef) -> None:
                 meta["ref_ids"] = raw_refs
             else:
                 meta["video_mode"] = mode
-                meta["first_frame_id"] = first_id
-                meta["last_frame_id"] = last_id
-                # 兼容旧前端：ref_ids 按首帧、尾帧顺序记录
-                meta["ref_ids"] = frame_ids
+                meta["ref_ids"] = raw_refs if mode == "reference" else frame_ids
+                if mode == "keyframes":
+                    meta["first_frame_id"] = first_id
+                    meta["last_frame_id"] = last_id
             meta["queue_ms"] = max(0, int(round((wall - elapsed) * 1000)))
             if workflow.kind == "image":
                 try:

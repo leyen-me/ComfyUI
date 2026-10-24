@@ -273,15 +273,15 @@ export const api = {
           |
               {
                 kind: 'video'
-                /** 首尾帧模式；参考生成模式待接入 */
-                mode?: 'keyframes'
+                /** 首尾帧 / 参考生成 */
+                mode?: 'keyframes' | 'reference'
                 prompt: string
                 size: string
                 resolution?: string
                 duration: number
                 first_frame_id?: number | null
                 last_frame_id?: number | null
-                /** 旧客户端兼容：只支持一张首帧 */
+                /** 参考生成模式的图片资产 id（顺序即 <Picture N>）；首尾帧模式兼容旧客户端最多 1 张 */
                 refs?: number[]
               },
         episode?: string,

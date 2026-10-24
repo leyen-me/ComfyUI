@@ -116,11 +116,12 @@ ComfyUI/user/filmline/
 - **首尾帧**（已实现，`fl2va`）：上方两个独立槽位，可拖入或点击选择图片；两个都留空为文生视频，
   只填一个即首帧或尾帧生视频。图片会按输出比例居中裁切，比例不一致时槽位下方会提示。
   请求字段：`mode=keyframes`、`first_frame_id`、`last_frame_id`。
-- **参考生成**（规划中，`ref2va`）：图片 ≤9、视频 ≤3、音频 ≤3、合计 ≤12；参考素材不是首帧，
-  不会锁定第 0 帧。旧视频资产只有 `ref_ids` 时按首帧兼容还原。
+- **参考生成**（已实现图片，`ref2va`）：参考图 ≤9，顺序决定提示词里的 `<Picture 1>`…`<Picture N>`；
+  参考图不会锁定第 0 帧。请求字段：`mode=reference`、`refs=[资产 id…]`，使用 8 步 turbo。
+  参考视频（≤3）与参考音频（≤3，合计 ≤12）仍待接入。
 
-生成结果 `meta` 会记录 `video_mode`、`first_frame_id`、`last_frame_id`，并保留 `ref_ids`
-（按首帧、尾帧顺序）供旧前端还原。
+生成结果 `meta` 会记录 `video_mode`、`first_frame_id` / `last_frame_id`（首尾帧）或
+`ref_ids`（参考图顺序），并保留 `ref_ids` 供前端还原；旧视频资产只有 `ref_ids` 时按首帧兼容。
 
 ## 目录
 

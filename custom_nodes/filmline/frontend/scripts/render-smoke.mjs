@@ -322,6 +322,42 @@ const firstFramePicked = Boolean(
   document.querySelector('[data-keyframe-slot="first"] img'),
 )
 
+// 参考生成：托盘 + 多选选择器 + 模式切换保留状态
+;[...document.querySelectorAll('button')]
+  .find((el) => el.textContent?.trim() === '参考生成')
+  ?.click()
+await wait()
+const referenceTrayShown = Boolean(document.querySelector('[data-reference-tray]'))
+document.querySelector('[data-reference-add]')?.click()
+await wait(300)
+const referenceDialog = document.querySelector('dialog[open]')
+const referencePickerOpened = (referenceDialog?.textContent ?? '').includes('添加参考图片')
+;[...(referenceDialog?.querySelectorAll('button') ?? [])]
+  .find((el) => el.textContent?.includes('project_00001_.png'))
+  ?.click()
+await wait(100)
+;[...(referenceDialog?.querySelectorAll('button') ?? [])]
+  .find((el) => el.textContent?.includes('添加 1 张'))
+  ?.click()
+await wait(300)
+const referenceCard = document.querySelector('[data-reference-item="0"]')
+const referenceAdded = Boolean(referenceCard) && (referenceCard?.textContent ?? '').includes('图1')
+document.querySelector('button[aria-label="插入 Picture 1 引用"]')?.click()
+await wait(200)
+const referenceTagInserted = (
+  document.querySelector('[aria-label="提示词"]')?.textContent ?? ''
+).includes('<Picture 1>')
+;[...document.querySelectorAll('button')]
+  .find((el) => el.textContent?.trim() === '首尾帧')
+  ?.click()
+await wait()
+const keyframeSlotsAgain = document.querySelectorAll('[data-keyframe-slot]').length
+;[...document.querySelectorAll('button')]
+  .find((el) => el.textContent?.trim() === '参考生成')
+  ?.click()
+await wait()
+const referencePersisted = Boolean(document.querySelector('[data-reference-item="0"]'))
+
 // 视频面板里应当有 512 预览 / 768 原生 两档
 document.querySelector('button[aria-label="尺寸与分辨率"]')?.click()
 await wait(250)
@@ -331,14 +367,13 @@ const videoPanel = [...document.querySelectorAll('[role="dialog"]')].find((el) =
 const videoOptionsText = videoPanel?.textContent ?? ''
 document.body.dispatchEvent(new window.MouseEvent('mousedown', { bubbles: true }))
 await wait(150)
-;[...document.querySelectorAll('button')]
-  .find((el) => el.textContent?.includes('图片'))
-  ?.click()
+document.querySelector('[aria-label="生成类型"] button')?.click()
 await wait()
 const activeNavOnProject = [...document.querySelectorAll('aside a[aria-current="page"]')].map(
   (el) => el.textContent?.trim() ?? '',
 )
 const keyframeSlotsAfterImage = document.querySelectorAll('[data-keyframe-slot]').length
+const referenceTrayAfterImage = Boolean(document.querySelector('[data-reference-tray]'))
 
 // —— 分集：新建后侧边栏出现，进入分集资产页显示集标题 ——
 document.querySelector('button[aria-label="新建分集"]')?.click()
@@ -465,7 +500,13 @@ const checks = [
   ['视频有首尾帧两个槽位', keyframeSlots.length === 2 && hasVideoModeTabs],
   ['首帧槽位可打开资产选择器', pickerOpened],
   ['选择图片后首帧槽位显示缩略图', firstFramePicked],
+  ['参考模式显示参考素材托盘', referenceTrayShown],
+  ['参考图选择器可多选', referencePickerOpened],
+  ['选择参考图后显示图1', referenceAdded],
+  ['参考图可插入 Picture 引用', referenceTagInserted],
+  ['切回首尾帧再切回参考模式保留素材', keyframeSlotsAgain === 2 && referencePersisted],
   ['切回图片模式隐藏首尾帧槽位', keyframeSlotsAfterImage === 0],
+  ['切回图片模式隐藏参考托盘', !referenceTrayAfterImage],
   ['项目资产页仅「资产」高亮', activeNavOnProject.length === 1 && activeNavOnProject[0] === '资产'],
   ['分集页仅当前集高亮', activeNavOnEpisode.length === 1 && activeNavOnEpisode[0].includes('EP01')],
   ['分集创建后出现在导航', afterEpisodeCreate.includes('EP01')],
