@@ -1,8 +1,8 @@
 /**
- * 渲染冒烟测试：在 jsdom 里真实执行构建产物，确认首屏能渲染出内容。
+ * 渲染冒烟测试：在 jsdom 里真实执行构建产物，走一遍“列表 → 改名 → 项目页”。
  *
- * 目的不是替代浏览器测试，而是拦住“整页白屏”这类最贵的错误——
- * TypeScript 和打包器都发现不了运行时崩溃。
+ * 目的不是替代浏览器测试，而是拦住“整页白屏”和“数据不刷新”这类
+ * TypeScript 与打包器都发现不了的运行时问题。
  *
  *   npm run smoke
  */
@@ -25,6 +25,26 @@ const dom = new JSDOM(html.replace(/<script[^>]*src="[^"]*"[^>]*><\/script>/, ''
 })
 
 const { window } = dom
+
+// jsdom 尚未实现 <dialog>，这里补上组件需要的最小行为
+Object.defineProperty(window.HTMLDialogElement.prototype, 'open', {
+  configurable: true,
+  get() {
+    return this.hasAttribute('open')
+  },
+  set(value) {
+    if (value) this.setAttribute('open', '')
+    else this.removeAttribute('open')
+  },
+})
+window.HTMLDialogElement.prototype.showModal = function showModal() {
+  this.open = true
+}
+window.HTMLDialogElement.prototype.close = function close() {
+  this.open = false
+  this.dispatchEvent(new window.Event('close'))
+}
+
 for (const key of [
   'window',
   'document',
@@ -66,30 +86,49 @@ for (const key of [
 }
 globalThis.document = window.document
 
-const projects = [
-  {
-    id: 1,
-    code: 'PRJ-0001',
-    name: '冒烟测试项目',
-    description: '由渲染测试注入',
-    created_at: '2026-10-24T07:00:00.000Z',
-    updated_at: '2026-10-24T07:00:00.000Z',
-  },
-]
+const project = {
+  id: 1,
+  code: 'PRJ-0001',
+  name: '冒烟测试项目',
+  description: '由渲染测试注入',
+  created_at: '2026-10-24T07:00:00.000Z',
+  updated_at: '2026-10-24T07:00:00.000Z',
+}
 
-globalThis.fetch = async (input) => {
-  const url = String(input)
-  const isDetail = /\/projects\/[^/?]+$/.test(url) && !url.includes('/order')
-  const data = url.includes('/health')
-    ? { version: '0.1.0', db: ':memory:', schema_version: 3, projects: projects.length }
-    : isDetail
-      ? projects[0]
-      : { items: projects, total: projects.length, limit: 20, offset: 0 }
-  return {
-    ok: true,
-    status: 200,
-    json: async () => ({ ok: true, data }),
+const asset = {
+  id: 9,
+  project_id: 1,
+  kind: 'text',
+  source: 'user',
+  name: '第一幕',
+  text_content: '夜，外景，长安城。',
+  mime_type: null,
+  size_bytes: null,
+  content_url: null,
+  meta: null,
+  created_at: '2026-10-24T07:00:00.000Z',
+  updated_at: '2026-10-24T07:00:00.000Z',
+}
+
+globalThis.fetch = async (input, init = {}) => {
+  const path = new URL(String(input), 'http://127.0.0.1:8188').pathname
+  const method = (init.method ?? 'GET').toUpperCase()
+  let data
+
+  if (path.endsWith('/health')) {
+    data = { version: '0.1.0', db: ':memory:', schema_version: 4, projects: 1 }
+  } else if (path.endsWith('/assets/counts')) {
+    data = { text: 1, image: 0, video: 0 }
+  } else if (path.endsWith('/assets')) {
+    data = { items: [asset], total: 1 }
+  } else if (/^\/studio\/api\/projects\/[^/]+$/.test(path)) {
+    if (method === 'PATCH') Object.assign(project, JSON.parse(init.body))
+    data = project
+  } else {
+    data = { items: [{ ...project }], total: 1, limit: 20, offset: 0 }
   }
+
+  return { ok: true, status: 200, json: async () => ({ ok: true, data }) }
 }
 
 const errors = []
@@ -99,26 +138,54 @@ console.error = (...args) => {
   originalError(...args)
 }
 
+const wait = (ms = 150) => new Promise((resolve) => setTimeout(resolve, ms))
+const rootText = () => document.getElementById('root')?.textContent ?? ''
+const byLabel = (label) =>
+  [...document.querySelectorAll('button')].find((el) => el.getAttribute('aria-label') === label)
+
 await import(pathToFileURL(fileURLToPath(bundle)).href)
-await new Promise((resolve) => setTimeout(resolve, 400))
+await wait(400)
 
-const root = document.getElementById('root')
-const text = root?.textContent ?? ''
+const listText = rootText()
 
-// 前端路由：模拟点击后跳转到详情页（pushState 不会触发 popstate，需手动派发）
+// —— 交互回归：改名后列表必须立即更新，不需要刷新浏览器 ——
+const renamed = '冒烟测试项目（改）'
+byLabel('冒烟测试项目 的操作')?.click()
+await wait()
+;[...document.querySelectorAll('[role="menuitem"]')]
+  .find((el) => el.textContent?.trim() === '编辑')
+  ?.click()
+await wait()
+
+const nameInput = document.querySelector('#project-name')
+if (nameInput) {
+  const setValue = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set
+  setValue?.call(nameInput, renamed)
+  nameInput.dispatchEvent(new window.Event('input', { bubbles: true }))
+  await wait()
+  document
+    .querySelector('#project-form')
+    ?.dispatchEvent(new window.Event('submit', { bubbles: true, cancelable: true }))
+  await wait(500)
+}
+const afterEditText = rootText()
+
+// —— 进入项目页：独立导航 + 资产列表 + chat 输入框 ——
 window.history.pushState({}, '', '/studio/projects/PRJ-0001')
 window.dispatchEvent(new window.PopStateEvent('popstate'))
-await new Promise((resolve) => setTimeout(resolve, 400))
-const detailText = document.getElementById('root')?.textContent ?? ''
+await wait(500)
+const detailText = rootText()
 
 const checks = [
-  ['渲染出侧边栏品牌', text.includes('Filmline')],
-  ['渲染出项目标题', text.includes('项目')],
-  ['渲染出项目数据', text.includes('冒烟测试项目')],
-  ['渲染出项目编号', text.includes('PRJ-0001')],
+  ['列表页渲染品牌', listText.includes('Filmline')],
+  ['列表页渲染项目', listText.includes('冒烟测试项目')],
+  ['列表页渲染编号', listText.includes('PRJ-0001')],
   ['默认深色主题', document.documentElement.classList.contains('dark')],
-  ['路由进入详情页', detailText.includes('创建时间')],
-  ['详情页显示项目名称', detailText.includes('冒烟测试项目')],
+  ['改名后列表立即更新', afterEditText.includes(renamed)],
+  ['项目页显示项目名', detailText.includes(renamed)],
+  ['项目页有资产导航', ['文本', '图片', '视频'].every((label) => detailText.includes(label))],
+  ['项目页有文本资产', detailText.includes('第一幕')],
+  ['项目页有 chat 输入框', Boolean(document.querySelector('textarea[aria-label="消息输入"]'))],
   ['无控制台错误', errors.length === 0],
 ]
 

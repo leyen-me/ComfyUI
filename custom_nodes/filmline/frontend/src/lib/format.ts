@@ -13,3 +13,15 @@ export function formatTime(iso: string | null | undefined): string {
   if (Number.isNaN(date.getTime())) return iso
   return formatter.format(date).replace(/\//g, '-')
 }
+
+export function formatSize(bytes: number | null | undefined): string {
+  if (!bytes || bytes <= 0) return ''
+  const units = ['B', 'KB', 'MB', 'GB']
+  let value = bytes
+  let index = 0
+  while (value >= 1024 && index < units.length - 1) {
+    value /= 1024
+    index += 1
+  }
+  return `${value < 10 && index > 0 ? value.toFixed(1) : Math.round(value)} ${units[index]}`
+}

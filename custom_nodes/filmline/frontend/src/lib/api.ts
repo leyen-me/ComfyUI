@@ -75,12 +75,7 @@ interface Envelope<T> {
   error?: { code?: string; message?: string; details?: FieldIssue[] }
 }
 
-async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
-  const response = await fetch(BASE + path, {
-    ...init,
-    headers: { 'Content-Type': 'application/json', ...(init.headers ?? {}) },
-  })
-
+async function unwrap<T>(response: Response): Promise<T> {
   if (response.status === 204) return undefined as T
 
   let body: Envelope<T> | null = null
@@ -101,12 +96,50 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   return body.data as T
 }
 
+async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
+  const response = await fetch(BASE + path, {
+    ...init,
+    headers: { 'Content-Type': 'application/json', ...(init.headers ?? {}) },
+  })
+  return unwrap<T>(response)
+}
+
 function toQuery(params: ListParams): string {
   const search = new URLSearchParams()
   if (params.q) search.set('q', params.q)
   search.set('limit', String(params.limit ?? 20))
   search.set('offset', String(params.offset ?? 0))
   return search.toString()
+}
+
+export type AssetKind = 'text' | 'image' | 'video'
+export type AssetSource = 'user' | 'ai'
+
+export interface Asset {
+  id: number
+  project_id: number
+  kind: AssetKind
+  source: AssetSource
+  name: string
+  text_content: string | null
+  mime_type: string | null
+  size_bytes: number | null
+  content_url: string | null
+  meta: Record<string, unknown> | null
+  created_at: string
+  updated_at: string
+}
+
+export interface AssetList {
+  items: Asset[]
+  total: number
+}
+
+export type AssetCounts = Record<AssetKind, number>
+
+export interface TextAssetInput {
+  name: string
+  content?: string
 }
 
 export const api = {
@@ -133,5 +166,44 @@ export const api = {
 
     reorder: (ids: number[]) =>
       request<void>('/projects/order', { method: 'PUT', body: JSON.stringify({ ids }) }),
+
+    assets: {
+      list: (ref: string | number, kind: AssetKind, signal?: AbortSignal) =>
+        request<AssetList>(
+          `/projects/${encodeURIComponent(ref)}/assets?kind=${kind}&limit=200`,
+          { signal },
+        ),
+
+      counts: (ref: string | number, signal?: AbortSignal) =>
+        request<AssetCounts>(`/projects/${encodeURIComponent(ref)}/assets/counts`, { signal }),
+
+      createText: (ref: string | number, input: TextAssetInput) =>
+        request<Asset>(
+          `/projects/${encodeURIComponent(ref)}/assets`,
+          { method: 'POST', body: JSON.stringify({ kind: 'text', ...input }) },
+        ),
+
+      upload: async (
+        ref: string | number,
+        file: File,
+        options: { source?: AssetSource; name?: string } = {},
+      ): Promise<Asset> => {
+        const form = new FormData()
+        form.append('file', file)
+
+        const query = new URLSearchParams()
+        if (options.source) query.set('source', options.source)
+        if (options.name) query.set('name', options.name)
+
+        const response = await fetch(
+          `${BASE}/projects/${encodeURIComponent(ref)}/assets/upload?${query.toString()}`,
+          { method: 'POST', body: form },
+        )
+        return unwrap<Asset>(response)
+      },
+
+      remove: (assetId: number) =>
+        request<void>(`/assets/${assetId}`, { method: 'DELETE' }),
+    },
   },
 }

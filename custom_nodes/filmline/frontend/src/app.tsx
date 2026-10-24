@@ -1,11 +1,37 @@
 import { useEffect, useState } from 'react'
-import { Navigate, Route, Routes } from 'react-router-dom'
+import { Navigate, Outlet, Route, Routes } from 'react-router-dom'
 
 import { api, type HealthInfo } from '@/lib/api'
 import { applyTheme, readTheme, type Theme } from '@/lib/theme'
 import { AppSidebar } from './components/app-sidebar'
 import { ProjectPage } from './components/project-page'
 import { ProjectWorkspace } from './components/project-workspace'
+
+interface LayoutProps {
+  theme: Theme
+  onToggleTheme: () => void
+  health: HealthInfo | null
+  healthFailed: boolean
+}
+
+/** 全局布局：项目列表用。项目内部另有自己的导航，不套这一层。 */
+function GlobalLayout({ theme, onToggleTheme, health, healthFailed }: LayoutProps) {
+  return (
+    <div className="flex h-full">
+      <AppSidebar
+        theme={theme}
+        onToggleTheme={onToggleTheme}
+        health={health}
+        healthFailed={healthFailed}
+      />
+      <main className="flex-1 overflow-y-auto">
+        <div className="mx-auto max-w-5xl px-8 py-8">
+          <Outlet />
+        </div>
+      </main>
+    </div>
+  )
+}
 
 export default function App() {
   const [theme, setTheme] = useState<Theme>(() => readTheme())
@@ -31,31 +57,30 @@ export default function App() {
   }
 
   return (
-    <div className="flex h-full">
-      <AppSidebar
-        theme={theme}
-        onToggleTheme={toggleTheme}
-        health={health}
-        healthFailed={healthFailed}
-      />
+    <Routes>
+      <Route
+        element={
+          <GlobalLayout
+            theme={theme}
+            onToggleTheme={toggleTheme}
+            health={health}
+            healthFailed={healthFailed}
+          />
+        }
+      >
+        <Route
+          path="/"
+          element={
+            <>
+              <h1 className="mb-6 text-xl font-semibold tracking-tight">项目</h1>
+              <ProjectWorkspace />
+            </>
+          }
+        />
+      </Route>
 
-      <main className="flex-1 overflow-y-auto">
-        <div className="mx-auto max-w-5xl px-8 py-8">
-          <Routes>
-            <Route
-              path="/"
-              element={
-                <>
-                  <h1 className="mb-6 text-xl font-semibold tracking-tight">项目</h1>
-                  <ProjectWorkspace />
-                </>
-              }
-            />
-            <Route path="/projects/:ref" element={<ProjectPage />} />
-            <Route path="*" element={<Navigate to="/" replace />} />
-          </Routes>
-        </div>
-      </main>
-    </div>
+      <Route path="/projects/:ref/*" element={<ProjectPage />} />
+      <Route path="*" element={<Navigate to="/" replace />} />
+    </Routes>
   )
 }

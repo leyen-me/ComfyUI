@@ -28,6 +28,10 @@ React 19 + Vite 7 + TypeScript + Tailwind CSS v4，组件按 shadcn/ui 的写法
   侧边栏可切换浅色，偏好持久化。
 - **路由**：`/studio` 项目列表，`/studio/projects/{编号}` 项目详情。后端对
   `/studio/*` 做 SPA 回落（`/studio/api/*`、`/studio/static/*` 除外）。
+- **项目内布局**：左侧项目导航（资产 → 文本 / 图片 / 视频），中间资产列表，
+  右侧对话输入框。项目页不套全局侧边栏。
+- **资产来源标记**：`source=user`（用户创建或上传）与 `source=ai`（ComfyUI 生成），
+  界面上以徽章区分。文本资产由用户创建；图片/视频支持上传并指定来源。
 - **拖拽排序**：HTML5 原生拖拽，松手即保存；菜单里另有「上移/下移」作为键盘替代。
 - **品牌名收敛**：展示名只在 `frontend/src/lib/brand.ts`（以及 `index.html` 的 `<title>`）。
 - **构建产物**：输出到 `../web/`，由 ComfyUI 以 `/studio/static/` 提供，**不要手改**。
@@ -53,6 +57,12 @@ npm run test:logic   # 纯函数单测（页码计算）
 | GET | `/studio/api/projects/{ref}` | 详情，`ref` 可为数字 id 或项目编号 |
 | PATCH | `/studio/api/projects/{ref}` | 更新 `name` / `description` |
 | DELETE | `/studio/api/projects/{ref}` | 软删除，返回 204 |
+| GET | `/studio/api/projects/{ref}/assets` | 资产列表，`kind=text\|image\|video` |
+| GET | `/studio/api/projects/{ref}/assets/counts` | 各分类数量 |
+| POST | `/studio/api/projects/{ref}/assets` | 新建文本资产 `{name, content?}` |
+| POST | `/studio/api/projects/{ref}/assets/upload` | 上传图片/视频，`?source=user\|ai` |
+| GET | `/studio/api/assets/{id}/content` | 资产文件内容 |
+| DELETE | `/studio/api/assets/{id}` | 软删除资产 |
 | GET | `/studio/api/health` | 版本、库路径、schema 版本、项目数 |
 
 统一响应信封：
@@ -67,7 +77,10 @@ npm run test:logic   # 纯函数单测（页码计算）
 ## 数据位置
 
 ```
-ComfyUI/user/filmline/filmline.db     # 默认，跟随 --user-directory，升级不丢
+ComfyUI/user/filmline/
+├── filmline.db          # 元数据
+├── assets/{project_id}/ # 上传与生成的图片 / 视频
+└── tmp/                 # 上传中转，成功后移入 assets
 ```
 
 可用环境变量覆盖：

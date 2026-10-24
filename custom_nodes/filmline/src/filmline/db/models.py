@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import DateTime, Integer, String, Text
+from sqlalchemy import DateTime, ForeignKey, Integer, JSON, String, Text
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 from ..clock import utcnow
@@ -35,4 +35,35 @@ class Project(Base):
 
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow, index=True)
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
+
+
+class Asset(Base):
+    """项目资产：文本、图片、视频。
+
+    ``source`` 记录来源，区分用户自建与 AI 生成：``user`` | ``ai``。
+    """
+
+    __tablename__ = "assets"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    project_id: Mapped[int] = mapped_column(
+        ForeignKey("projects.id"), index=True, nullable=False
+    )
+    # text | image | video
+    kind: Mapped[str] = mapped_column(String(8), index=True)
+    # user | ai
+    source: Mapped[str] = mapped_column(String(8), index=True)
+
+    name: Mapped[str] = mapped_column(String(200))
+    text_content: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # 相对 data/assets 的路径，便于整体迁移
+    file_path: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    mime_type: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    size_bytes: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # 生成参数、来源工作流等扩展信息，结构随业务演进
+    meta: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, index=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)

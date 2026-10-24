@@ -7,6 +7,7 @@ import unittest
 from base import DbTestCase
 from filmline import db
 from filmline.db.migrations import MIGRATIONS, current_version
+from filmline.db.models import Base
 
 
 class MigrationTest(DbTestCase):
@@ -15,14 +16,17 @@ class MigrationTest(DbTestCase):
         latest = max(version for version, _ in MIGRATIONS)
         self.assertEqual(current_version(engine), latest)
 
-    def test_projects_schema_matches_models(self) -> None:
-        """列名集合必须与 ORM 模型一致，否则说明漏了迁移。"""
-        from filmline.db.models import Project
-
+    def test_all_tables_match_models(self) -> None:
+        """每张表的列集合必须与 ORM 模型一致，否则说明漏了迁移。"""
         engine = db.get_engine()
         with engine.connect() as conn:
-            actual = {row[1] for row in conn.exec_driver_sql("PRAGMA table_info(projects)")}
-        self.assertEqual(actual, set(Project.__table__.columns.keys()))
+            for table in Base.metadata.sorted_tables:
+                actual = {
+                    row[1]
+                    for row in conn.exec_driver_sql(f"PRAGMA table_info({table.name})")
+                }
+                with self.subTest(table=table.name):
+                    self.assertEqual(actual, set(table.columns.keys()))
 
     def test_project_has_no_status_column(self) -> None:
         engine = db.get_engine()

@@ -56,10 +56,44 @@ def _migration_003_project_sort_index(conn: Connection) -> None:
     conn.exec_driver_sql("CREATE INDEX ix_projects_sort_index ON projects (sort_index)")
 
 
+def _migration_004_assets(conn: Connection) -> None:
+    """项目资产：文本 / 图片 / 视频，带来源标记。"""
+    conn.exec_driver_sql(
+        """
+        CREATE TABLE assets (
+            id INTEGER NOT NULL,
+            project_id INTEGER NOT NULL,
+            kind VARCHAR(8) NOT NULL,
+            source VARCHAR(8) NOT NULL,
+            name VARCHAR(200) NOT NULL,
+            text_content TEXT,
+            file_path VARCHAR(500),
+            mime_type VARCHAR(100),
+            size_bytes INTEGER,
+            meta JSON,
+            created_at DATETIME NOT NULL,
+            updated_at DATETIME NOT NULL,
+            deleted_at DATETIME,
+            PRIMARY KEY (id),
+            FOREIGN KEY(project_id) REFERENCES projects (id)
+        )
+        """
+    )
+    for index, column in (
+        ("ix_assets_project_id", "project_id"),
+        ("ix_assets_kind", "kind"),
+        ("ix_assets_source", "source"),
+        ("ix_assets_created_at", "created_at"),
+        ("ix_assets_deleted_at", "deleted_at"),
+    ):
+        conn.exec_driver_sql(f"CREATE INDEX {index} ON assets ({column})")
+
+
 MIGRATIONS: list[tuple[int, object]] = [
     (1, _migration_001_initial),
     (2, _migration_002_drop_project_status),
     (3, _migration_003_project_sort_index),
+    (4, _migration_004_assets),
 ]
 
 

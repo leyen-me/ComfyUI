@@ -2,35 +2,10 @@
 
 from __future__ import annotations
 
-import shutil
-import tempfile
-import unittest
-from pathlib import Path
-
-from aiohttp import web
-from aiohttp.test_utils import TestClient, TestServer
-
-from base import DbTestCase  # noqa: F401  (确保 src 进入 sys.path)
-from filmline import db
-from filmline.api.routes import register_routes
+from base import ApiTestCase
 
 
-class ProjectApiTest(unittest.IsolatedAsyncioTestCase):
-    async def asyncSetUp(self) -> None:
-        self._tmp = Path(tempfile.mkdtemp(prefix="filmline_api_"))
-        db.reset()
-        db.init(self._tmp / "test.db")
-
-        app = web.Application()
-        register_routes(app)
-        self.client = TestClient(TestServer(app))
-        await self.client.start_server()
-
-    async def asyncTearDown(self) -> None:
-        await self.client.close()
-        db.reset()
-        shutil.rmtree(self._tmp, ignore_errors=True)
-
+class ProjectApiTest(ApiTestCase):
     async def _create(self, name="测试项目", **extra):
         res = await self.client.post("/studio/api/projects", json={"name": name, **extra})
         body = await res.json()
