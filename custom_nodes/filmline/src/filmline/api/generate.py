@@ -1,27 +1,26 @@
-"""生成接口：把面板参数提交给 ComfyUI，产物登记为 AI 资产。
+"""生成接口：校验参数、创建持久化任务并交给后台 runner。
 
     POST /studio/api/projects/{ref}/generate?episode=EP01
     body: {kind, prompt, size, count?, duration?}
+
+请求本身不再等待 ComfyUI 跑完，立即返回 task；刷新页面不会中断生成。
 """
 
 from __future__ import annotations
 
 import asyncio
-import logging
-import time
+from dataclasses import asdict
 
 from aiohttp import web
 
 from .. import generation, media, storage
-from ..clock import utcnow
 from ..domain.assets import AssetService
 from ..domain.episodes import EpisodeService
 from ..domain.projects import ProjectService
-from ..domain.schemas import AssetKind, AssetSource
-from ..errors import AppError, InvalidArgument
+from ..domain.tasks import TaskService
+from ..errors import InvalidArgument
+from ..runner import RUNNER_KEY
 from .http import handle_errors, ok, read_object
-
-_LOG = logging.getLogger("filmline")
 
 
 def _episode_scope(request: web.Request, project_id: int) -> tuple[int | None, str]:
@@ -268,67 +267,30 @@ def register_generate_routes(routes: web.RouteTableDef) -> None:
                     prefix=f"filmline/{project.code}/{scope}",
                 )
 
-        started_wall = utcnow()
-        started = time.monotonic()
-        try:
-            products, exec_seconds = await generation.run(
-                workflow, timeout=generation.timeout_for(workflow.kind)
-            )
-        except AppError:
-            raise
-        except Exception as exc:  # 网络 / ComfyUI 进程异常
-            _LOG.exception("生成失败")
-            raise generation.GenerationFailed(f"生成失败: {exc}") from exc
-
-        wall = round(time.monotonic() - started, 1)
-        # 对外展示的耗时只用 ComfyUI 的真实执行时间；排队时间另记
-        elapsed = round(exec_seconds, 1) if exec_seconds is not None else wall
-        created = []
-        for product in products:
-            relative, target = storage.allocate(project.id, scope, product.suffix)
-            target.write_bytes(product.data)
-
-            # 参考图模式下实际尺寸由参考图决定，以产物为准修正元数据
-            meta = dict(workflow.meta)
-            if kind == "image":
-                meta["ref_ids"] = raw_refs
+        meta = dict(workflow.meta)
+        if kind == "image":
+            meta["ref_ids"] = raw_refs
+        else:
+            meta["video_mode"] = mode
+            meta["ref_ids"] = raw_refs if mode == "reference" else frame_ids
+            if mode == "keyframes":
+                meta["first_frame_id"] = first_id
+                meta["last_frame_id"] = last_id
             else:
-                meta["video_mode"] = mode
-                meta["ref_ids"] = raw_refs if mode == "reference" else frame_ids
-                if mode == "keyframes":
-                    meta["first_frame_id"] = first_id
-                    meta["last_frame_id"] = last_id
-                else:
-                    meta["ref_video_ids"] = video_ids
-                    meta["ref_video_use_audio"] = video_use_audio
-                    meta["ref_audio_ids"] = audio_ids
-            meta["queue_ms"] = max(0, int(round((wall - elapsed) * 1000)))
-            if workflow.kind == "image":
-                try:
-                    from PIL import Image
+                meta["ref_video_ids"] = video_ids
+                meta["ref_video_use_audio"] = video_use_audio
+                meta["ref_audio_ids"] = audio_ids
 
-                    with Image.open(target) as produced:
-                        meta["width"], meta["height"] = produced.width, produced.height
-                        meta["size"] = generation.ratio_label(produced.width, produced.height)
-                except Exception:
-                    _LOG.warning("无法读取产物尺寸: %s", target)
-            asset = await asyncio.to_thread(
-                assets.create_from_file,
-                project.id,
-                name=product.filename,
-                kind=AssetKind(workflow.kind),
-                source=AssetSource.ai,
-                relative_path=relative,
-                mime_type=storage.MIME_BY_SUFFIX.get(
-                    product.suffix.lower(), "application/octet-stream"
-                ),
-                size_bytes=len(product.data),
-                episode_id=episode_id,
-                meta=meta,
-                gen_started_at=started_wall,
-                gen_elapsed_ms=int(elapsed * 1000),
-            )
-            created.append(asset.model_dump(mode="json"))
-
-        _LOG.info("生成完成: %s 个 %s，耗时 %ss", len(created), kind, elapsed)
-        return ok({"items": created, "kind": kind, "elapsed": elapsed}, status=201)
+        task = await asyncio.to_thread(
+            TaskService().create,
+            project_id=project.id,
+            episode_id=episode_id,
+            kind=workflow.kind,
+            prompt=prompt,
+            payload={"graph": workflow.prompt, "meta": meta, "scope": scope},
+        )
+        runner = request.app.get(RUNNER_KEY)
+        if runner is None:
+            raise InvalidArgument("任务执行器未初始化")
+        runner.schedule(task.id)
+        return ok({"task": asdict(task)}, status=202)

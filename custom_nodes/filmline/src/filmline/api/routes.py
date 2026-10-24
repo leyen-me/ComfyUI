@@ -11,11 +11,13 @@ from aiohttp import web
 
 from .. import __version__, config, db
 from ..domain.projects import ProjectService
+from ..runner import TaskRunner, RUNNER_KEY
 from .assets import register_asset_routes
 from .episodes import register_episode_routes
 from .generate import register_generate_routes
 from .http import handle_errors, ok
 from .projects import register_project_routes
+from .tasks import register_task_routes
 
 _LOG = logging.getLogger("filmline")
 
@@ -32,6 +34,12 @@ def register_routes(app: web.Application) -> None:
     register_asset_routes(routes)
     register_episode_routes(routes)
     register_generate_routes(routes)
+    register_task_routes(routes)
+
+    runner = TaskRunner()
+    app[RUNNER_KEY] = runner
+    app.on_startup.append(runner.start)
+    app.on_cleanup.append(runner.stop)
 
     @routes.get(f"{API_PREFIX}/health")
     @handle_errors

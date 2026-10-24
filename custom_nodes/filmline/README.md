@@ -71,6 +71,8 @@ npm run test:logic   # 纯函数单测（页码计算）
 | GET | `/studio/api/assets/{id}/content` | 资产文件内容 |
 | GET | `/studio/api/assets/{id}/media-info` | 视频/音频时长、帧率、音轨与采样信息 |
 | DELETE | `/studio/api/assets/{id}` | 软删除资产 |
+| GET | `/studio/api/tasks` | 生成任务列表（合并 ComfyUI 外部队列），`?active=1&limit=30` |
+| GET | `/studio/api/tasks/{id}` | 单个任务状态；前端提交后轮询 |
 | GET | `/studio/api/health` | 版本、库路径、schema 版本、项目数 |
 
 统一响应信封：
@@ -129,6 +131,16 @@ ComfyUI/user/filmline/
 生成结果 `meta` 会记录 `video_mode`、`first_frame_id` / `last_frame_id`（首尾帧）或
 `ref_ids` / `ref_video_ids` / `ref_video_use_audio` / `ref_audio_ids`（参考素材），供前端还原；
 旧视频资产只有 `ref_ids` 时按首帧兼容。
+
+### 任务队列
+
+- 生成接口改为 **202 + task**，后台 runner 负责提交 ComfyUI、等待完成、落盘和登记资产；
+  刷新页面不会中断任务。
+- 任务持久化在 `generation_tasks` 表，记录 ComfyUI `prompt_id`、项目/分集、参数、产物 id、错误与耗时。
+- 右上角任务队列每 3 秒轮询 `/studio/api/tasks`，显示进行中/最近完成；所有打开页面的同事共享同一份状态。
+- 任务列表会合并 ComfyUI `/queue` 中不属于 Filmline 的 prompt，显示为「ComfyUI 外部任务」。
+- 后端重启时从数据库恢复 queued/running 任务：有 prompt_id 的继续等结果，尚未提交的用保存的工作流补提交。
+- 目前不提供取消/调整队列顺序；ComfyUI 队列顺序即执行顺序。
 
 ## 目录
 

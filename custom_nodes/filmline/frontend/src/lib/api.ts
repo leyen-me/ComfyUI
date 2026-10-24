@@ -176,6 +176,35 @@ export interface MediaInfo {
   channels: number | null
 }
 
+export type TaskStatus = 'queued' | 'running' | 'succeeded' | 'failed' | 'cancelled'
+
+export interface TaskInfo {
+  id: number | null
+  client_id: string
+  prompt_id: string | null
+  project_id: number | null
+  project_code: string | null
+  project_name: string
+  episode_id: number | null
+  episode_code: string | null
+  kind: 'image' | 'video' | 'unknown'
+  status: TaskStatus
+  prompt_excerpt: string
+  created_at: string | null
+  started_at: string | null
+  finished_at: string | null
+  elapsed_ms: number | null
+  error: string | null
+  asset_ids: number[]
+  queue_position: number | null
+  external: boolean
+}
+
+export interface TaskList {
+  items: TaskInfo[]
+  active: number
+}
+
 export const api = {
   health: (signal?: AbortSignal) => request<HealthInfo>('/health', { signal }),
 
@@ -310,7 +339,7 @@ export const api = {
         episode?: string,
       ) => {
         const query = episode ? `?episode=${encodeURIComponent(episode)}` : ''
-        return request<{ items: Asset[]; kind: string; elapsed: number }>(
+        return request<{ task: TaskInfo }>(
           `/projects/${encodeURIComponent(ref)}/generate${query}`,
           { method: 'POST', body: JSON.stringify(input) },
         )
@@ -347,5 +376,20 @@ export const api = {
           body: JSON.stringify({ ids }),
         }),
     },
+  },
+
+  tasks: {
+    list: (
+      params: { active?: boolean; limit?: number } = {},
+      signal?: AbortSignal,
+    ) => {
+      const query = new URLSearchParams()
+      if (params.active) query.set('active', '1')
+      query.set('limit', String(params.limit ?? 30))
+      return request<TaskList>(`/tasks?${query.toString()}`, { signal })
+    },
+
+    get: (taskId: number, signal?: AbortSignal) =>
+      request<TaskInfo>(`/tasks/${taskId}`, { signal }),
   },
 }

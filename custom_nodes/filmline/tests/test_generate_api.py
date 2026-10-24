@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import subprocess
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
@@ -74,19 +75,37 @@ class GenerateApiTest(ApiTestCase):
     async def _media(self, ref: str, path: Path, content_type: str) -> dict:
         return await self._upload(ref, path.name, path.read_bytes(), content_type)
 
+    async def _wait_task(self, task_id: int, timeout: float = 5.0) -> dict:
+        deadline = asyncio.get_event_loop().time() + timeout
+        while asyncio.get_event_loop().time() < deadline:
+            res = await self.client.get(f"/studio/api/tasks/{task_id}")
+            body = await res.json()
+            self.assertEqual(res.status, 200, body)
+            task = body["data"]
+            if task["status"] in ("succeeded", "failed", "cancelled"):
+                return task
+            await asyncio.sleep(0.05)
+        self.fail("后台生成任务未在超时时间内结束")
+
+    @staticmethod
+    def _fake_run(kind: str = "video", elapsed: float = 1.0):
+        suffix = ".png" if kind == "image" else ".mp4"
+        return AsyncMock(
+            return_value=(
+                [generation.Product(filename=f"clip{suffix}", suffix=suffix, data=b"fake")],
+                elapsed,
+            )
+        )
+
     async def test_keyframes_payload_and_meta(self) -> None:
         project = await self._project()
         ref = project["code"]
         first = await self._image(ref, "first.png")
         last = await self._image(ref, "last.png")
 
-        fake = AsyncMock(
-            return_value=(
-                [generation.Product(filename="clip.mp4", suffix=".mp4", data=b"fake")],
-                1.2,
-            )
-        )
-        with patch("filmline.generation.run", new=fake):
+        with patch(
+            "filmline.generation.submit", new=AsyncMock(return_value="prompt-kf")
+        ), patch("filmline.generation.collect", new=self._fake_run("video", 1.2)):
             res = await self.client.post(
                 f"/studio/api/projects/{ref}/generate",
                 json={
@@ -99,10 +118,17 @@ class GenerateApiTest(ApiTestCase):
                     "last_frame_id": last["id"],
                 },
             )
+            body = await res.json()
+            self.assertEqual(res.status, 202, body)
+            task = await self._wait_task(body["data"]["task"]["id"])
 
-        body = await res.json()
-        self.assertEqual(res.status, 201, body)
-        asset = body["data"]["items"][0]
+        self.assertEqual(task["status"], "succeeded")
+        self.assertEqual(len(task["asset_ids"]), 1)
+        asset = (
+            await (
+                await self.client.get(f"/studio/api/assets/{task['asset_ids'][0]}")
+            ).json()
+        )["data"]
         self.assertEqual(asset["kind"], "video")
         self.assertEqual(asset["meta"]["video_mode"], "keyframes")
         self.assertEqual(asset["meta"]["first_frame_id"], first["id"])
@@ -114,13 +140,9 @@ class GenerateApiTest(ApiTestCase):
         ref = project["code"]
         first = await self._image(ref, "first.png")
 
-        fake = AsyncMock(
-            return_value=(
-                [generation.Product(filename="clip.mp4", suffix=".mp4", data=b"fake")],
-                1.0,
-            )
-        )
-        with patch("filmline.generation.run", new=fake):
+        with patch(
+            "filmline.generation.submit", new=AsyncMock(return_value="prompt-legacy")
+        ), patch("filmline.generation.collect", new=self._fake_run("video", 1.0)):
             res = await self.client.post(
                 f"/studio/api/projects/{ref}/generate",
                 json={
@@ -131,10 +153,17 @@ class GenerateApiTest(ApiTestCase):
                     "refs": [first["id"]],
                 },
             )
+            body = await res.json()
+            self.assertEqual(res.status, 202, body)
+            task = await self._wait_task(body["data"]["task"]["id"])
 
-        body = await res.json()
-        self.assertEqual(res.status, 201, body)
-        meta = body["data"]["items"][0]["meta"]
+        self.assertEqual(task["status"], "succeeded")
+        asset = (
+            await (
+                await self.client.get(f"/studio/api/assets/{task['asset_ids'][0]}")
+            ).json()
+        )["data"]
+        meta = asset["meta"]
         self.assertEqual(meta["first_frame_id"], first["id"])
         self.assertIsNone(meta["last_frame_id"])
 
@@ -164,13 +193,9 @@ class GenerateApiTest(ApiTestCase):
         first = await self._image(ref, "one.png")
         second = await self._image(ref, "two.png")
 
-        fake = AsyncMock(
-            return_value=(
-                [generation.Product(filename="ref.mp4", suffix=".mp4", data=b"fake")],
-                2.0,
-            )
-        )
-        with patch("filmline.generation.run", new=fake):
+        with patch(
+            "filmline.generation.submit", new=AsyncMock(return_value="prompt-ref-img")
+        ), patch("filmline.generation.collect", new=self._fake_run("video", 2.0)):
             res = await self.client.post(
                 f"/studio/api/projects/{ref}/generate",
                 json={
@@ -182,10 +207,17 @@ class GenerateApiTest(ApiTestCase):
                     "refs": [first["id"], second["id"]],
                 },
             )
+            body = await res.json()
+            self.assertEqual(res.status, 202, body)
+            task = await self._wait_task(body["data"]["task"]["id"])
 
-        body = await res.json()
-        self.assertEqual(res.status, 201, body)
-        meta = body["data"]["items"][0]["meta"]
+        self.assertEqual(task["status"], "succeeded")
+        asset = (
+            await (
+                await self.client.get(f"/studio/api/assets/{task['asset_ids'][0]}")
+            ).json()
+        )["data"]
+        meta = asset["meta"]
         self.assertEqual(meta["video_mode"], "reference")
         self.assertEqual(meta["ref_ids"], [first["id"], second["id"]])
         self.assertNotIn("first_frame_id", meta)
@@ -222,13 +254,9 @@ class GenerateApiTest(ApiTestCase):
         self.assertAlmostEqual(video["meta"]["duration"], 2.0, delta=0.1)
         self.assertTrue(video["meta"]["has_audio"])
 
-        fake = AsyncMock(
-            return_value=(
-                [generation.Product(filename="ref.mp4", suffix=".mp4", data=b"fake")],
-                2.0,
-            )
-        )
-        with patch("filmline.generation.run", new=fake):
+        with patch(
+            "filmline.generation.submit", new=AsyncMock(return_value="prompt-ref-av")
+        ), patch("filmline.generation.collect", new=self._fake_run("video", 2.0)):
             res = await self.client.post(
                 f"/studio/api/projects/{ref}/generate",
                 json={
@@ -241,10 +269,17 @@ class GenerateApiTest(ApiTestCase):
                     "ref_audios": [audio["id"]],
                 },
             )
+            body = await res.json()
+            self.assertEqual(res.status, 202, body)
+            task = await self._wait_task(body["data"]["task"]["id"])
 
-        body = await res.json()
-        self.assertEqual(res.status, 201, body)
-        meta = body["data"]["items"][0]["meta"]
+        self.assertEqual(task["status"], "succeeded")
+        asset = (
+            await (
+                await self.client.get(f"/studio/api/assets/{task['asset_ids'][0]}")
+            ).json()
+        )["data"]
+        meta = asset["meta"]
         self.assertEqual(meta["video_mode"], "reference")
         self.assertEqual(meta["ref_video_ids"], [video["id"]])
         self.assertEqual(meta["ref_video_use_audio"], [True])
@@ -286,6 +321,53 @@ class GenerateApiTest(ApiTestCase):
         body = await res.json()
         self.assertEqual(res.status, 400, body)
         self.assertIn("没有音轨", body["error"]["message"])
+
+    async def test_task_list_merges_external_queue(self) -> None:
+        project = await self._project()
+        ref = project["code"]
+        first = await self._image(ref, "one.png")
+
+        with patch(
+            "filmline.generation.submit", new=AsyncMock(return_value="prompt-list")
+        ), patch("filmline.generation.collect", new=self._fake_run("video", 1.0)):
+            res = await self.client.post(
+                f"/studio/api/projects/{ref}/generate",
+                json={
+                    "kind": "video",
+                    "prompt": "x",
+                    "size": "16:9",
+                    "duration": 5,
+                    "first_frame_id": first["id"],
+                },
+            )
+            body = await res.json()
+            self.assertEqual(res.status, 202, body)
+            task = await self._wait_task(body["data"]["task"]["id"])
+
+        external = generation.QueuedPrompt(
+            prompt_id="external-1",
+            graph={
+                "1": {"class_type": "SaveVideo", "inputs": {}},
+                "2": {"class_type": "CLIPTextEncode", "inputs": {"prompt": "外部任务"}},
+            },
+            extra_data={"client_id": "someone-else"},
+        )
+        with patch(
+            "filmline.generation.queue_snapshot",
+            new=AsyncMock(return_value=([external], [])),
+        ):
+            res = await self.client.get("/studio/api/tasks?limit=20")
+        body = await res.json()
+        self.assertEqual(res.status, 200, body)
+        items = body["data"]["items"]
+        ours = next(item for item in items if item["id"] == task["id"])
+        self.assertEqual(ours["status"], "succeeded")
+        self.assertFalse(ours["external"])
+        foreign = next(item for item in items if item["prompt_id"] == "external-1")
+        self.assertTrue(foreign["external"])
+        self.assertEqual(foreign["kind"], "video")
+        self.assertEqual(foreign["project_name"], "ComfyUI 外部任务")
+        self.assertGreaterEqual(body["data"]["active"], 1)
 
     async def test_reference_rejects_keyframe_fields(self) -> None:
         project = await self._project()

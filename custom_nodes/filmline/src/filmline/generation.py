@@ -583,8 +583,13 @@ def video_reference_workflow(
     )
 
 
-async def _submit(session: aiohttp.ClientSession, graph: dict[str, Any]) -> str:
-    async with session.post(f"{COMFY_URL}/prompt", json={"prompt": graph}) as response:
+async def _submit(
+    session: aiohttp.ClientSession, graph: dict[str, Any], *, client_id: str | None = None
+) -> str:
+    payload: dict[str, Any] = {"prompt": graph}
+    if client_id:
+        payload["client_id"] = client_id
+    async with session.post(f"{COMFY_URL}/prompt", json=payload) as response:
         body = await response.json(content_type=None)
         if response.status != 200:
             error = body.get("error") if isinstance(body, dict) else body
@@ -594,15 +599,61 @@ async def _submit(session: aiohttp.ClientSession, graph: dict[str, Any]) -> str:
         return str(body["prompt_id"])
 
 
+@dataclass(frozen=True)
+class QueuedPrompt:
+    prompt_id: str
+    graph: dict[str, Any]
+    extra_data: dict[str, Any]
+
+
+def _queue_entry(item: Any) -> QueuedPrompt | None:
+    if not isinstance(item, (list, tuple)) or len(item) < 3:
+        return None
+    prompt_id = str(item[1] or "")
+    graph = item[2] if isinstance(item[2], dict) else {}
+    extra = item[3] if len(item) > 3 and isinstance(item[3], dict) else {}
+    if not prompt_id:
+        return None
+    return QueuedPrompt(prompt_id=prompt_id, graph=graph, extra_data=extra)
+
+
+async def queue_snapshot() -> tuple[list[QueuedPrompt], list[QueuedPrompt]]:
+    """读取 ComfyUI 当前队列（运行中 + 排队），用于任务面板合并外部任务。"""
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(f"{COMFY_URL}/queue") as response:
+                if response.status != 200:
+                    return [], []
+                data = await response.json(content_type=None)
+    except Exception:
+        _LOG.warning("读取 ComfyUI 队列失败", exc_info=True)
+        return [], []
+
+    running = [
+        entry
+        for item in (data.get("queue_running") or [])
+        if (entry := _queue_entry(item)) is not None
+    ]
+    pending = [
+        entry
+        for item in (data.get("queue_pending") or [])
+        if (entry := _queue_entry(item)) is not None
+    ]
+    return running, pending
+
+
 async def _wait(
     session: aiohttp.ClientSession, prompt_id: str, timeout: float
 ) -> tuple[list[dict], float | None]:
     """轮询 /history 直到完成，返回（输出文件, 纯执行秒数）。
 
     执行秒数取 ComfyUI 的 execution_start → execution_success，
-    不含排队等待，避免统计被前一个任务干扰。
+    不含排队等待，避免统计被前一个任务干扰。每几轮同时看 /queue，
+    如果任务既不在队列也没有 history，说明 ComfyUI 重启或任务丢失。
     """
     deadline = asyncio.get_event_loop().time() + timeout
+    polls = 0
+    missing = 0
     while True:
         if asyncio.get_event_loop().time() > deadline:
             raise GenerationFailed("生成超时")
@@ -622,6 +673,29 @@ async def _wait(
                         files.extend(item for item in value if isinstance(item, dict) and "filename" in item)
             if files:
                 return files, _execution_seconds(status)
+
+        polls += 1
+        if polls % 4 == 0:
+            try:
+                async with session.get(f"{COMFY_URL}/queue") as response:
+                    queue = await response.json(content_type=None) if response.status == 200 else {}
+            except Exception:
+                queue = {}
+            if isinstance(queue, dict):
+                ids = {
+                    str(item[1])
+                    for key in ("queue_running", "queue_pending")
+                    for item in (queue.get(key) or [])
+                    if isinstance(item, (list, tuple)) and len(item) > 1
+                }
+                if prompt_id in ids:
+                    missing = 0
+                elif queue:
+                    missing += 1
+                    if missing >= 3:
+                        raise GenerationFailed("ComfyUI 任务已丢失或服务已重启")
+            else:
+                missing = 0
 
         await asyncio.sleep(1.5)
 
@@ -647,16 +721,29 @@ class Product:
 
 async def run(workflow: Workflow, *, timeout: float) -> tuple[list[Product], float | None]:
     """提交并等待完成，返回（产物, 纯执行秒数）。"""
+    prompt_id = await submit(workflow)
+    return await collect(prompt_id, kind=workflow.kind, timeout=timeout)
+
+
+async def submit(workflow: Workflow, *, client_id: str | None = None) -> str:
     connector = aiohttp.TCPConnector(limit=4)
     async with aiohttp.ClientSession(connector=connector) as session:
-        prompt_id = await _submit(session, workflow.prompt)
+        prompt_id = await _submit(session, workflow.prompt, client_id=client_id)
         _LOG.info("生成任务已提交: %s (%s)", prompt_id, workflow.kind)
+        return prompt_id
+
+
+async def collect(
+    prompt_id: str, *, kind: str, timeout: float
+) -> tuple[list[Product], float | None]:
+    connector = aiohttp.TCPConnector(limit=4)
+    async with aiohttp.ClientSession(connector=connector) as session:
         files, exec_seconds = await _wait(session, prompt_id, timeout)
         products = []
         for item in files:
             data = await _download(session, item)
             suffix = os.path.splitext(item["filename"])[1] or (
-                ".png" if workflow.kind == "image" else ".mp4"
+                ".png" if kind == "image" else ".mp4"
             )
             products.append(Product(filename=item["filename"], suffix=suffix, data=data))
         return products, exec_seconds

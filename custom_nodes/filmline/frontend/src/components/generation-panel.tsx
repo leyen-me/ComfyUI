@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Image as ImageIcon, Loader2, Sparkles, Video } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 
-import { ApiError, api, type Asset, type Project } from '@/lib/api'
+import { ApiError, api, type Asset, type Project, type TaskInfo } from '@/lib/api'
 import type { AssetDragPayload } from '@/lib/asset-drag'
 import type { KeyframeSlot } from '@/lib/keyframes'
 import { buildPromptDoc, type RefAsset } from '@/lib/prompt'
@@ -87,6 +87,7 @@ export function GenerationPanel({ project, episodeCode }: GenerationPanelProps) 
   const [elapsed, setElapsed] = useState(0)
 
   const timerRef = useRef<number | null>(null)
+  const taskTokenRef = useRef(0)
   // 图片模式带图片块，两种视频模式提示词语义不同，分开暂存避免丢内容或串味
   const draftsRef = useRef<Record<DraftKey, unknown>>({
     image: null,
@@ -136,6 +137,7 @@ export function GenerationPanel({ project, episodeCode }: GenerationPanelProps) 
 
   useEffect(() => {
     return () => {
+      taskTokenRef.current += 1
       if (timerRef.current) window.clearInterval(timerRef.current)
     }
   }, [])
@@ -519,6 +521,27 @@ export function GenerationPanel({ project, episodeCode }: GenerationPanelProps) 
     setPicker(null)
   }
 
+  async function waitForTask(taskId: number, token: number): Promise<TaskInfo> {
+    let failures = 0
+    while (token === taskTokenRef.current) {
+      await new Promise((resolve) => window.setTimeout(resolve, 2000))
+      if (token !== taskTokenRef.current) break
+      try {
+        const task = await api.tasks.get(taskId)
+        failures = 0
+        if (task.status === 'succeeded' || task.status === 'failed' || task.status === 'cancelled') {
+          return task
+        }
+      } catch {
+        failures += 1
+        if (failures >= 5) {
+          throw new Error('无法获取任务状态，任务仍在后台执行，可在右上角任务队列查看')
+        }
+      }
+    }
+    throw new Error('任务状态轮询已取消')
+  }
+
   async function handleSubmit() {
     if (running) return
     const current = editorRef.current?.getValue() ?? value
@@ -554,8 +577,9 @@ export function GenerationPanel({ project, episodeCode }: GenerationPanelProps) 
       ? `/projects/${project.code}/episodes/${episodeCode}/assets`
       : `/projects/${project.code}/assets`
 
+    const token = ++taskTokenRef.current
     try {
-      await api.projects.generate(
+      const { task } = await api.projects.generate(
         project.code,
         mode === 'image'
           ? {
@@ -592,6 +616,18 @@ export function GenerationPanel({ project, episodeCode }: GenerationPanelProps) 
         episodeCode,
       )
 
+      if (task.id === null) throw new Error('任务创建失败')
+      const final = await waitForTask(task.id, token)
+      if (token !== taskTokenRef.current) return
+      if (final.status !== 'succeeded') {
+        setError(
+          final.status === 'cancelled'
+            ? '任务已取消'
+            : final.error || '生成失败，任务仍在右上角任务队列中',
+        )
+        return
+      }
+
       // 参考素材保留下来方便连续微调，只清空提示词草稿
       draftsRef.current[draftKey()] = null
       editorRef.current?.clear()
@@ -599,7 +635,14 @@ export function GenerationPanel({ project, episodeCode }: GenerationPanelProps) 
       emitAssetsChanged()
       navigate(`${base}/${mode}`)
     } catch (cause) {
-      setError(cause instanceof ApiError ? cause.fullMessage : '生成失败')
+      if (token !== taskTokenRef.current) return
+      setError(
+        cause instanceof ApiError
+          ? cause.fullMessage
+          : cause instanceof Error
+            ? cause.message
+            : '生成失败',
+      )
     } finally {
       if (timerRef.current) window.clearInterval(timerRef.current)
       timerRef.current = null

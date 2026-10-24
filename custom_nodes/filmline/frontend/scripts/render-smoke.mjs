@@ -170,6 +170,40 @@ const asset = {
   updated_at: '2026-10-24T07:00:00.000Z',
 }
 
+const runningTask = {
+  id: 100,
+  client_id: 'client-running',
+  prompt_id: 'prompt-running',
+  project_id: 1,
+  project_code: 'PRJ-0001',
+  project_name: '冒烟测试项目',
+  episode_id: null,
+  episode_code: null,
+  kind: 'video',
+  status: 'running',
+  prompt_excerpt: '雪夜长安街，红灯笼',
+  created_at: '2026-10-24T07:00:00.000Z',
+  started_at: '2026-10-24T07:00:02.000Z',
+  finished_at: null,
+  elapsed_ms: null,
+  error: null,
+  asset_ids: [],
+  queue_position: 0,
+  external: false,
+}
+
+const doneTask = {
+  ...runningTask,
+  id: 101,
+  client_id: 'client-done',
+  prompt_id: 'prompt-done',
+  status: 'succeeded',
+  finished_at: '2026-10-24T07:00:53.000Z',
+  elapsed_ms: 51200,
+  asset_ids: [11],
+  queue_position: null,
+}
+
 globalThis.fetch = async (input, init = {}) => {
   const path = new URL(String(input), 'http://127.0.0.1:8188').pathname
   const method = (init.method ?? 'GET').toUpperCase()
@@ -177,6 +211,8 @@ globalThis.fetch = async (input, init = {}) => {
 
   if (path.endsWith('/health')) {
     data = { version: '0.1.0', db: ':memory:', schema_version: 4, projects: 1 }
+  } else if (path.endsWith('/tasks')) {
+    data = { items: [{ ...runningTask }, { ...doneTask }], active: 1 }
   } else if (path.endsWith('/assets/counts')) {
     data = { text: 1, image: 0, video: 0, audio: 0 }
   } else if (path.endsWith('/episodes')) {
@@ -554,6 +590,18 @@ videoDialog?.querySelectorAll('button').forEach((el) => {
 })
 await wait(150)
 
+// —— 全局任务队列：右上角入口，显示进行中与最近完成 ——
+byLabel('任务队列')?.click()
+await wait(250)
+const queueText = document.querySelector('[role="dialog"]')?.textContent ?? ''
+const taskQueueVisible =
+  queueText.includes('任务队列') &&
+  queueText.includes('运行中') &&
+  queueText.includes('已完成') &&
+  queueText.includes('冒烟测试项目')
+document.body.dispatchEvent(new window.MouseEvent('mousedown', { bubbles: true }))
+await wait(150)
+
 const checks = [
   ['列表页渲染品牌', listText.includes('Filmline')],
   ['列表页渲染项目', listText.includes('冒烟测试项目')],
@@ -601,6 +649,7 @@ const checks = [
   ['复用后「图1」还原为图片块', chipRestored],
   ['复制失败时兜底弹窗可手动复制', fallbackShown],
   ['视频卡片下半部分可打开预览', videoPreviewOpened],
+  ['右上角任务队列显示进行中/完成', taskQueueVisible],
   ['无控制台错误', errors.length === 0],
 ]
 
@@ -616,3 +665,4 @@ if (failed) {
 }
 
 console.log('\n首屏渲染正常')
+process.exit(0)

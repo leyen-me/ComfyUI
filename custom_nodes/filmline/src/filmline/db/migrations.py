@@ -127,6 +127,51 @@ def _migration_006_generation_stats(conn: Connection) -> None:
     conn.exec_driver_sql("ALTER TABLE assets ADD COLUMN gen_elapsed_ms INTEGER")
 
 
+def _migration_007_generation_tasks(conn: Connection) -> None:
+    """持久化生成任务，支持刷新页面/多人共享/重启后恢复。"""
+    conn.exec_driver_sql(
+        """
+        CREATE TABLE generation_tasks (
+            id INTEGER NOT NULL,
+            client_id VARCHAR(64) NOT NULL,
+            prompt_id VARCHAR(64),
+            project_id INTEGER NOT NULL,
+            episode_id INTEGER,
+            kind VARCHAR(8) NOT NULL,
+            status VARCHAR(16) NOT NULL,
+            prompt_excerpt TEXT DEFAULT '' NOT NULL,
+            payload JSON NOT NULL,
+            asset_ids JSON,
+            error TEXT,
+            elapsed_ms INTEGER,
+            created_at DATETIME NOT NULL,
+            started_at DATETIME,
+            finished_at DATETIME,
+            updated_at DATETIME NOT NULL,
+            PRIMARY KEY (id),
+            FOREIGN KEY(project_id) REFERENCES projects (id),
+            FOREIGN KEY(episode_id) REFERENCES episodes (id)
+        )
+        """
+    )
+    conn.exec_driver_sql(
+        "CREATE UNIQUE INDEX ux_generation_tasks_client_id ON generation_tasks (client_id)"
+    )
+    conn.exec_driver_sql(
+        "CREATE UNIQUE INDEX ux_generation_tasks_prompt_id ON generation_tasks (prompt_id) "
+        "WHERE prompt_id IS NOT NULL"
+    )
+    for index, column in (
+        ("ix_generation_tasks_project_id", "project_id"),
+        ("ix_generation_tasks_episode_id", "episode_id"),
+        ("ix_generation_tasks_status", "status"),
+        ("ix_generation_tasks_created_at", "created_at"),
+    ):
+        conn.exec_driver_sql(
+            f"CREATE INDEX {index} ON generation_tasks ({column})"
+        )
+
+
 MIGRATIONS: list[tuple[int, object]] = [
     (1, _migration_001_initial),
     (2, _migration_002_drop_project_status),
@@ -134,6 +179,7 @@ MIGRATIONS: list[tuple[int, object]] = [
     (4, _migration_004_assets),
     (5, _migration_005_episodes),
     (6, _migration_006_generation_stats),
+    (7, _migration_007_generation_tasks),
 ]
 
 

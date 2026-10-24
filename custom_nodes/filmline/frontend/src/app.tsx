@@ -6,6 +6,7 @@ import { applyTheme, readTheme, type Theme } from '@/lib/theme'
 import { AppSidebar } from './components/app-sidebar'
 import { ProjectPage } from './components/project-page'
 import { ProjectWorkspace } from './components/project-workspace'
+import { TaskQueue } from './components/task-queue'
 
 interface LayoutProps {
   theme: Theme
@@ -57,30 +58,33 @@ export default function App() {
   }
 
   return (
-    <Routes>
-      <Route
-        element={
-          <GlobalLayout
-            theme={theme}
-            onToggleTheme={toggleTheme}
-            health={health}
-            healthFailed={healthFailed}
-          />
-        }
-      >
+    <>
+      <Routes>
         <Route
-          path="/"
           element={
-            <>
-              <h1 className="mb-6 text-xl font-semibold tracking-tight">项目</h1>
-              <ProjectWorkspace />
-            </>
+            <GlobalLayout
+              theme={theme}
+              onToggleTheme={toggleTheme}
+              health={health}
+              healthFailed={healthFailed}
+            />
           }
-        />
-      </Route>
+        >
+          <Route
+            path="/"
+            element={
+              <>
+                <h1 className="mb-6 text-xl font-semibold tracking-tight">项目</h1>
+                <ProjectWorkspace />
+              </>
+            }
+          />
+        </Route>
 
-      <Route path="/projects/:ref/*" element={<ProjectPage />} />
-      <Route path="*" element={<Navigate to="/" replace />} />
-    </Routes>
+        <Route path="/projects/:ref/*" element={<ProjectPage />} />
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </Routes>
+      <TaskQueue />
+    </>
   )
 }
