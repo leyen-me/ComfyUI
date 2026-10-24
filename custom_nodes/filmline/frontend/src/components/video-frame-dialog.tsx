@@ -42,6 +42,7 @@ export function VideoFrameDialog({
 
   const fps = video?.fps && video.fps > 0 ? video.fps : 24
   const frameStep = 1 / fps
+  const timelineMax = Math.max(0, duration - frameStep)
   const label = slot === 'first' ? '首帧' : '尾帧'
 
   useEffect(() => {
@@ -58,8 +59,7 @@ export function VideoFrameDialog({
     const element = videoRef.current
     if (!element || !ready) return
     if (!element.paused) element.pause()
-    const max = Number.isFinite(duration) && duration > 0 ? duration : 0
-    const target = Math.min(Math.max(next, 0), Math.max(0, max - 0.001))
+    const target = Math.min(Math.max(next, 0), timelineMax)
     element.currentTime = target
     setTime(target)
   }
@@ -145,7 +145,7 @@ export function VideoFrameDialog({
       footer={
         <>
           <span className="mr-auto self-center font-mono text-[11px] text-muted-foreground">
-            {formatClock(time)} · 第 {Math.round(time * fps) + 1} 帧（{fps}fps）
+            {formatClock(time)} · 第 {Math.round(time * fps) + 1} 帧（按 {fps}fps 步进）
           </span>
           <Button onClick={() => onOpenChange(false)} disabled={capturing}>
             取消
@@ -235,9 +235,9 @@ export function VideoFrameDialog({
           <input
             type="range"
             min={0}
-            max={duration || 0}
+            max={timelineMax}
             step={frameStep}
-            value={Math.min(time, duration || 0)}
+            value={Math.min(time, timelineMax)}
             disabled={!ready}
             aria-label="视频时间轴"
             className="h-1.5 min-w-0 flex-1 cursor-pointer accent-primary"
