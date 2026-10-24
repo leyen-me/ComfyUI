@@ -206,6 +206,36 @@ class TaskService:
             row.error = None
             return True
 
+    def replace_prompt(self, task_id: int, *, prompt_id: str) -> bool:
+        """任务丢失（例如 ComfyUI 重启）时，换一个新的 prompt_id 继续。"""
+        with session_scope() as session:
+            row = session.get(GenerationTask, task_id)
+            if row is None:
+                raise NotFound("任务不存在")
+            if row.status != "running":
+                return False
+            row.prompt_id = prompt_id
+            row.started_at = row.started_at or utcnow()
+            row.error = None
+            return True
+
+    def requeue_lost(self, task_id: int) -> bool:
+        """把丢失的 running/failed 任务重置为 queued，交给 runner 重提。"""
+        with session_scope() as session:
+            row = session.get(GenerationTask, task_id)
+            if row is None:
+                return False
+            if row.status == "succeeded":
+                return False
+            row.status = "queued"
+            row.prompt_id = None
+            row.started_at = None
+            row.finished_at = None
+            row.elapsed_ms = None
+            row.asset_ids = None
+            row.error = None
+            return True
+
     def mark_succeeded(
         self,
         task_id: int,

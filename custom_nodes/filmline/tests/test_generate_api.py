@@ -422,6 +422,42 @@ class GenerateApiTest(ApiTestCase):
             gate.set()
             await asyncio.sleep(0.05)
 
+    async def test_resubmits_lost_task(self) -> None:
+        project = await self._project()
+        ref = project["code"]
+        first = await self._image(ref, "one.png")
+        submit = AsyncMock(side_effect=["old-prompt", "new-prompt"])
+        collect = AsyncMock(
+            side_effect=[
+                generation.GenerationFailed("ComfyUI 任务已丢失或服务已重启"),
+                (
+                    [generation.Product(filename="clip.mp4", suffix=".mp4", data=b"fake")],
+                    1.0,
+                ),
+            ]
+        )
+        with patch("filmline.generation.submit", new=submit), patch(
+            "filmline.generation.collect", new=collect
+        ):
+            res = await self.client.post(
+                f"/studio/api/projects/{ref}/generate",
+                json={
+                    "kind": "video",
+                    "prompt": "x",
+                    "size": "16:9",
+                    "duration": 5,
+                    "first_frame_id": first["id"],
+                },
+            )
+            body = await res.json()
+            self.assertEqual(res.status, 202, body)
+            task = await self._wait_task(body["data"]["task"]["id"])
+
+        self.assertEqual(task["status"], "succeeded")
+        self.assertEqual(task["prompt_id"], "new-prompt")
+        self.assertEqual(len(task["asset_ids"]), 1)
+        self.assertEqual(submit.await_count, 2)
+
     async def test_reference_rejects_keyframe_fields(self) -> None:
         project = await self._project()
         ref = project["code"]

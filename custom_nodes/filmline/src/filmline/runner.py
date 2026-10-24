@@ -141,11 +141,33 @@ class TaskRunner:
             elif started_at is None:
                 started_at = utcnow()
 
-            products, exec_seconds = await generation.collect(
-                prompt_id,
-                kind=record.kind,
-                timeout=generation.timeout_for(record.kind),
-            )
+            products = None
+            exec_seconds = None
+            for attempt in range(2):
+                try:
+                    products, exec_seconds = await generation.collect(
+                        prompt_id,
+                        kind=record.kind,
+                        timeout=generation.timeout_for(record.kind),
+                    )
+                    break
+                except generation.GenerationFailed as exc:
+                    if attempt == 0 and "任务已丢失" in str(exc):
+                        _LOG.warning("ComfyUI 任务 %s 丢失，使用保存的工作流重新提交", prompt_id)
+                        prompt_id = await generation.submit(
+                            workflow, client_id=record.client_id
+                        )
+                        started_at = utcnow()
+                        replaced = await asyncio.to_thread(
+                            service.replace_prompt, task_id, prompt_id=prompt_id
+                        )
+                        if not replaced:
+                            await generation.cancel(prompt_id)
+                            return
+                        continue
+                    raise
+            if products is None:
+                raise generation.GenerationFailed("生成任务未返回产物")
 
             # 等待期间可能被取消；取消的任务不再登记产物
             latest = await asyncio.to_thread(service.get_record, task_id)

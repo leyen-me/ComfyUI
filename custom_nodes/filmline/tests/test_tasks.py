@@ -48,6 +48,24 @@ class TaskServiceTest(DbTestCase):
         self.service.mark_cancelled(task.id)
         self.assertEqual(self.service.get(task.id).status, "succeeded")
 
+    def test_replace_prompt_and_requeue_lost(self) -> None:
+        task = self._task()
+        self.service.mark_running(task.id, prompt_id="old", started_at=utcnow())
+        self.assertTrue(self.service.replace_prompt(task.id, prompt_id="new"))
+        record = self.service.get_record(task.id)
+        self.assertEqual(record.prompt_id, "new")
+        self.assertEqual(record.status, "running")
+
+        self.service.mark_failed(task.id, error="lost")
+        self.assertTrue(self.service.requeue_lost(task.id))
+        record = self.service.get_record(task.id)
+        self.assertEqual(record.status, "queued")
+        self.assertIsNone(record.prompt_id)
+
+        self.service.mark_running(task.id, prompt_id="running", started_at=utcnow())
+        self.service.mark_cancelled(task.id)
+        self.assertFalse(self.service.replace_prompt(task.id, prompt_id="should-not-apply"))
+
     def test_recoverable_only_active(self) -> None:
         queued = self._task("queued")
         running = self._task("running")

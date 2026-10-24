@@ -98,6 +98,7 @@ export function PromptOptimizeDialog({
 
       {warnings.length > 0 ? (
         <div className="mb-3 space-y-1 rounded-lg border border-amber-500/30 bg-amber-500/5 p-2">
+          <p className="text-[10px] font-medium text-amber-700 dark:text-amber-400">AI 提醒</p>
           {warnings.map((warning, index) => (
             <p
               key={`${index}-${warning}`}
@@ -115,6 +116,7 @@ export function PromptOptimizeDialog({
 
       {result?.notes ? (
         <p className="mb-3 rounded-lg bg-muted/40 px-2 py-1.5 text-[11px] leading-relaxed text-muted-foreground">
+          <span className="font-medium text-foreground">说明：</span>
           {result.notes}
         </p>
       ) : null}
