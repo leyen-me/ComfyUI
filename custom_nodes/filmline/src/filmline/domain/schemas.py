@@ -31,6 +31,14 @@ class ProjectOut(BaseModel):
     updated_at: str
 
 
+class ProjectReorder(BaseModel):
+    """完整列表：必须覆盖当前全部未删除项目，避免漏传导致顺序错乱。"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    ids: list[int] = Field(min_length=1, max_length=200)
+
+
 class ProjectList(BaseModel):
     items: list[ProjectOut]
     total: int

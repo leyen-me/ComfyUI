@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react'
+import { Navigate, Route, Routes } from 'react-router-dom'
 
 import { api, type HealthInfo } from '@/lib/api'
 import { applyTheme, readTheme, type Theme } from '@/lib/theme'
 import { AppSidebar } from './components/app-sidebar'
+import { ProjectPage } from './components/project-page'
 import { ProjectWorkspace } from './components/project-workspace'
 
 export default function App() {
@@ -39,8 +41,19 @@ export default function App() {
 
       <main className="flex-1 overflow-y-auto">
         <div className="mx-auto max-w-5xl px-8 py-8">
-          <h1 className="mb-6 text-xl font-semibold tracking-tight">项目</h1>
-          <ProjectWorkspace />
+          <Routes>
+            <Route
+              path="/"
+              element={
+                <>
+                  <h1 className="mb-6 text-xl font-semibold tracking-tight">项目</h1>
+                  <ProjectWorkspace />
+                </>
+              }
+            />
+            <Route path="/projects/:ref" element={<ProjectPage />} />
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Routes>
         </div>
       </main>
     </div>

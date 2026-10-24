@@ -1,4 +1,5 @@
 import { Clapperboard, FolderKanban, Moon, Sun } from 'lucide-react'
+import { NavLink } from 'react-router-dom'
 
 import type { HealthInfo } from '@/lib/api'
 import { BRAND } from '@/lib/brand'
@@ -24,14 +25,20 @@ export function AppSidebar({ theme, onToggleTheme, health, healthFailed }: AppSi
       </div>
 
       <nav className="flex flex-col gap-1 px-3 pt-2" aria-label="主导航">
-        <button
-          type="button"
-          aria-current="page"
-          className="flex items-center gap-2.5 rounded-lg bg-accent px-3 py-2 text-sm font-medium"
+        <NavLink
+          to="/"
+          className={({ isActive }) =>
+            cn(
+              'flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm transition-colors',
+              isActive
+                ? 'bg-accent font-medium text-foreground'
+                : 'text-muted-foreground hover:bg-muted hover:text-foreground',
+            )
+          }
         >
           <FolderKanban className="size-4" />
           项目
-        </button>
+        </NavLink>
       </nav>
 
       <div className="mt-auto flex flex-col gap-2 border-t border-border px-3 py-3">

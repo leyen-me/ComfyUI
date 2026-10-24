@@ -130,5 +130,8 @@ export const api = {
 
     remove: (ref: string | number) =>
       request<void>(`/projects/${encodeURIComponent(ref)}`, { method: 'DELETE' }),
+
+    reorder: (ids: number[]) =>
+      request<void>('/projects/order', { method: 'PUT', body: JSON.stringify({ ids }) }),
   },
 }

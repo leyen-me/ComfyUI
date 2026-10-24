@@ -98,6 +98,34 @@ class ProjectServiceTest(DbTestCase):
         with self.assertRaises(NotFound):
             self.service.delete(project.id)
 
+    def test_reorder_and_list_order(self) -> None:
+        first = self._create("甲")
+        second = self._create("乙")
+        third = self._create("丙")
+        self.assertEqual([p.id for p in self.service.list().items], [first.id, second.id, third.id])
+
+        self.service.reorder([third.id, first.id, second.id])
+        self.assertEqual(
+            [p.name for p in self.service.list().items], ["丙", "甲", "乙"]
+        )
+
+    def test_new_project_goes_last(self) -> None:
+        self._create("甲")
+        self._create("乙")
+        self.service.reorder([p.id for p in reversed(self.service.list().items)])
+        newest = self._create("丙")
+        self.assertEqual(self.service.list().items[-1].id, newest.id)
+
+    def test_reorder_validates_payload(self) -> None:
+        first = self._create("甲")
+        second = self._create("乙")
+        with self.assertRaises(InvalidArgument):
+            self.service.reorder([first.id, first.id])
+        with self.assertRaises(InvalidArgument):
+            self.service.reorder([first.id])
+        with self.assertRaises(InvalidArgument):
+            self.service.reorder([first.id, second.id, 9999])
+
     def test_limit_guard(self) -> None:
         with self.assertRaises(InvalidArgument):
             self.service.list(limit=0)

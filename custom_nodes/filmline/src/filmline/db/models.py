@@ -30,6 +30,8 @@ class Project(Base):
     code: Mapped[str] = mapped_column(String(32), unique=True, index=True)
     name: Mapped[str] = mapped_column(String(120), index=True)
     description: Mapped[str] = mapped_column(Text, default="", server_default="")
+    # 手动拖拽排序的位置，越小越靠前
+    sort_index: Mapped[int] = mapped_column(Integer, default=0, server_default="0", index=True)
 
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow, index=True)

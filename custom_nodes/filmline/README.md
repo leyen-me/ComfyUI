@@ -26,6 +26,9 @@ React 19 + Vite 7 + TypeScript + Tailwind CSS v4，组件按 shadcn/ui 的写法
 
 - **默认深色**：`<html class="dark">`，首屏前用内联脚本读 `localStorage`，无闪烁；
   侧边栏可切换浅色，偏好持久化。
+- **路由**：`/studio` 项目列表，`/studio/projects/{编号}` 项目详情。后端对
+  `/studio/*` 做 SPA 回落（`/studio/api/*`、`/studio/static/*` 除外）。
+- **拖拽排序**：HTML5 原生拖拽，松手即保存；菜单里另有「上移/下移」作为键盘替代。
 - **品牌名收敛**：展示名只在 `frontend/src/lib/brand.ts`（以及 `index.html` 的 `<title>`）。
 - **构建产物**：输出到 `../web/`，由 ComfyUI 以 `/studio/static/` 提供，**不要手改**。
 
@@ -44,8 +47,9 @@ npm run test:logic   # 纯函数单测（页码计算）
 
 | 方法 | 路径 | 说明 |
 |---|---|---|
-| GET | `/studio/api/projects` | 列表，支持 `q` / `limit` / `offset` |
-| POST | `/studio/api/projects` | 新建，`{name, description?}`，编号由系统生成 |
+| GET | `/studio/api/projects` | 列表，支持 `q` / `limit` / `offset`，按手动排序返回 |
+| POST | `/studio/api/projects` | 新建，`{name, description?}`，编号由系统生成，追加到末尾 |
+| PUT | `/studio/api/projects/order` | 拖拽排序，`{ids: [...]}` 必须覆盖全部项目 |
 | GET | `/studio/api/projects/{ref}` | 详情，`ref` 可为数字 id 或项目编号 |
 | PATCH | `/studio/api/projects/{ref}` | 更新 `name` / `description` |
 | DELETE | `/studio/api/projects/{ref}` | 软删除，返回 204 |
@@ -95,6 +99,8 @@ custom_nodes/filmline/
    `/ws`、`/view`、`/object_info`（`/api/*` 会被 ComfyUI 自动镜像一份）。
 2. **编号由系统生成**：`PRJ-0001` 自增，客户端传入 `code` 直接 400；只有 `name`
    必填，其余字段可选。
+3. **排序**：`sort_index` 由 `PUT /projects/order` 整体重写，请求必须覆盖全部
+   未删除项目，否则 400——部分提交会让顺序静默错乱。
 3. **软删除**：`deleted_at` 标记，列表与详情默认排除。渲染记录与素材血缘不能断。
 4. **迁移冻结**：迁移一经发布即写死，**必须用显式 DDL，不得引用 ORM 元数据**
    （否则模型一改，新库建出的表就和历史语义不一致）。每次模型改动追加新迁移，

@@ -49,9 +49,17 @@ def _migration_002_drop_project_status(conn: Connection) -> None:
     conn.exec_driver_sql("ALTER TABLE projects DROP COLUMN status")
 
 
+def _migration_003_project_sort_index(conn: Connection) -> None:
+    """项目支持拖拽排序；已有数据按创建顺序初始化。"""
+    conn.exec_driver_sql("ALTER TABLE projects ADD COLUMN sort_index INTEGER NOT NULL DEFAULT 0")
+    conn.exec_driver_sql("UPDATE projects SET sort_index = id")
+    conn.exec_driver_sql("CREATE INDEX ix_projects_sort_index ON projects (sort_index)")
+
+
 MIGRATIONS: list[tuple[int, object]] = [
     (1, _migration_001_initial),
     (2, _migration_002_drop_project_status),
+    (3, _migration_003_project_sort_index),
 ]
 
 

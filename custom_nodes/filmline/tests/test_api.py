@@ -99,6 +99,34 @@ class ProjectApiTest(unittest.IsolatedAsyncioTestCase):
         res = await self.client.get("/studio/api/projects?limit=abc")
         self.assertEqual(res.status, 400)
 
+    async def test_reorder_endpoint(self) -> None:
+        first = await self._create("甲")
+        second = await self._create("乙")
+
+        res = await self.client.put(
+            "/studio/api/projects/order", json={"ids": [second["id"], first["id"]]}
+        )
+        self.assertEqual(res.status, 204)
+
+        body = await (await self.client.get("/studio/api/projects")).json()
+        self.assertEqual([item["name"] for item in body["data"]["items"]], ["乙", "甲"])
+
+    async def test_reorder_rejects_partial_list(self) -> None:
+        first = await self._create("甲")
+        await self._create("乙")
+        res = await self.client.put("/studio/api/projects/order", json={"ids": [first["id"]]})
+        self.assertEqual(res.status, 400)
+
+    async def test_spa_fallback_for_detail_route(self) -> None:
+        project = await self._create("甲")
+        res = await self.client.get(f"/studio/projects/{project['code']}")
+        self.assertEqual(res.status, 200)
+        self.assertIn("text/html", res.headers["Content-Type"])
+
+    async def test_unknown_api_path_is_not_html(self) -> None:
+        res = await self.client.get("/studio/api/nope")
+        self.assertEqual(res.status, 404)
+
     async def test_index_page_served(self) -> None:
         res = await self.client.get("/studio")
         self.assertEqual(res.status, 200)

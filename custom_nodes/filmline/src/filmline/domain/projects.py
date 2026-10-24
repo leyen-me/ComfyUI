@@ -71,7 +71,7 @@ class ProjectService:
                 session.execute(
                     select(Project)
                     .where(*conditions)
-                    .order_by(Project.updated_at.desc(), Project.id.desc())
+                    .order_by(Project.sort_index.asc(), Project.id.asc())
                     .limit(limit)
                     .offset(offset)
                 )
@@ -91,13 +91,18 @@ class ProjectService:
 
     # ---------------------------------------------------------------- 写入
     def create(self, payload: ProjectCreate) -> ProjectOut:
-        """编号由系统生成，不接受外部输入。"""
+        """编号由系统生成，不接受外部输入；新项目排在最后。"""
         with self._scope() as session:
+            next_index = (
+                session.execute(select(func.coalesce(func.max(Project.sort_index), 0))).scalar_one()
+                + 1
+            )
             row = Project(
                 # 临时唯一值，拿到自增 id 后再生成正式编号，避免并发下的编号竞争
                 code=f"pending-{uuid4().hex}",
                 name=payload.name,
                 description=payload.description,
+                sort_index=next_index,
             )
             session.add(row)
             try:
@@ -126,6 +131,33 @@ class ProjectService:
         with self._scope() as session:
             row = self._find(session, ref)
             row.deleted_at = utcnow()
+            session.flush()
+
+    def reorder(self, ids: list[int]) -> None:
+        """按给定 id 顺序重写位置。必须覆盖全部未删除项目，避免顺序错乱。"""
+        if len(set(ids)) != len(ids):
+            raise InvalidArgument("排序列表中包含重复项目")
+
+        with self._scope() as session:
+            rows = (
+                session.execute(
+                    select(Project).where(Project.deleted_at.is_(None), Project.id.in_(ids))
+                )
+                .scalars()
+                .all()
+            )
+            if len(rows) != len(ids):
+                raise InvalidArgument("排序列表中包含不存在或已删除的项目")
+
+            total = session.execute(
+                select(func.count()).select_from(Project).where(Project.deleted_at.is_(None))
+            ).scalar_one()
+            if total != len(ids):
+                raise InvalidArgument(f"排序列表需覆盖全部 {total} 个项目")
+
+            by_id = {row.id: row for row in rows}
+            for index, project_id in enumerate(ids):
+                by_id[project_id].sort_index = index
             session.flush()
 
     # ---------------------------------------------------------------- 内部

@@ -1,17 +1,20 @@
 import { useCallback, useEffect, useState } from 'react'
 import { AlertCircle, Loader2, Plus, Search } from 'lucide-react'
+import { useNavigate } from 'react-router-dom'
 
 import { ApiError, api, type Project } from '@/lib/api'
 import { useProjects } from '@/hooks/use-projects'
+import type { MenuAction } from './ui/more-menu'
 import { Button } from './ui/button'
 import { Dialog } from './ui/dialog'
 import { Input } from './ui/field'
 import { ProjectDialog } from './project-dialog'
-import { ProjectGrid } from './project-grid'
+import { ProjectGrid, type CardOrderHelpers } from './project-grid'
 import { Toast, type ToastMessage } from './toast'
 
 export function ProjectWorkspace() {
   const { data, loading, error, query, search, reload } = useProjects()
+  const navigate = useNavigate()
 
   const [keyword, setKeyword] = useState('')
   const [dialogOpen, setDialogOpen] = useState(false)
@@ -42,14 +45,30 @@ export function ProjectWorkspace() {
   const total = data?.total ?? 0
   const truncated = total > projects.length
 
-  function openCreate() {
-    setEditing(null)
-    setDialogOpen(true)
+  async function handleReorder(ids: number[]) {
+    try {
+      await api.projects.reorder(ids)
+    } catch (cause) {
+      notify(cause instanceof ApiError ? cause.fullMessage : '排序保存失败', 'error')
+      reload()
+    }
   }
 
-  function openEdit(project: Project) {
-    setEditing(project)
-    setDialogOpen(true)
+  function actionsFor(project: Project, order: CardOrderHelpers): MenuAction[] {
+    return [
+      { label: '编辑', onSelect: () => setEditing(project) },
+      {
+        label: '上移',
+        onSelect: () => order.move(-1),
+        disabled: order.index === 0,
+      },
+      {
+        label: '下移',
+        onSelect: () => order.move(1),
+        disabled: order.index === order.count - 1,
+      },
+      { label: '删除', onSelect: () => setPendingDelete(project), destructive: true },
+    ]
   }
 
   async function confirmDelete() {
@@ -87,7 +106,13 @@ export function ProjectWorkspace() {
         ) : null}
 
         <div className="ml-auto">
-          <Button variant="primary" onClick={openCreate}>
+          <Button
+            variant="primary"
+            onClick={() => {
+              setEditing(null)
+              setDialogOpen(true)
+            }}
+          >
             <Plus className="size-4" />
             新建项目
           </Button>
@@ -108,8 +133,9 @@ export function ProjectWorkspace() {
         projects={projects}
         loading={loading}
         empty={!loading && !error && projects.length === 0}
-        onEdit={openEdit}
-        onDelete={setPendingDelete}
+        actionsFor={actionsFor}
+        onOpen={(project) => navigate(`/projects/${project.code}`)}
+        onReorder={handleReorder}
       />
 
       {truncated ? (
@@ -119,9 +145,14 @@ export function ProjectWorkspace() {
       ) : null}
 
       <ProjectDialog
-        open={dialogOpen}
+        open={dialogOpen || editing !== null}
         project={editing}
-        onOpenChange={setDialogOpen}
+        onOpenChange={(open) => {
+          if (!open) {
+            setDialogOpen(false)
+            setEditing(null)
+          }
+        }}
         onSaved={(project, created) => {
           notify(created ? `已创建「${project.name}」` : '已保存')
           reload()

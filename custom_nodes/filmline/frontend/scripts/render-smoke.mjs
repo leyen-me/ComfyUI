@@ -79,9 +79,12 @@ const projects = [
 
 globalThis.fetch = async (input) => {
   const url = String(input)
+  const isDetail = /\/projects\/[^/?]+$/.test(url) && !url.includes('/order')
   const data = url.includes('/health')
-    ? { version: '0.1.0', db: ':memory:', schema_version: 1, projects: projects.length }
-    : { items: projects, total: projects.length, limit: 20, offset: 0 }
+    ? { version: '0.1.0', db: ':memory:', schema_version: 3, projects: projects.length }
+    : isDetail
+      ? projects[0]
+      : { items: projects, total: projects.length, limit: 20, offset: 0 }
   return {
     ok: true,
     status: 200,
@@ -102,12 +105,20 @@ await new Promise((resolve) => setTimeout(resolve, 400))
 const root = document.getElementById('root')
 const text = root?.textContent ?? ''
 
+// 前端路由：模拟点击后跳转到详情页（pushState 不会触发 popstate，需手动派发）
+window.history.pushState({}, '', '/studio/projects/PRJ-0001')
+window.dispatchEvent(new window.PopStateEvent('popstate'))
+await new Promise((resolve) => setTimeout(resolve, 400))
+const detailText = document.getElementById('root')?.textContent ?? ''
+
 const checks = [
   ['渲染出侧边栏品牌', text.includes('Filmline')],
   ['渲染出项目标题', text.includes('项目')],
   ['渲染出项目数据', text.includes('冒烟测试项目')],
   ['渲染出项目编号', text.includes('PRJ-0001')],
   ['默认深色主题', document.documentElement.classList.contains('dark')],
+  ['路由进入详情页', detailText.includes('创建时间')],
+  ['详情页显示项目名称', detailText.includes('冒烟测试项目')],
   ['无控制台错误', errors.length === 0],
 ]
 

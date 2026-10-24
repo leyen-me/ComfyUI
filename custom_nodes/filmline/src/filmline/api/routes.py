@@ -17,6 +17,7 @@ from .projects import register_project_routes
 _LOG = logging.getLogger("filmline")
 
 API_PREFIX = "/studio/api"
+STATIC_PREFIX = "/studio/static"
 
 
 def register_routes(app: web.Application) -> None:
@@ -56,9 +57,20 @@ def _register_web(app: web.Application) -> None:
         _LOG.warning("前端资源缺失: %s", index_file)
         return
 
-    async def index(_: web.Request) -> web.StreamResponse:
+    def index_response() -> web.StreamResponse:
         return web.FileResponse(index_file, headers={"Cache-Control": "no-store"})
+
+    async def index(_: web.Request) -> web.StreamResponse:
+        return index_response()
+
+    async def spa(request: web.Request) -> web.StreamResponse:
+        # 前端使用 history 路由，/studio/projects/xxx 这类地址需要回落到 index.html
+        if request.path.startswith(API_PREFIX) or request.path.startswith(STATIC_PREFIX):
+            raise web.HTTPNotFound()
+        return index_response()
 
     app.router.add_get("/studio", index)
     app.router.add_get("/studio/", index)
-    app.router.add_static("/studio/static", web_root, show_index=False)
+    app.router.add_static(STATIC_PREFIX, web_root, show_index=False)
+    # 兜底必须最后注册，否则会吞掉上面的具体路由
+    app.router.add_get("/studio/{tail:.*}", spa)

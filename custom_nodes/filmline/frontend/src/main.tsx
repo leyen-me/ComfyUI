@@ -1,5 +1,6 @@
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
+import { BrowserRouter } from 'react-router-dom'
 
 import App from './app'
 import './index.css'
@@ -9,6 +10,8 @@ if (!container) throw new Error('缺少 #root 挂载点')
 
 createRoot(container).render(
   <StrictMode>
-    <App />
+    <BrowserRouter basename="/studio">
+      <App />
+    </BrowserRouter>
   </StrictMode>,
 )
