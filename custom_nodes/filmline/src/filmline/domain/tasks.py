@@ -133,6 +133,7 @@ class TaskService:
                 select(GenerationTask, Project.code, Project.name, Episode.code)
                 .join(Project, Project.id == GenerationTask.project_id)
                 .outerjoin(Episode, Episode.id == GenerationTask.episode_id)
+                .where(Project.deleted_at.is_(None))
             )
             if active_only:
                 query = query.where(GenerationTask.status.in_(ACTIVE_STATUSES))
