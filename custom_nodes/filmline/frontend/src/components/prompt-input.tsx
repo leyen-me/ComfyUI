@@ -3,6 +3,7 @@ import { EditorContent, useEditor } from '@tiptap/react'
 import Placeholder from '@tiptap/extension-placeholder'
 import StarterKit from '@tiptap/starter-kit'
 
+import { ASSET_MIME, readAssetDrag, type AssetDragPayload } from '@/lib/asset-drag'
 import { ImageChip, serializePrompt, type PromptValue } from './prompt-editor'
 
 export interface PromptInputHandle {
@@ -12,6 +13,8 @@ export interface PromptInputHandle {
   /** 还原带图片块的文档 */
   setDoc: (doc: unknown) => void
   getValue: () => PromptValue
+  /** 取出完整文档，用于按模式暂存草稿 */
+  getDoc: () => unknown
 }
 
 interface PromptInputProps {
@@ -19,17 +22,11 @@ interface PromptInputProps {
   disabled?: boolean
   placeholder?: string
   maxRefs: number
+  /** 视频模式下图片应拖到首尾帧槽位，禁用编辑器内的图片块 */
+  allowAssetDrop?: boolean
   onChange: (value: PromptValue) => void
   onSubmit: () => void
   onReject?: (message: string) => void
-}
-
-const ASSET_MIME = 'application/x-filmline-asset'
-
-interface DraggedAsset {
-  assetId: number
-  src: string
-  name: string
 }
 
 const EMPTY: PromptValue = { text: '', refs: [] }
@@ -40,6 +37,7 @@ export function PromptInput({
   disabled = false,
   placeholder = '描述画面',
   maxRefs,
+  allowAssetDrop = true,
   onChange,
   onSubmit,
   onReject,
@@ -52,6 +50,10 @@ export function PromptInput({
   rejectRef.current = onReject
   const maxRefsRef = useRef(maxRefs)
   maxRefsRef.current = maxRefs
+  const allowDropRef = useRef(allowAssetDrop)
+  allowDropRef.current = allowAssetDrop
+  const disabledRef = useRef(disabled)
+  disabledRef.current = disabled
 
   const editor = useEditor({
     editable: !disabled,
@@ -80,12 +82,13 @@ export function PromptInput({
         const raw = event.dataTransfer?.getData(ASSET_MIME)
         if (!raw) return false
         event.preventDefault()
-        let payload: DraggedAsset
-        try {
-          payload = JSON.parse(raw) as DraggedAsset
-        } catch {
+        if (disabledRef.current) return true
+        if (!allowDropRef.current) {
+          rejectRef.current?.('图片请拖到上方的首帧或尾帧槽位')
           return true
         }
+        const payload = readAssetDrag(event.dataTransfer)
+        if (!payload) return true
         const coords = view.posAtCoords({ left: event.clientX, top: event.clientY })
         insertChip(payload, coords?.pos ?? view.state.doc.content.size)
         return true
@@ -110,7 +113,7 @@ export function PromptInput({
     return serializePrompt(editor.state.doc).refs.length
   }
 
-  function insertChip(payload: DraggedAsset, pos: number) {
+  function insertChip(payload: AssetDragPayload, pos: number) {
     if (!editor) return
     if (!payload.assetId || !payload.src) return
     if (currentRefs() >= maxRefsRef.current) {
@@ -151,6 +154,7 @@ export function PromptInput({
           if (editor) changeRef.current(serializePrompt(editor.state.doc))
         },
         getValue: () => (editor ? serializePrompt(editor.state.doc) : EMPTY),
+        getDoc: () => editor?.getJSON() ?? null,
       }
     }
   }, [ref, editor, setText])

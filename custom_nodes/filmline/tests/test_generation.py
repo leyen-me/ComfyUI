@@ -81,10 +81,55 @@ class VideoWorkflowTest(unittest.TestCase):
         self.assertEqual(native.meta["tier"], "768")
         # 首帧与画布同尺寸
         withref = generation.video_workflow(
-            prompt="x", size="9:16", duration=5, refs=["a.png"]
+            prompt="x", size="9:16", duration=5, first_frame="a.png"
         )
         self.assertEqual(withref.prompt["15"]["inputs"]["width"], 768)
         self.assertEqual(withref.prompt["15"]["inputs"]["height"], 1344)
+        self.assertEqual(withref.prompt["7"]["inputs"]["first_frame"], ["15", 0])
+        self.assertNotIn("last_frame", withref.prompt["7"]["inputs"])
+        self.assertEqual(withref.meta["refs"], 1)
+
+    def test_keyframes_first_and_last(self) -> None:
+        wf = generation.video_workflow(
+            prompt="x",
+            size="16:9",
+            duration=5,
+            first_frame="a.png",
+            last_frame="b.png",
+            seed=1,
+        )
+        graph = wf.prompt
+        self.assertEqual(graph["7"]["inputs"]["first_frame"], ["15", 0])
+        self.assertEqual(graph["7"]["inputs"]["last_frame"], ["17", 0])
+        self.assertEqual(graph["14"]["inputs"]["path"], "a.png")
+        self.assertEqual(graph["16"]["inputs"]["path"], "b.png")
+        self.assertEqual(graph["15"]["inputs"]["width"], 1344)
+        self.assertEqual(graph["17"]["inputs"]["height"], 768)
+        # 尾帧同样按画布居中裁切，避免变形
+        self.assertEqual(graph["17"]["inputs"]["crop"], "center")
+        self.assertEqual(wf.meta["refs"], 2)
+
+    def test_keyframes_last_only(self) -> None:
+        wf = generation.video_workflow(
+            prompt="x", size="16:9", duration=5, last_frame="b.png"
+        )
+        self.assertNotIn("first_frame", wf.prompt["7"]["inputs"])
+        self.assertEqual(wf.prompt["7"]["inputs"]["last_frame"], ["17", 0])
+        self.assertNotIn("14", wf.prompt)
+
+    def test_legacy_refs_still_work(self) -> None:
+        wf = generation.video_workflow(prompt="x", size="16:9", duration=5, refs=["a.png"])
+        self.assertEqual(wf.prompt["7"]["inputs"]["first_frame"], ["15", 0])
+
+    def test_refs_and_keyframes_are_mutually_exclusive(self) -> None:
+        with self.assertRaises(InvalidArgument):
+            generation.video_workflow(
+                prompt="x", size="16:9", duration=5, refs=["a.png"], first_frame="b.png"
+            )
+        with self.assertRaises(InvalidArgument):
+            generation.video_workflow(
+                prompt="x", size="16:9", duration=5, refs=["a.png", "b.png"]
+            )
 
     def test_rejects_non_native_video_tier(self) -> None:
         for bad in ("512", "2k"):

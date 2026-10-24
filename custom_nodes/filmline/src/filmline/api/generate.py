@@ -32,6 +32,15 @@ def _episode_scope(request: web.Request, project_id: int) -> tuple[int | None, s
     return EpisodeService().resolve_id(project_id, code), code
 
 
+def _optional_asset_id(raw: object, field: str) -> int | None:
+    """首尾帧字段允许为空；其余情况必须是正整数资产 id。"""
+    if raw is None or raw == "":
+        return None
+    if isinstance(raw, bool) or not isinstance(raw, int) or raw <= 0:
+        raise InvalidArgument(f"{field} 必须是资产 id")
+    return raw
+
+
 def register_generate_routes(routes: web.RouteTableDef) -> None:
     assets = AssetService()
 
@@ -51,19 +60,19 @@ def register_generate_routes(routes: web.RouteTableDef) -> None:
         project = await asyncio.to_thread(ProjectService().get, request.match_info["ref"])
         episode_id, scope = await asyncio.to_thread(_episode_scope, request, project.id)
 
-        raw_refs = payload.get("refs") or []
-        if not isinstance(raw_refs, list) or not all(
-            isinstance(item, int) and item > 0 for item in raw_refs
-        ):
-            raise InvalidArgument("refs 必须是资产 id 数组")
-        ref_paths = await asyncio.to_thread(
-            assets.resolve_ref_paths,
-            project.id,
-            raw_refs,
-            limit=generation.MAX_IMAGE_REFS if kind == "image" else generation.MAX_VIDEO_REFS,
-        )
-
         if kind == "image":
+            raw_refs = payload.get("refs") or []
+            if not isinstance(raw_refs, list) or not all(
+                isinstance(item, int) and item > 0 for item in raw_refs
+            ):
+                raise InvalidArgument("refs 必须是资产 id 数组")
+            ref_paths = await asyncio.to_thread(
+                assets.resolve_ref_paths,
+                project.id,
+                raw_refs,
+                limit=generation.MAX_IMAGE_REFS,
+            )
+
             tier = str(payload.get("resolution") or "1k").lower()
             if tier not in generation.IMAGE_TIERS:
                 raise InvalidArgument(f"resolution 只支持: {' / '.join(generation.IMAGE_TIERS)}")
@@ -81,6 +90,37 @@ def register_generate_routes(routes: web.RouteTableDef) -> None:
                 prefix=f"filmline/{project.code}/{scope}",
             )
         else:
+            mode = str(payload.get("mode") or "keyframes")
+            if mode != "keyframes":
+                raise InvalidArgument("视频生成方式只支持 keyframes")
+
+            first_id = _optional_asset_id(payload.get("first_frame_id"), "first_frame_id")
+            last_id = _optional_asset_id(payload.get("last_frame_id"), "last_frame_id")
+
+            # 旧客户端只发 refs（最多 1 张），按首帧解释
+            legacy_refs = payload.get("refs")
+            if legacy_refs is not None:
+                if first_id is not None or last_id is not None:
+                    raise InvalidArgument("refs 与 first_frame_id / last_frame_id 不能同时使用")
+                if not isinstance(legacy_refs, list) or not all(
+                    isinstance(item, int) and item > 0 for item in legacy_refs
+                ):
+                    raise InvalidArgument("refs 必须是资产 id 数组")
+                if len(legacy_refs) > 1:
+                    raise InvalidArgument("视频首帧只支持 1 张")
+                if legacy_refs:
+                    first_id = legacy_refs[0]
+
+            frame_ids = [asset_id for asset_id in (first_id, last_id) if asset_id is not None]
+            frame_paths = await asyncio.to_thread(
+                assets.resolve_ref_paths,
+                project.id,
+                frame_ids,
+                limit=2,
+                label="首尾帧图片",
+            )
+            paths_by_id = dict(zip(frame_ids, frame_paths))
+
             video_tier = str(payload.get("resolution") or "768").lower()
             if video_tier not in generation.VIDEO_TIERS:
                 raise InvalidArgument(
@@ -94,7 +134,8 @@ def register_generate_routes(routes: web.RouteTableDef) -> None:
                 size=size,
                 duration=duration,
                 tier=video_tier,
-                refs=ref_paths,
+                first_frame=paths_by_id.get(first_id) if first_id is not None else None,
+                last_frame=paths_by_id.get(last_id) if last_id is not None else None,
                 prefix=f"filmline/{project.code}/{scope}",
             )
 
@@ -120,7 +161,14 @@ def register_generate_routes(routes: web.RouteTableDef) -> None:
 
             # 参考图模式下实际尺寸由参考图决定，以产物为准修正元数据
             meta = dict(workflow.meta)
-            meta["ref_ids"] = raw_refs
+            if kind == "image":
+                meta["ref_ids"] = raw_refs
+            else:
+                meta["video_mode"] = mode
+                meta["first_frame_id"] = first_id
+                meta["last_frame_id"] = last_id
+                # 兼容旧前端：ref_ids 按首帧、尾帧顺序记录
+                meta["ref_ids"] = frame_ids
             meta["queue_ms"] = max(0, int(round((wall - elapsed) * 1000)))
             if workflow.kind == "image":
                 try:

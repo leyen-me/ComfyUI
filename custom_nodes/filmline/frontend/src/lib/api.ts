@@ -273,10 +273,15 @@ export const api = {
           |
               {
                 kind: 'video'
+                /** 首尾帧模式；参考生成模式待接入 */
+                mode?: 'keyframes'
                 prompt: string
                 size: string
                 resolution?: string
                 duration: number
+                first_frame_id?: number | null
+                last_frame_id?: number | null
+                /** 旧客户端兼容：只支持一张首帧 */
                 refs?: number[]
               },
         episode?: string,

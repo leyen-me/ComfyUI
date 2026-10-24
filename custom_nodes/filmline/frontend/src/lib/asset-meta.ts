@@ -13,6 +13,9 @@ export interface GenerationMeta {
   duration?: number
   count?: number
   ref_ids?: number[]
+  video_mode?: 'keyframes' | 'reference'
+  first_frame_id?: number | null
+  last_frame_id?: number | null
   model?: string
 }
 

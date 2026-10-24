@@ -2,6 +2,7 @@ import { Maximize2 } from 'lucide-react'
 
 import type { Asset, AssetKind } from '@/lib/api'
 import { assetDimensions, assetPrompt } from '@/lib/asset-meta'
+import { setAssetDrag } from '@/lib/asset-drag'
 import { formatSize, formatTime } from '@/lib/format'
 import { MoreMenu, type MenuAction } from './ui/more-menu'
 import { SourceBadge } from './source-badge'
@@ -125,12 +126,12 @@ export function AssetList({
               event.preventDefault()
               return
             }
-            event.dataTransfer.effectAllowed = 'copy'
-            event.dataTransfer.setData(
-              'application/x-filmline-asset',
-              JSON.stringify({ assetId: asset.id, src: asset.content_url, name: asset.name }),
-            )
-            event.dataTransfer.setData('text/plain', asset.name)
+            const src = asset.content_url
+            if (!src) {
+              event.preventDefault()
+              return
+            }
+            setAssetDrag(event.dataTransfer, { assetId: asset.id, src, name: asset.name })
           }}
           className="group cursor-grab overflow-hidden rounded-xl border border-border bg-card transition-colors hover:border-primary/40 active:cursor-grabbing"
         >

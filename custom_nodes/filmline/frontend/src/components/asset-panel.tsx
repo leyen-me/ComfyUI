@@ -107,14 +107,25 @@ export function AssetPanel({
     const prompt = assetPrompt(asset)
     if (!prompt) return
     const meta = generationMeta(asset)
+    const isVideo = asset.kind === 'video'
     emitReusePrompt({
       prompt,
-      kind: asset.kind === 'video' ? 'video' : 'image',
+      kind: isVideo ? 'video' : 'image',
       size: meta.size,
       tier: meta.tier,
       count: meta.count ?? 1,
       duration: meta.duration ?? 5,
       refIds: meta.ref_ids ?? [],
+      ...(isVideo
+        ? {
+            videoMode: meta.video_mode === 'reference' ? 'reference' : 'keyframes',
+            firstFrameId: meta.first_frame_id ?? meta.ref_ids?.[0] ?? undefined,
+            lastFrameId:
+              meta.last_frame_id ??
+              (meta.video_mode === 'keyframes' ? meta.ref_ids?.[1] : undefined) ??
+              undefined,
+          }
+        : {}),
     })
     setPreview(null)
     notify('已填入生成面板')

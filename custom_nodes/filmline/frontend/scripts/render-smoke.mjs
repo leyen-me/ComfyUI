@@ -307,6 +307,21 @@ const videoMode = {
   noTier: !videoTrigger.includes('·'),
 }
 
+// 首尾帧：两个独立槽位 + 视频方式切换；点击槽位可从资产库选图
+const keyframeSlots = document.querySelectorAll('[data-keyframe-slot]')
+const hasVideoModeTabs = Boolean(document.querySelector('[aria-label="视频生成方式"]'))
+document.querySelector('[data-keyframe-slot="first"] button')?.click()
+await wait(300)
+const pickerDialog = document.querySelector('dialog[open]')
+const pickerOpened = (pickerDialog?.textContent ?? '').includes('选择首帧')
+;[...(pickerDialog?.querySelectorAll('button') ?? [])]
+  .find((el) => el.textContent?.includes('project_00001_.png'))
+  ?.click()
+await wait(300)
+const firstFramePicked = Boolean(
+  document.querySelector('[data-keyframe-slot="first"] img'),
+)
+
 // 视频面板里应当有 512 预览 / 768 原生 两档
 document.querySelector('button[aria-label="尺寸与分辨率"]')?.click()
 await wait(250)
@@ -323,6 +338,7 @@ await wait()
 const activeNavOnProject = [...document.querySelectorAll('aside a[aria-current="page"]')].map(
   (el) => el.textContent?.trim() ?? '',
 )
+const keyframeSlotsAfterImage = document.querySelectorAll('[data-keyframe-slot]').length
 
 // —— 分集：新建后侧边栏出现，进入分集资产页显示集标题 ——
 document.querySelector('button[aria-label="新建分集"]')?.click()
@@ -446,6 +462,10 @@ const checks = [
   ['选择 2K 后按钮同步显示', triggerAfterTier.includes('2K')],
   ['视频有尺寸与时长', videoMode.hasDuration && videoMode.noCount],
   ['视频不展示分辨率档位', videoMode.noTier && !videoOptionsText.includes('分辨率')],
+  ['视频有首尾帧两个槽位', keyframeSlots.length === 2 && hasVideoModeTabs],
+  ['首帧槽位可打开资产选择器', pickerOpened],
+  ['选择图片后首帧槽位显示缩略图', firstFramePicked],
+  ['切回图片模式隐藏首尾帧槽位', keyframeSlotsAfterImage === 0],
   ['项目资产页仅「资产」高亮', activeNavOnProject.length === 1 && activeNavOnProject[0] === '资产'],
   ['分集页仅当前集高亮', activeNavOnEpisode.length === 1 && activeNavOnEpisode[0].includes('EP01')],
   ['分集创建后出现在导航', afterEpisodeCreate.includes('EP01')],

@@ -2,12 +2,16 @@ import { useEffect, useRef, useState } from 'react'
 import { Image as ImageIcon, Loader2, Sparkles, Video } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 
-import { ApiError, api, type Project } from '@/lib/api'
+import { ApiError, api, type Asset, type Project } from '@/lib/api'
+import type { AssetDragPayload } from '@/lib/asset-drag'
+import type { KeyframeSlot } from '@/lib/keyframes'
 import { buildPromptDoc, type RefAsset } from '@/lib/prompt'
 import { emitAssetsChanged, REUSE_PROMPT, type ReusePromptDetail } from '@/lib/events'
 import { cn } from '@/lib/utils'
 import { formatClock } from '@/lib/format'
+import { AssetPickerDialog } from './asset-picker-dialog'
 import { GenerationOptions } from './generation-options'
+import { KeyframeSlots } from './keyframe-slots'
 import { PromptInput, type PromptInputHandle } from './prompt-input'
 import type { PromptValue } from './prompt-editor'
 import { Button } from './ui/button'
@@ -16,7 +20,16 @@ type Mode = 'image' | 'video'
 
 const COUNTS = [1, 2, 3, 4]
 const DURATIONS = [5, 10]
+/** 与后端 generation.MAX_IMAGE_REFS 保持一致 */
+const MAX_IMAGE_REFS = 10
 const EMPTY_VALUE: PromptValue = { text: '', refs: [] }
+
+interface Keyframes {
+  first: AssetDragPayload | null
+  last: AssetDragPayload | null
+}
+
+const EMPTY_KEYFRAMES: Keyframes = { first: null, last: null }
 
 interface GenerationPanelProps {
   project: Project
@@ -30,6 +43,8 @@ export function GenerationPanel({ project, episodeCode }: GenerationPanelProps) 
 
   const [mode, setMode] = useState<Mode>('image')
   const [value, setValue] = useState<PromptValue>(EMPTY_VALUE)
+  const [keyframes, setKeyframes] = useState<Keyframes>(EMPTY_KEYFRAMES)
+  const [pickerSlot, setPickerSlot] = useState<KeyframeSlot | null>(null)
   const [imageSize, setImageSize] = useState<string>('16:9')
   const [imageTier, setImageTier] = useState<string>('1k')
   const [videoSize, setVideoSize] = useState<string>('16:9')
@@ -40,8 +55,22 @@ export function GenerationPanel({ project, episodeCode }: GenerationPanelProps) 
   const [elapsed, setElapsed] = useState(0)
 
   const timerRef = useRef<number | null>(null)
-  const hasRefs = value.refs.length > 0
-  const maxRefs = mode === 'image' ? 16 : 1
+  // 图片模式带图片块、视频模式只有纯文本，分开暂存避免切换时丢内容或串味
+  const imageDraftRef = useRef<unknown>(null)
+  const videoDraftRef = useRef<unknown>(null)
+  const modeRef = useRef<Mode>(mode)
+  modeRef.current = mode
+
+  const hasRefs = mode === 'image' && value.refs.length > 0
+  const maxRefs = mode === 'image' ? MAX_IMAGE_REFS : 0
+  const keyframeHint =
+    keyframes.first && keyframes.last
+      ? '首尾帧已锁定'
+      : keyframes.first
+        ? '首帧已锁定'
+        : keyframes.last
+          ? '尾帧已锁定'
+          : null
 
   useEffect(() => {
     return () => {
@@ -49,24 +78,75 @@ export function GenerationPanel({ project, episodeCode }: GenerationPanelProps) 
     }
   }, [])
 
-  // 资产预览里点“用此提示词生成”：回填模式与参数
+  function replaceEditorDoc(doc: unknown) {
+    if (doc) {
+      editorRef.current?.setDoc(doc)
+      return
+    }
+    editorRef.current?.clear()
+    setValue(EMPTY_VALUE)
+  }
+
+  function switchMode(next: Mode) {
+    if (running || next === modeRef.current) return
+
+    const currentDoc = editorRef.current?.getDoc() ?? null
+    if (modeRef.current === 'image') imageDraftRef.current = currentDoc
+    else videoDraftRef.current = currentDoc
+
+    modeRef.current = next
+    setMode(next)
+    setError(null)
+    replaceEditorDoc(next === 'image' ? imageDraftRef.current : videoDraftRef.current)
+
+    if (next === 'video' && videoSize !== '16:9' && videoSize !== '9:16') {
+      setVideoSize('16:9')
+    }
+  }
+  const switchModeRef = useRef(switchMode)
+  switchModeRef.current = switchMode
+
+  // 资产预览里点“用此提示词生成”：回填模式、参数与首尾帧
   useEffect(() => {
     async function onReuse(event: Event) {
       const detail = (event as CustomEvent<ReusePromptDetail>).detail
+
       if (detail.kind === 'video') {
-        setMode('video')
+        switchModeRef.current('video')
         if (detail.size === '16:9' || detail.size === '9:16') setVideoSize(detail.size)
         if (detail.duration === 5 || detail.duration === 10) setDuration(detail.duration)
-      } else {
-        setMode('image')
-        if (detail.size === '16:9' || detail.size === '9:16' || detail.size === '1:1') {
-          setImageSize(detail.size)
+
+        // 新数据用显式首尾帧字段；旧视频资产只有 ref_ids（最多 1 个），按首帧还原
+        const firstId = detail.firstFrameId ?? detail.refIds?.[0]
+        const lastId =
+          detail.lastFrameId ?? (detail.videoMode === 'keyframes' ? detail.refIds?.[1] : undefined)
+        const [firstAsset, lastAsset] = await Promise.all(
+          [firstId, lastId].map((id) =>
+            id ? api.projects.assets.get(id).catch(() => null) : Promise.resolve(null),
+          ),
+        )
+        setKeyframes({
+          first: toDragPayload(firstAsset),
+          last: toDragPayload(lastAsset),
+        })
+        if ((firstId && !firstAsset) || (lastId && !lastAsset)) {
+          setError('首帧或尾帧资产已删除，已跳过')
         }
-        if (detail.tier === '1k' || detail.tier === '2k') setImageTier(detail.tier)
-        if (typeof detail.count === 'number' && detail.count >= 1 && detail.count <= 4) {
-          setCount(detail.count)
-        }
+
+        editorRef.current?.setText(detail.prompt)
+        editorRef.current?.focus()
+        return
       }
+
+      switchModeRef.current('image')
+      if (detail.size === '16:9' || detail.size === '9:16' || detail.size === '1:1') {
+        setImageSize(detail.size)
+      }
+      if (detail.tier === '1k' || detail.tier === '2k') setImageTier(detail.tier)
+      if (typeof detail.count === 'number' && detail.count >= 1 && detail.count <= 4) {
+        setCount(detail.count)
+      }
+
       const refIds = detail.refIds ?? []
       if (refIds.length > 0) {
         // 还原参考图块；已被删除的资产保留为普通文字「图N」
@@ -82,9 +162,31 @@ export function GenerationPanel({ project, episodeCode }: GenerationPanelProps) 
       }
       editorRef.current?.focus()
     }
+
     window.addEventListener(REUSE_PROMPT, onReuse)
     return () => window.removeEventListener(REUSE_PROMPT, onReuse)
   }, [])
+
+  function setKeyframe(slot: KeyframeSlot, asset: AssetDragPayload) {
+    const other = slot === 'first' ? keyframes.last : keyframes.first
+    if (other?.assetId === asset.assetId) {
+      setError('同一张图片不能同时作为首帧和尾帧')
+      return
+    }
+    setError(null)
+    setKeyframes((previous) => ({ ...previous, [slot]: asset }))
+  }
+
+  function handlePicked(asset: Asset) {
+    if (!pickerSlot) return
+    const payload = toDragPayload(asset)
+    if (!payload) {
+      setError('该图片缺少文件内容')
+      return
+    }
+    setKeyframe(pickerSlot, payload)
+    setPickerSlot(null)
+  }
 
   async function handleSubmit() {
     if (running) return
@@ -114,13 +216,19 @@ export function GenerationPanel({ project, episodeCode }: GenerationPanelProps) 
             }
           : {
               kind: 'video',
+              mode: 'keyframes',
               prompt: current.text,
               size: videoSize,
               duration,
-              refs: current.refs,
+              first_frame_id: keyframes.first?.assetId ?? null,
+              last_frame_id: keyframes.last?.assetId ?? null,
             },
         episodeCode,
       )
+
+      // 首尾帧保留下来方便连续微调，只清空提示词草稿
+      if (modeRef.current === 'image') imageDraftRef.current = null
+      else videoDraftRef.current = null
       editorRef.current?.clear()
       setValue(EMPTY_VALUE)
       emitAssetsChanged()
@@ -134,11 +242,6 @@ export function GenerationPanel({ project, episodeCode }: GenerationPanelProps) 
     }
   }
 
-  function switchMode(next: Mode) {
-    setMode(next)
-    if (next === 'video' && videoSize !== '16:9' && videoSize !== '9:16') setVideoSize('16:9')
-  }
-
   return (
     <aside className="flex min-w-0 flex-1 flex-col border-l border-border">
       <div className="flex flex-1 items-center justify-center px-6">
@@ -150,14 +253,54 @@ export function GenerationPanel({ project, episodeCode }: GenerationPanelProps) 
           className="w-full max-w-2xl"
         >
           <div className="rounded-2xl border border-border bg-card p-2.5 shadow-sm transition-shadow focus-within:border-ring focus-within:ring-2 focus-within:ring-ring/20">
+            {mode === 'video' ? (
+              <div className="flex flex-wrap items-center gap-2 px-1 pt-0.5 pb-2">
+                <span className="text-[11px] text-muted-foreground">视频方式</span>
+                <div
+                  className="flex overflow-hidden rounded-lg border border-border"
+                  role="group"
+                  aria-label="视频生成方式"
+                >
+                  <VideoModeTab active onClick={() => undefined}>
+                    首尾帧
+                  </VideoModeTab>
+                  <VideoModeTab disabled title="参考生成正在开发中">
+                    参考生成
+                  </VideoModeTab>
+                </div>
+                <span className="ml-auto text-[10px] text-muted-foreground">
+                  留空即文生视频
+                </span>
+              </div>
+            ) : null}
+
+            {mode === 'video' ? (
+              <KeyframeSlots
+                first={keyframes.first}
+                last={keyframes.last}
+                size={videoSize}
+                disabled={running}
+                onPick={setPickerSlot}
+                onClear={(slot) =>
+                  setKeyframes((previous) => ({ ...previous, [slot]: null }))
+                }
+                onDropAsset={setKeyframe}
+                onSwap={() =>
+                  setKeyframes((previous) => ({ first: previous.last, last: previous.first }))
+                }
+                onUseRatio={(next) => setVideoSize(next)}
+              />
+            ) : null}
+
             <PromptInput
               ref={editorRef}
               disabled={running}
               maxRefs={maxRefs}
+              allowAssetDrop={mode === 'image'}
               placeholder={
                 mode === 'image'
                   ? '描述画面，可把左侧图片拖进来'
-                  : '描述镜头、运镜与声音（对白 / 音效 / 配乐），可拖入一张首帧图'
+                  : '描述镜头、运镜与声音（对白 / 音效 / 配乐）；首尾帧可选'
               }
               onChange={setValue}
               onSubmit={() => void handleSubmit()}
@@ -170,11 +313,17 @@ export function GenerationPanel({ project, episodeCode }: GenerationPanelProps) 
                 role="group"
                 aria-label="生成类型"
               >
-                <ModeButton active={mode === 'image'} onClick={() => switchMode('image')}>
+                <ModeButton
+                  active={mode === 'image'}
+                  onClick={() => switchMode('image')}
+                >
                   <ImageIcon className="size-3.5" />
                   图片
                 </ModeButton>
-                <ModeButton active={mode === 'video'} onClick={() => switchMode('video')}>
+                <ModeButton
+                  active={mode === 'video'}
+                  onClick={() => switchMode('video')}
+                >
                   <Video className="size-3.5" />
                   视频
                 </ModeButton>
@@ -210,10 +359,13 @@ export function GenerationPanel({ project, episodeCode }: GenerationPanelProps) 
                 />
               )}
 
-              {hasRefs ? (
+              {mode === 'image' && hasRefs ? (
                 <span className="text-[11px] text-muted-foreground">
                   已引用 {value.refs.length} 张，按所选比例居中裁切
                 </span>
+              ) : null}
+              {mode === 'video' && keyframeHint ? (
+                <span className="text-[11px] text-muted-foreground">{keyframeHint}</span>
               ) : null}
 
               <div className="ml-auto flex items-center gap-2">
@@ -252,8 +404,24 @@ export function GenerationPanel({ project, episodeCode }: GenerationPanelProps) 
           ) : null}
         </form>
       </div>
+
+      <AssetPickerDialog
+        open={pickerSlot !== null}
+        title={pickerSlot === 'last' ? '选择尾帧' : '选择首帧'}
+        project={project}
+        episodeCode={episodeCode}
+        onOpenChange={(open) => {
+          if (!open) setPickerSlot(null)
+        }}
+        onSelect={handlePicked}
+      />
     </aside>
   )
+}
+
+function toDragPayload(asset: Asset | null | undefined): AssetDragPayload | null {
+  if (!asset?.content_url) return null
+  return { assetId: asset.id, src: asset.content_url, name: asset.name }
 }
 
 function ModeButton({
@@ -274,6 +442,40 @@ function ModeButton({
         active
           ? 'bg-accent font-medium text-foreground'
           : 'text-muted-foreground hover:bg-muted hover:text-foreground',
+      )}
+      onClick={onClick}
+    >
+      {children}
+    </button>
+  )
+}
+
+function VideoModeTab({
+  active = false,
+  disabled = false,
+  title,
+  onClick,
+  children,
+}: {
+  active?: boolean
+  disabled?: boolean
+  title?: string
+  onClick?: () => void
+  children: React.ReactNode
+}) {
+  return (
+    <button
+      type="button"
+      aria-pressed={active}
+      disabled={disabled}
+      title={title}
+      className={cn(
+        'px-2.5 py-1 text-xs transition-colors',
+        active
+          ? 'bg-accent font-medium text-foreground'
+          : 'text-muted-foreground',
+        !disabled && 'hover:bg-muted hover:text-foreground',
+        disabled && 'cursor-not-allowed opacity-45',
       )}
       onClick={onClick}
     >

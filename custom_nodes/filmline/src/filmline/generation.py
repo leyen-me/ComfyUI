@@ -54,7 +54,6 @@ VIDEO_LORA = "minimax_h3_fl2v_turbo_4step_v1.0_768p_comfyui_bf16.safetensors"
 
 # 官方说明：参考图最多 10 张（image_1…image_10），image_1 是编辑目标
 MAX_IMAGE_REFS = 10
-MAX_VIDEO_REFS = 1
 
 # 官方参数：cfg 固定 1（不用负面提示词），euler/simple，步数 40-50；
 # 这里取 30 兼顾质量与速度
@@ -232,6 +231,8 @@ def video_workflow(
     duration: int,
     tier: str = "768",
     seed: int | None = None,
+    first_frame: str | None = None,
+    last_frame: str | None = None,
     refs: list[str] | None = None,
     prefix: str = "filmline/video",
 ) -> Workflow:
@@ -244,9 +245,13 @@ def video_workflow(
     if not prompt.strip():
         raise InvalidArgument("提示词不能为空")
 
-    refs = refs or []
-    if len(refs) > 1:
-        raise InvalidArgument("视频首帧只支持 1 张")
+    # 旧调用方（以及旧测试）通过 refs 传一张首帧，这里保持兼容
+    if refs:
+        if first_frame or last_frame:
+            raise InvalidArgument("refs 与 first_frame / last_frame 不能同时使用")
+        if len(refs) > 1:
+            raise InvalidArgument("视频首帧只支持 1 张")
+        first_frame = refs[0]
 
     width, height = VIDEO_TIERS[tier][size]
     length = VIDEO_DURATIONS[duration]
@@ -319,20 +324,37 @@ def video_workflow(
         },
     }
 
-    if refs:
-        graph["14"] = {"class_type": "FilmlineLoadImage", "inputs": {"path": refs[0]}}
-        graph["15"] = {
-            "class_type": "ImageScale",
-            "inputs": {
-                "image": ["14", 0],
-                "upscale_method": "lanczos",
-                "width": width,
-                "height": height,
-                "crop": "center",
-            },
-        }
-        graph["7"]["inputs"]["first_frame"] = ["15", 0]
+    if first_frame or last_frame:
+        # 首帧与尾帧都按画布居中裁切：官方首帧是拉伸填满，非等比例会变形；
+        # 这里选择裁切以保持画面不变形，前端会明确提示比例不一致。
+        if first_frame:
+            graph["14"] = {"class_type": "FilmlineLoadImage", "inputs": {"path": first_frame}}
+            graph["15"] = {
+                "class_type": "ImageScale",
+                "inputs": {
+                    "image": ["14", 0],
+                    "upscale_method": "lanczos",
+                    "width": width,
+                    "height": height,
+                    "crop": "center",
+                },
+            }
+            graph["7"]["inputs"]["first_frame"] = ["15", 0]
+        if last_frame:
+            graph["16"] = {"class_type": "FilmlineLoadImage", "inputs": {"path": last_frame}}
+            graph["17"] = {
+                "class_type": "ImageScale",
+                "inputs": {
+                    "image": ["16", 0],
+                    "upscale_method": "lanczos",
+                    "width": width,
+                    "height": height,
+                    "crop": "center",
+                },
+            }
+            graph["7"]["inputs"]["last_frame"] = ["17", 0]
 
+    frames = int(bool(first_frame)) + int(bool(last_frame))
     return Workflow(
         prompt=graph,
         kind="video",
@@ -349,7 +371,7 @@ def video_workflow(
             "lora": VIDEO_LORA,
             "steps": VIDEO_STEPS,
             "cfg": VIDEO_CFG,
-            "refs": len(refs),
+            "refs": frames,
         },
     )
 

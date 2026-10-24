@@ -13,6 +13,10 @@ export interface ReusePromptDetail {
   duration?: number
   /** 原生成使用的参考图 id，复用时用来还原图片块 */
   refIds?: number[]
+  /** 视频生成方式；旧资产为空，按首尾帧处理 */
+  videoMode?: 'keyframes' | 'reference'
+  firstFrameId?: number
+  lastFrameId?: number
 }
 
 export function emitAssetsChanged(): void {
