@@ -105,13 +105,13 @@ export function AssetList({
             draggable={Boolean(asset.text_content?.trim())}
             title="可拖到右侧提示词输入框"
             onDragStart={(event) => startAssetDrag(event, asset)}
-            className="flex items-start gap-2"
+            className="flex items-start gap-2 transition-colors hover:bg-muted focus-within:bg-muted"
           >
             <button
               type="button"
               title={`单击编辑「${asset.name}」，也可拖到右侧提示词输入框`}
               aria-label={`编辑 ${asset.name}`}
-              className="min-w-0 flex-1 cursor-pointer px-3 py-3 text-left transition-colors hover:bg-muted focus-visible:bg-muted focus-visible:outline-none"
+              className="min-w-0 flex-1 cursor-pointer px-3 py-3 text-left focus-visible:outline-none"
               onClick={() => onEdit(asset)}
             >
               <span className="flex flex-wrap items-center gap-1.5">
@@ -119,7 +119,7 @@ export function AssetList({
                 <SourceBadge source={asset.source} kind={asset.kind} />
               </span>
               {asset.text_content ? (
-                <span className="mt-1 line-clamp-2 block text-xs leading-relaxed whitespace-pre-wrap text-muted-foreground">
+                <span className="mt-1 line-clamp-2 text-xs leading-relaxed whitespace-pre-wrap text-muted-foreground">
                   {asset.text_content}
                 </span>
               ) : null}
@@ -128,7 +128,7 @@ export function AssetList({
                 {formatTime(asset.created_at)}
               </span>
             </button>
-            <div className="py-3 pr-1">
+            <div className="py-3 pr-2">
               <MoreMenu actions={buildActions(asset, handlers)} label={`${asset.name} 的操作`} />
             </div>
           </article>
