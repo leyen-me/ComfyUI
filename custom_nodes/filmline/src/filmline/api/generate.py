@@ -19,7 +19,6 @@ from ..domain.episodes import EpisodeService
 from ..domain.projects import ProjectService
 from ..domain.tasks import TaskService
 from ..errors import InvalidArgument
-from ..limits import PROMPT_MAX_CHARS
 from ..runner import RUNNER_KEY
 from .http import handle_errors, ok, read_object
 
@@ -89,8 +88,6 @@ def register_generate_routes(routes: web.RouteTableDef) -> None:
 
         if kind not in ("image", "video"):
             raise InvalidArgument("kind 只支持 image / video")
-        if len(prompt) > PROMPT_MAX_CHARS:
-            raise InvalidArgument(f"提示词最长 {PROMPT_MAX_CHARS} 字符")
 
         project = await asyncio.to_thread(ProjectService().get, request.match_info["ref"])
         episode_id, scope = await asyncio.to_thread(_episode_scope, request, project.id)

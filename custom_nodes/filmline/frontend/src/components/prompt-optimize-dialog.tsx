@@ -2,7 +2,6 @@ import { useEffect, useState } from 'react'
 import { AlertTriangle } from 'lucide-react'
 
 import type { PromptOptimizeResult } from '@/lib/api'
-import { PROMPT_MAX_CHARS } from '@/lib/limits'
 import {
   lintPrompt,
   type AssistantCounts,
@@ -46,7 +45,6 @@ export function PromptOptimizeDialog({
     ...(result?.warnings ?? []),
     ...lintPrompt({ mode, videoMode, prompt: draft, counts }).map((item) => item.message),
   ]
-  const tooLong = draft.length > PROMPT_MAX_CHARS
 
   return (
     <Dialog
@@ -59,12 +57,12 @@ export function PromptOptimizeDialog({
         <>
           <span className="mr-auto self-center font-mono text-[10px] text-muted-foreground">
             {result?.model ? `${result.model} · ` : ''}
-            {draft.length}/{PROMPT_MAX_CHARS}
+            {draft.length} 字符
           </span>
           <Button onClick={() => onOpenChange(false)}>取消</Button>
           <Button
             variant="primary"
-            disabled={!draft.trim() || tooLong}
+            disabled={!draft.trim()}
             onClick={() => {
               onApply(draft.trim())
               onOpenChange(false)
@@ -105,7 +103,7 @@ export function PromptOptimizeDialog({
               key={`${index}-${warning}`}
               className={cn(
                 'flex gap-1 text-[11px] leading-relaxed',
-                tooLong ? 'text-destructive' : 'text-amber-700 dark:text-amber-400',
+                'text-amber-700 dark:text-amber-400',
               )}
             >
               <AlertTriangle className="mt-0.5 size-3 shrink-0" />

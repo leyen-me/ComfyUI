@@ -18,12 +18,11 @@ import os
 import aiohttp
 
 from .errors import ServiceUnavailable
-from .limits import PROMPT_MAX_CHARS
 
 _LOG = logging.getLogger("filmline")
 
-# 给模型的目标长度留出余量，避免刚好越过硬上限
-_PROMPT_TARGET_CHARS = PROMPT_MAX_CHARS - 400
+# 只是给模型的软建议，不做任何硬性拦截
+_PROMPT_SOFT_TARGET_CHARS = 4000
 
 _DEFAULT_MAX_TOKENS = 4096
 _MAX_TOKENS_CEILING = 8192
@@ -32,7 +31,7 @@ _MAX_TOKENS_CEILING = 8192
 _RETRY_NOTE = (
     "\n\nImportant: the previous reply was unusable (truncated or not valid JSON). "
     "Reply with exactly one JSON object and nothing else, without prose or markdown fences. "
-    f"Keep `enhanced_prompt` under {_PROMPT_TARGET_CHARS} characters."
+    "Keep the prompt concise and skip redundant prose."
 )
 
 SYSTEM_PROMPT = """You are a prompt editor for MiniMax H3 video generation.
@@ -47,7 +46,7 @@ Rules:
 - Output ONLY a JSON object with this exact shape:
   {"enhanced_prompt": "...", "warnings": ["..."], "notes": "..."}
 - `enhanced_prompt` must be the final prompt text, not an explanation.
-- `enhanced_prompt` must be at most {budget} characters. This is a hard limit: longer output is rejected by the application. If the draft is longer than the budget, compress it: keep subjects, actions, dialogue, camera and audio decisions, and drop repetition and verbose adjectives.
+- Aim for a concise prompt (roughly 350-500 English words for the shot description). There is no hard character limit; only drop repetition and verbose adjectives when the draft is long.
 - `warnings` must contain at most 6 short items.
 - Use speaker IDs like (S1), (S2). Make it explicit who speaks and who stays silent.
 - Only assign a speaker ID to a subject who actually vocalizes. Do not give a speaker ID to a silent listener.
@@ -77,19 +76,6 @@ Rules:
   Describe what is actually visible: subject positions, which mouth or beak is open, lighting and background.
   Do not invent a different setting or move a subject off-frame. If the intended speaker's mouth is not visible or open in the first frame, add a warning.
 """
-
-_SHORTEN_PROMPT = """You are a prompt compressor for MiniMax H3 video generation.
-
-The user gives you a finished prompt. Compress it without losing production decisions.
-
-Rules:
-- Output ONLY a JSON object: {"enhanced_prompt": "..."}
-- Keep every subject, speaker ID, dialogue line, camera instruction and audio decision.
-- Drop repetition, duplicated warnings and verbose adjectives. Do not add new content.
-- `enhanced_prompt` must be at most {budget} characters and must stay in English
-  (dialogue keeps its original language).
-"""
-
 
 class _UnusableResponse(ServiceUnavailable):
     """响应不可用（截断 / 非法 JSON）：可安全地重试一次。"""
@@ -128,8 +114,8 @@ def max_tokens() -> int:
     return max(1024, min(_MAX_TOKENS_CEILING, value))
 
 
-def _system_prompt(budget: int = _PROMPT_TARGET_CHARS) -> str:
-    return SYSTEM_PROMPT.replace("{budget}", str(budget))
+def _system_prompt() -> str:
+    return SYSTEM_PROMPT
 
 
 def _extract_json(content: str) -> dict:
@@ -277,21 +263,6 @@ async def _ask_once(
     return _extract_json(content)
 
 
-async def _shorten(prompt: str, budget: int = _PROMPT_TARGET_CHARS) -> str:
-    """超长时压缩一次；仍然超长则交给调用方报错。"""
-    system = _SHORTEN_PROMPT.replace("{budget}", str(budget))
-    payload = {"enhanced_prompt": prompt, "max_characters": budget}
-    content, finish = await _chat(system, payload, [], max_tokens())
-    _LOG.info("DeepSeek 压缩: finish=%s 字符数=%d", finish, len(content))
-    if finish == "length":
-        raise ServiceUnavailable("AI 压缩时输出被截断，请稍后重试")
-    parsed = _extract_json(content)
-    shortened = parsed.get("enhanced_prompt")
-    if not isinstance(shortened, str) or not shortened.strip():
-        raise ServiceUnavailable("AI 没有返回有效的提示词")
-    return shortened.strip()
-
-
 async def optimize_prompt(payload: dict, images: list[dict] | None = None) -> dict:
     images = images or []
     _, _, model, _ = _config()
@@ -301,14 +272,6 @@ async def optimize_prompt(payload: dict, images: list[dict] | None = None) -> di
     if not isinstance(enhanced, str) or not enhanced.strip():
         raise ServiceUnavailable("AI 没有返回有效的提示词")
     enhanced = enhanced.strip()
-
-    if len(enhanced) > PROMPT_MAX_CHARS:
-        _LOG.info("AI 结果 %d 字符，超过上限，自动压缩", len(enhanced))
-        enhanced = await _shorten(enhanced)
-        if len(enhanced) > PROMPT_MAX_CHARS:
-            raise ServiceUnavailable(
-                f"AI 结果超过 {PROMPT_MAX_CHARS} 字符，请精简原文后重试"
-            )
 
     warnings = parsed.get("warnings")
     if not isinstance(warnings, list):

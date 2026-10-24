@@ -10,7 +10,6 @@ from unittest.mock import patch
 
 from filmline import llm
 from filmline.errors import ServiceUnavailable
-from filmline.limits import PROMPT_MAX_CHARS
 
 
 def _reply(enhanced: str, warnings: list[str] | None = None, notes: str = "") -> str:
@@ -127,29 +126,6 @@ class LlmOptimizeTest(unittest.TestCase):
         with self.assertRaises(ServiceUnavailable) as ctx:
             self._run([("", "length"), ('{"enhanced_prompt": "a', "length")])
         self.assertIn("截断", str(ctx.exception))
-
-    def test_oversize_result_is_compressed(self) -> None:
-        long_prompt = "x" * (PROMPT_MAX_CHARS + 500)
-        result, stub = self._run(
-            [
-                (_reply(long_prompt), "stop"),
-                (json.dumps({"enhanced_prompt": "y" * 1200}), "stop"),
-            ]
-        )
-        self.assertEqual(len(result["enhanced_prompt"]), 1200)
-        self.assertEqual(len(stub.calls), 2)
-        self.assertEqual(stub.calls[1]["payload"]["enhanced_prompt"], long_prompt)
-
-    def test_oversize_after_compression_raises(self) -> None:
-        long_prompt = "x" * (PROMPT_MAX_CHARS + 500)
-        with self.assertRaises(ServiceUnavailable) as ctx:
-            self._run(
-                [
-                    (_reply(long_prompt), "stop"),
-                    (json.dumps({"enhanced_prompt": "y" * (PROMPT_MAX_CHARS + 1)}), "stop"),
-                ]
-            )
-        self.assertIn(str(PROMPT_MAX_CHARS), str(ctx.exception))
 
     def test_warnings_are_trimmed(self) -> None:
         warnings = [f"w{i}" for i in range(20)]

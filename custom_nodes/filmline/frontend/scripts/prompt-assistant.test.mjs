@@ -97,13 +97,13 @@ assert.ok(
   }).some((item) => item.id === 'shot'),
 )
 
-// Lint：超长
+// Lint：超长只是软提示，不再阻断
 const long = lintPrompt({
   mode: 'video',
   videoMode: 'keyframes',
   prompt: 'x'.repeat(4100),
   counts: noCounts,
 })
-assert.ok(long.some((item) => item.level === 'error' && item.id === 'length'))
+assert.ok(long.some((item) => item.level === 'warn' && item.id === 'length'))
 
 console.log('提示词结构助手正常')
