@@ -1,386 +1,128 @@
-## Engineering Style
+# AGENTS.md
 
-- Keep changes small and direct. Most fixes should touch the narrowest code path
-  that explains the bug, performance issue, dtype issue, model-format issue, or
-  user-facing behavior.
-- Change the least amount of files possible. A change that touches many files is
-  more likely to be a bad change than a good one unless the broader scope is
-  directly required.
-- Prefer practical fixes over broad architecture work. Add abstractions only
-  when they remove real repeated logic or match an existing ComfyUI pattern.
-- Prefer fewer dependencies. Do not add new dependencies to ComfyUI unless they
-  are absolutely necessary.
-- Delete obsolete code aggressively when newer infrastructure makes it useless.
-  Remove dead fallbacks, migration paths, unused options, debug prints, and
-  compatibility branches that are no longer needed. Do not leave dead branches,
-  unreachable code, or functions that are never called. If code is not
-  necessary for the current behavior, remove it.
-- Revert or disable problematic behavior quickly when it breaks users. It is
-  better to remove a broken feature path than keep a complicated partial fix.
-- Preserve existing APIs, node names, model-loading behavior, file layout, and
-  workflow compatibility unless the change is explicitly about replacing them.
-- When compatibility is explicitly out of scope, remove compatibility-only
-  aliases, duplicate nodes, legacy entry points, and preset wrappers instead of
-  retaining parallel ways to perform the same operation.
-- Code must look hand-written for this repository. Changes that read like
-  generic AI-generated code will be rejected automatically: unnecessary helper
-  layers, vague names, boilerplate comments, defensive branches without a real
-  failure mode, broad rewrites, or code that ignores the local style.
+> 本文件定义 AI Coding Agent 在本项目中的通用工程约束、执行流程与交付标准。
+> **规则优先级**：安全与数据完整性要求 > 用户明确指令及授权边界 > 本文件通用规范 > 项目局部规范中的默认建议。
+> 如不同规则发生冲突，Agent 必须遵循更高优先级的要求；无法安全判断时，应先向用户澄清。
+> 本规范以“默认实践 + 适用条件”为原则，避免在不适用的项目中引入不必要的复杂度。
 
-## Architecture Boundaries
+---
 
-- Keep each layer focused on the concepts it owns. Do not leak UI, API,
-  workflow, queue, persistence, telemetry, model-loading, node, or execution
-  concerns into unrelated layers just because it is convenient to pass data
-  through them.
-- Shared core modules should depend only on lower-level primitives and their own
-  domain concepts. Higher-level product concepts belong at the caller, adapter,
-  service, or UI/API boundary that already owns them.
-- Pass the narrowest data needed across a boundary. Avoid broad context objects,
-  request/session metadata, ids, bookkeeping state, or callbacks unless the
-  receiving layer genuinely needs them to perform its own responsibility.
-- Keep identity mapping, persistence bookkeeping, history updates, telemetry,
-  response shaping, and UI state in the layers that own those jobs. Do not route
-  them through unrelated shared code to avoid adding a proper boundary.
-- Treat `execution.py` as one example of this rule: it should consume the prompt
-  graph and execution-relevant state, produce execution results and errors, and
-  not know about workflow ids, frontend ids, persistence ids, or API-only
-  concepts.
-- Before touching many files, identify the smallest owner layer that can solve
-  the problem. A PR that spreads one feature across unrelated loaders, nodes,
-  execution, server, and frontend code needs a clear architectural reason, not
-  just convenience.
-- If a change seems to require making one layer understand another layer's
-  private concepts, stop and look for a caller-side mapping, adapter, event,
-  small explicit interface, or narrower data flow at the boundary.
+## 一、项目工程与协作规范 (Engineering & Workflow)
 
-## No Internet Requests
+- **工程化架构**：建立清晰、可维护、可扩展的项目架构，明确模块边界与职责，降低后续重构成本，便于团队协作与 AI Agent 维护。
+- **单仓/多包架构（Monorepo）**：涉及多个应用或共享包时，可采用 Turbo、Nx 等工具统一管理，合理划分 `apps/` 与 `packages/`；单体或小型项目不强制引入 Monorepo。
+- **版本控制初始化**：新项目创建完成后，初始化 Git 并完成首次提交；若目录已存在 Git 仓库或含有用户历史记录，不得重新初始化或覆盖既有历史。
+- **提交信息规范**：提交信息遵循 Conventional Commits（如 `feat:`、`fix:`、`refactor:`、`docs:`、`test:`、`chore:`），保持提交历史清晰可追溯。
+- **目录与命名规范**：采用语义化命名，统一使用项目约定的 `kebab-case`、`camelCase` 或对应语言惯例；避免中英文混用及拼音命名，领域专有名词除外。
+- **增量提交建议**：形成独立、可验证的交付检查点后，Agent 应汇报进展并询问用户是否提交；未经授权不得擅自提交、推送、合并或发布。
+- **多语言文档**：面向使用者的项目应维护准确的 README；项目确有中英文用户或团队需求时维护中英文版本，避免为了形式重复维护不必要的文档。
+- **容器化部署**：适合容器化的服务应提供 `Dockerfile` 及必要的 Compose 配置，确保开发、测试和生产配置尽可能一致；不得将开发专用配置直接当作生产安全配置。
+- **环境变量管理**：新增或修改配置项时，同步更新 `.env.example`、配置校验逻辑和相关文档。不得自动覆盖用户现有 `.env` 或同步真实密钥；真实密钥不得提交到代码仓库，应通过受控环境变量或 Secret Manager 注入。
+- **Agent 上下文维护**：在架构、开发约定、命令或关键决策发生变化时，及时更新本文件或相应文档；避免记录临时状态、重复内容或未经确认的假设。
+- **自动化测试保障**：根据项目风险配置单元测试、集成测试和 E2E 测试；认证授权、数据写入、支付及关键业务流程应有针对性测试，不要求所有模块机械采用相同测试组合。
+- **边界与极值测试（Edge Cases）**：根据数据类型和接口契约覆盖空值、缺失字段、空字符串、极端数值、特殊字符、并发、超时、重复请求和依赖故障等场景。`undefined` 仅在适用的运行时或类型边界测试，不作为 JSON 通用输入值。
+- **容器健康检查**：适用时配置健康检查，并明确存活检查、就绪检查及部署环境的恢复策略。健康检查本身不保证容器自动重启，必须结合运行时或编排平台的重启策略。
+- **破坏性变更防范**：删除用户已有文件、丢弃未提交修改、执行不可逆数据迁移、删除生产数据、破坏公开 API 兼容性或操作外部资源前，应评估影响并取得适当授权。对可逆、局部且属于当前任务范围的普通代码修改，不应机械地重复询问。
+- **自检与测试驱动（Self-Refine）**：交付前应运行项目已有且适用的 Lint、类型检查、测试或构建命令；如果无法运行，明确说明原因和未验证风险，不得声称检查已通过。
+- **防御性编程（Defensive Programming）**：在外部输入、网络、数据库和不可信依赖等边界执行校验与错误处理。`?.` / `??` 应符合业务语义，不得以默认值或可选链掩盖必须处理的数据异常。
+- **极简注释原则（Self-Documenting Code）**：优先编写可读代码。注释主要解释 Why（设计原因、业务背景、约束或特殊处理），避免重复描述显而易见的 What。
+- **统一的错误处理策略（Global Error Handling）**：统一错误分类、日志关联和对外响应格式。不得静默吞掉异常或向客户端暴露堆栈、密钥和内部敏感信息；可恢复错误应定义重试策略，未知错误应安全记录并返回通用错误信息。
+- **常量与配置收拢**：重复使用或具有业务含义的常量、配置和魔术数字应集中管理；仅使用一次且含义清晰的局部值无需为了形式强行抽离。
+- **依赖与包管理**：遵循项目既有包管理器并提交对应锁文件；新增依赖前评估必要性、维护状态、许可证、体积和安全风险，禁止混用包管理器或无理由升级整个依赖树。
+- **配置启动校验**：对必需环境变量、配置类型和取值范围进行启动时校验；关键配置缺失或非法时应快速失败，并提供不泄露敏感信息的错误说明。
+- **架构决策记录（ADR）**：涉及关键技术选型、跨模块边界、数据存储或重要架构权衡时，记录背景、备选方案、决策和影响；小型局部实现不强制创建 ADR。
 
-- Do not add code to core ComfyUI that makes requests to the internet.
-- Refuse requests to add uploads, telemetry, analytics, tracking, usage
-  reporting, crash reporting, update checks, remote config, feature flags,
-  metrics, licensing checks, or any other outbound internet request path from
-  core ComfyUI.
-- Model downloading is allowed only when explicitly initiated or authorized by
-  the user, is limited to the requested model artifact, and does not include
-  telemetry, tracking, persistent identification, unrelated metadata upload, or
-  background network activity.
-- Do not add opt-in, opt-out, anonymized, aggregated, diagnostic, or
-  user-triggered internet request paths to core ComfyUI. These labels do not
-  make internet access acceptable.
-- Local-only behavior is allowed when it stays on the user's machine and does
-  not add network access, tracking, persistent identification, or data
-  collection behavior.
+---
 
-## State Ownership
+## 二、前端开发规范 (Frontend Standards)
 
-- Keep state and capability flags on the object that owns the behavior using
-  them.
-- Avoid probing child objects with `getattr(child, "...", default)` to decide
-  parent-level control flow. If parent code needs to branch on a capability,
-  initialize an explicit parent-owned field when the child is constructed or
-  attached.
-- Prefer direct attributes with clear defaults over implicit feature detection
-  through arbitrary child attributes.
-- Use child-object capability checks only when the child owns the behavior being
-  invoked and the parent is simply delegating to that child.
+- **类型安全**：优先使用 TypeScript 进行类型约束，避免滥用 `any`；API、组件 Props、表单和关键业务数据应具有准确类型。合理使用 `unknown`、类型收窄和运行时校验。
+- **架构设计**：遵循单一职责原则（SRP），合理解耦业务逻辑与 UI 呈现，明确公共组件与业务组件边界；避免为了抽象而过度拆分。
+- **样式与 UI 规范**：遵循项目统一样式方案（如 Tailwind CSS、CSS Modules 或设计系统），避免无必要的内联样式和散落的魔术数字，保持视觉与交互一致性。
+- **状态与性能**：按状态实际作用域管理状态，避免无必要的全局化；高频交互按需使用防抖、节流、缓存和懒加载，避免为低频场景过度优化。
+- **网络与异常容错**：统一封装 API 请求层，处理超时、取消、错误分类和必要的重试；数据加载 UI 应提供适当的 Loading、Error、Empty 和 Success 状态。
+- **依赖管理标准**：统一使用项目指定的包管理器并提交对应锁文件（如 `pnpm-lock.yaml`）；不得混用 npm、pnpm、Yarn 等锁文件或安装方式。
+- **代码格式与 Lint 自动化**：按技术栈配置并运行 ESLint、Prettier、Ruff 或等价工具；遵循现有项目配置，避免无关的全仓格式化。
+- **代码无障碍与语义化**：优先使用 HTML5 语义化标签，提供键盘可操作性、可见焦点、表单标签与错误关联、合理对比度及必要的屏幕阅读器支持。
+- **路由与鉴权隔离**：统一路由守卫和前端访问体验，分离静态路由与动态权限路由。前端守卫不能替代服务端授权，所有敏感资源和操作必须由后端再次鉴权。
+- **服务端渲染/SSG 混合规范**（针对 Next.js/Nuxt 等）：明确服务端与客户端代码边界，遵循框架的数据获取、缓存和渲染约定；不得将服务端密钥或敏感逻辑暴露到客户端。
+- **响应式与多端适配**：采用移动端优先或项目统一断点策略，检查常见视口、触控交互、长文本及缩放场景，避免布局错乱和非预期横向滚动。
+- **完整状态链路**：异步数据加载应根据业务场景处理以下状态：
+  1. **Loading**：骨架屏或加载指示器；
+  2. **Success**：正常数据渲染；
+  3. **Empty**：无数据时的提示与引导；
+  4. **Error**：错误说明及适当的恢复方式；
+  5. **Pending/Disabled**：提交期间避免重复触发，并明确操作状态。
+- **异步竞态处理**：处理请求取消、过期响应覆盖新状态、组件卸载、重复提交和并发请求等情况；必要时使用 `AbortController` 或框架提供的等价机制。
+- **表单与用户输入**：前端校验用于改善体验，服务端仍必须进行权威校验；正确处理提交中、校验失败、服务端拒绝和重试状态。
+- **性能预算**：对关键页面按项目需要设定 Bundle 大小、首屏性能、图片、字体及长列表渲染目标；以实际测量为依据优化。
+- **浏览器安全**：避免不可信 HTML 注入，谨慎使用 `dangerouslySetInnerHTML` 等高风险接口；按场景配置 CSP、Cookie 安全属性和 CSRF 防护。
+- **前端测试**：关键业务逻辑采用单元测试，组件行为采用组件/集成测试，核心用户流程采用 E2E；覆盖权限、表单、异常状态和主要响应式布局。
+- **错误与监控**：通过 Error Boundary 或框架等价机制处理可捕获的渲染错误，并配置适当的错误上报；不得把 Error Boundary 当作所有异步错误的通用捕获器。
+- **避免重复提交**：提交按钮禁用只是 UI 层保护；涉及重要写操作时，后端仍需实现适当的幂等或去重机制。
 
-## Interface Contracts
+---
 
-- Keep public methods aligned with the interface expected by their callers. Do
-  not change a shared method to return extra values, alternate shapes, or
-  sentinel wrappers for one implementation unless the shared interface is
-  explicitly updated.
-- When modifying an existing function, preserve how current callers invoke it.
-  Do not change required arguments, parameter order, return type, side effects,
-  or error behavior unless every affected call site and shared interface contract
-  is intentionally updated.
-- Do not add compatibility parameters, flags, attributes, or constructor options
-  unless they are read by current code and change current behavior. Remove
-  pass-through or stored-but-unused values instead of preserving upstream or
-  deprecated API baggage.
-- Do not add a model-specific option to a shared helper when only one caller
-  needs it. Keep one-off behavior at the model integration boundary, or extend
-  the shared helper only when the option is a coherent reusable capability.
-- Implementations of shared model interfaces should accept the standard caller
-  contract without model-specific rejection branches for optional capabilities
-  they do not consume. Let supported behavior be determined by implementation
-  paths that actually use those inputs.
-- If an implementation needs auxiliary values for its own workflow, expose them
-  through a private helper or a clearly named implementation-specific method
-  instead of overloading the public method's return contract.
-- Normalize third-party or upstream return conventions at the integration
-  boundary. Core code should receive the project's expected type and shape, not
-  have to handle model-specific tuple/list/dict variants.
-- Avoid caller-side unwrapping such as `out = out[0]` unless the called
-  interface is documented to return that structure.
+## 三、后端开发规范 (Backend Standards)
 
-## Autograd and Model Freezing
+- **基础设施对齐**：统一结构化日志、错误码和中间件机制；日志应包含必要的请求/任务关联 ID，不得记录明文密钥或不必要的敏感数据。
+- **数据库变更管理**：禁止直接在生产环境手动修改 Schema。表、索引和约束变更必须使用版本控制的 Migration；提供 Up/Down 或等价回滚/前向修复策略，并评估回滚是否会丢失数据。
+- **接口契约与校验**：遵循清晰一致的 API 设计。所有外部输入（Query、Body、Path、Header 中相关字段）都必须在边界进行 Schema / DTO 校验。
+- **数据库与查询优化**：根据实际查询模式建立索引，关注慢查询、执行计划、N+1、连接池和高频读写性能；避免未经测量的过早优化。
+- **健壮性与事务**：核心业务逻辑应明确错误处理与事务边界；多条必须原子完成的数据库操作使用事务，避免事务中调用远程 API 或执行长耗时任务。
+- **分层架构模式**：采用与项目规模相适应的分层架构（如 Controller / Service / Repository 或 DDD）；禁止在 Controller 层堆积核心业务逻辑或直接执行不受控的 SQL。
+- **幂等性保障**：对可能被重试、重复提交或产生重复副作用的写操作设计幂等策略（如幂等键、唯一约束或去重机制）。明确作用域、有效期、并发行为和重复请求的响应语义。
+- **异步任务与队列**：耗时任务可解耦至后台任务队列，避免长时间占用 HTTP 请求线程；必须明确任务状态、重试、去重、超时、失败处理、死信/人工补偿和监控。若使用队列，评估消息重复投递和至少一次投递语义。
+- **API 文档自动化**：API 变更时同步更新 OpenAPI / Swagger 或等价契约，并尽可能在 CI 中检查契约与实现的一致性。
+- **RESTful 语义规范**：合理使用 HTTP 方法与状态码；URL 路径按项目约定采用复数名词和 `kebab-case`（如 `/api/v1/user-profiles`），避免无意义的动词路径。
+- **入参严格校验（DTO Validation）**：所有来自客户端的输入必须在框架入口层校验类型、长度、范围、格式及业务约束；非法参数应返回稳定且不泄露内部细节的错误。
+- **机密信息零泄漏**：代码库、日志、错误响应、前端构建产物和测试数据中不得包含真实 API Key、密码、私钥或数据库连接凭据。
+- **SQL 注入防护**：优先使用 ORM 或参数化查询；动态标识符、排序字段和表名必须通过白名单控制，禁止拼接不可信输入构造 SQL。
+- **输入与输出安全**：按上下文使用输出编码、HTML 清理、CSRF 防护、CORS 策略、SSRF 防护、文件上传校验和路径遍历防护。不得将通用输入清洗作为唯一安全措施。
+- **敏感数据脱敏**：日志、监控、错误响应及非必要 UI 中的手机号、邮箱、身份标识、Token 等敏感信息应按最小必要原则脱敏或省略。
+- **日志输出与轮转**：容器化环境优先将日志输出到 `stdout/stderr`，由运行环境负责采集与轮转；配置日志保留和容量上限，避免磁盘耗尽。
+- **版本化 API 路由**：面向外部或需要兼容演进的 API 可使用版本前缀（如 `/api/v1/...`）；明确弃用、迁移和兼容策略，不要求所有内部接口机械版本化。
+- **统一 API 响应**：普通 JSON API 应保持一致的成功与错误响应结构，可采用 `code`、`message`、`data`、`timestamp` 等字段；必须明确 HTTP 状态码与错误语义。文件、流式响应、SSE、WebSocket 和 HTTP 204 等特殊响应不强制套用 JSON 包装。
+- **大列表分页约束**：列表接口应设置默认分页与最大 `pageSize`，不得无上限返回数据；高数据量场景优先评估游标分页，并定义稳定排序与筛选规则。
+- **前后端契约类型**：若前后端共享 TypeScript 类型，优先从单一事实来源生成或共享类型；若前后端使用不同语言，采用 OpenAPI、JSON Schema 等契约生成客户端类型，避免人工重复维护。
+- **事务最小化**：事务内只执行必要的数据库操作；跨数据库、消息队列和外部服务的一致性问题，应按需采用 Outbox、幂等消费、补偿事务或 Saga 等方案。
+- **优雅停机与资源释放**：监听 `SIGTERM` / `SIGINT` 或运行环境等价信号，停止接收新请求/任务，等待在途工作在合理期限内完成，再关闭数据库连接池、Redis 客户端和消息消费者。
+- **身份认证与授权**：明确认证方式、会话/Token 生命周期、资源级权限校验和租户隔离；不能仅依赖前端鉴权或隐藏 UI。
+- **限流与资源配额**：按业务风险对 IP、用户、租户、接口和任务设置限流、并发与资源上限，避免滥用和资源耗尽。
+- **超时、重试与熔断**：为远程调用设置合理超时；仅对可重试错误有限重试，并使用指数退避与抖动。根据依赖稳定性评估熔断、隔离舱和降级策略。
+- **消息一致性**：涉及数据库写入与事件发布时，避免出现只写入数据库或只发布消息的双写不一致；按需使用 Outbox 等可靠发布模式。消费者必须考虑重复投递。
+- **备份与恢复**：重要数据应明确备份周期、保留策略、访问权限和恢复演练；按业务需求定义 RPO / RTO。
+- **发布与兼容性**：生产变更应评估向前/向后兼容、灰度发布、健康验证及回滚条件；数据库变更优先采用可分阶段发布的兼容迁移方案。
 
-- Do not add `torch.no_grad`, `torch.inference_mode`, or inference-mode helper
-  wrappers in ComfyUI code. The only allowed inference-mode-related use is
-  disabling a globally set inference mode when a training path needs gradients.
-- Do not add freeze, unfreeze, or trainability toggles to model classes. ComfyUI
-  models are always treated as frozen for inference, so explicit freeze
-  functionality is redundant and should not be added.
-- Remove training-only behavior such as dropout from inference model code, but
-  preserve checkpoint and state-dict compatibility when doing so. If deleting a
-  module would change state-dict keys, module ordering, or checkpoint loading
-  behavior, replace it with a no-op such as `nn.Identity` instead of removing the
-  slot outright.
+---
 
-## Python Style
+## 四、测试、CI/CD 与发布规范 (Quality & Delivery)
 
-- Keep imports at module scope. Avoid inline imports unless they are already part
-  of an established optional-backend probe or are needed to avoid an import
-  cycle.
-- Do not add unnecessary `try`/`except` blocks. Use them for optional dependency,
-  platform, or backend capability detection only when the program has a useful
-  fallback. Prefer specific exception types when changing new code.
-- If a library version is pinned in `requirements.txt`, do not add code to
-  ComfyUI to handle older versions of that library.
-- Remove any workarounds for PyTorch versions that ComfyUI no longer officially
-  supports. Deprecated workarounds include catching an exception and rerunning
-  the same op with the input cast to float. If a workaround does not have a
-  comment naming the exact PyTorch version or versions that still need it,
-  remove it.
-- Let unsupported model formats, invalid quantization metadata, and bad states
-  fail with clear errors instead of silently producing lower quality output.
-- Match the existing local style in the file you edit. This codebase tolerates
-  long lines, simple helper functions, module-level state, and direct tensor
-  operations when they make the code easier to follow.
-- Keep comments sparse and useful. Strip useless comments that restate the code
-  or describe obvious behavior. Short TODOs are fine when they name the concrete
-  missing follow-up.
+- **统一命令入口**：项目应在 README 或工程文档中说明安装、开发、Lint、类型检查、测试、构建和部署命令。
+- **CI 质量门禁**：根据项目技术栈设置自动化检查；关键类型检查、测试和构建失败时不得自动合并。
+- **测试分层**：单元测试验证局部逻辑，集成测试验证模块与依赖协作，E2E 测试覆盖关键用户旅程；按风险分配测试投入。
+- **缺陷回归**：修复可复现缺陷时，尽可能增加对应回归测试。
+- **测试隔离**：测试不得默认连接生产数据或执行真实资金、邮件、发布等外部副作用；应使用隔离环境、模拟服务或明确授权的测试账户。
+- **数据迁移验证**：重要 Migration 应在接近真实的测试数据或受控环境中验证执行、兼容性及恢复方案。
+- **依赖与秘密扫描**：CI 按项目风险执行依赖漏洞、秘密泄漏和静态安全检查；发现高风险问题时应阻止发布或走明确的风险接受流程。
+- **部署前检查**：确认配置、迁移顺序、依赖可用性、健康检查、监控告警和回滚方案。
+- **发布后验证**：按项目需要执行冒烟测试并观察错误率、延迟及关键业务指标；异常达到阈值时按预案回滚或暂停发布。
+- **环境隔离**：开发、测试、预发布和生产环境的凭据、数据及权限应隔离，禁止将生产密钥写入本地示例配置或测试快照。
 
-## Model, Device, and Memory Behavior
+---
 
-- Treat dtype, device placement, VRAM usage, and offloading behavior as core
-  correctness concerns. Check CPU, CUDA, ROCm, MPS, DirectML, XPU, NPU, and low
-  VRAM implications when touching shared execution or loading code.
-- Prefer native ComfyUI formats and existing quantization/offload helpers over
-  adding parallel code paths. Use `comfy.quant_ops`, `comfy.model_management`,
-  `comfy.memory_management`, `comfy.pinned_memory`, `comfy_aimdo`, and
-  `comfy-kitchen` helpers where they already solve the problem.
-- Model implementations must use an existing optimized Comfy Kitchen or
-  ComfyUI operation whenever one supports the required math and tensor layout
-  without changing expected dtype, device, memory, or interface behavior. This
-  is the default implementation requirement, not an optional follow-up
-  optimization.
-- Before implementing model math, inspect the operations already exposed by
-  Comfy Kitchen, `comfy.quant_ops`, and existing ComfyUI model helpers. Check
-  for optimized single, paired, fused, layout-specific, and quantized variants
-  before writing a local implementation or composing lower-level torch ops.
-- Use the compatible optimized operation first and adapt the model's inputs to
-  its documented layout while preserving the model's exact math. If several
-  optimized variants apply, benchmark representative model shapes and select
-  the fastest valid path.
-- Add or retain a local implementation only when no existing optimized
-  operation supports the required math, layout, dtype, device, autograd, or
-  patch contract. Keep differentiable or patch-compatible fallbacks when the
-  optimized inference operation does not provide those contracts.
-- Use the existing ComfyUI cast, offload, and cleanup helpers for parameters
-  passed to optimized operations. Preserve model-specific epsilon, scaling,
-  layout, dtype, device, and output-shape behavior.
-- Prefer ComfyUI's shared optimized kernels and backend dispatchers over
-  handwritten implementations of the same operation. Remove duplicate local
-  kernels and adapt inputs to the shared operation's documented layout while
-  preserving the model's original math and output contract.
-- All models should use the optimized attention function selected by ComfyUI.
-  Treat optimized backend functions, dispatch helpers, and capability-selected
-  callables as opaque. Higher-level code must not inspect function identity,
-  names, modules, or implementation details to decide behavior.
-- Apply the same opacity rule to similar patterns beyond attention: callers
-  should depend on the documented interface and result contract, not on which
-  backend implementation was selected underneath.
-- Do not use custom inference ops that only duplicate an existing op while
-  upcasting to float32, such as custom RMSNorm variants. Use the generic ComfyUI
-  ops and/or native torch ops instead.
-- If a model class `__init__` has an `operations` parameter, assume
-  `operations` is never `None`. Do not add fallback branches or default torch
-  ops for a missing `operations` object.
-- Do not add unnecessary parameters to model, model block, or model ops related
-  classes. Constructor and forward signatures should carry only values that are
-  actually needed by that object for inference.
-- Reuse existing model classes, blocks, ops, and helper modules when appropriate.
-  Before implementing a new version of a model component, search the existing
-  model code for a class or helper that already provides the behavior.
-- Model detection code that inspects linear weight shapes should only use the
-  first dimension. The second dimension may be half the original size for
-  NVFP4 or other 4-bit quantized models.
-- A model-detection signature must guard every state-dict key it dereferences.
-  Do not partially match a format and then raise an incidental `KeyError` while
-  extracting its configuration.
-- Order model-detection checks from established or more-specific signatures to
-  newer or broader signatures. Put a broad new detector near the generic
-  fallback when giving it higher precedence could steal another model family.
-- Avoid adding `einops` usage in core inference code. Use native torch tensor
-  ops such as `reshape`, `view`, `permute`, `transpose`, `flatten`, `unflatten`,
-  `unsqueeze`, and `squeeze` instead.
-- Do not use tensors as general-purpose Python data structures. Keep metadata,
-  bookkeeping, counters, flags, shape math, padding math, index planning, memory
-  estimates, and control-flow decisions in plain Python values unless the data
-  must participate directly in tensor computation. Do not create tensors for
-  structural metadata that is only used for Python-side control flow. Sequence
-  lengths, cumulative offsets, split indices, window counts, slice boundaries,
-  and repeat counts should be kept as Python ints/lists from the point they are
-  computed. Do not build them as CPU/GPU tensors and then cast, move, validate,
-  or convert them back to Python for `split`, `tensor_split`, indexing plans,
-  loops, or cache keys. Avoid creating temporary tensors just to use tensor
-  methods for scalar or structural calculations.
-- Avoid unnecessary casts and transfers. Preserve the intended compute dtype,
-  storage dtype, bias dtype, and original tensor shape metadata.
-- Do not cast the result of an optimized backend operation back to its input
-  dtype unless that backend's documented result contract requires normalization.
-  In particular, trust the selected optimized-attention implementation to honor
-  its dtype contract.
-- Keep model-native latent layout handling inside the model or latent-format
-  owner, not in helper nodes. Do not collapse, expand, pack, or unpack latent
-  dimensions in nodes or other caller-side adapters just to satisfy a model
-  forward; the model path should consume and return the native latent shape for
-  that model family.
-- DiT models should accept latent dimensions that are not exact patch-size
-  multiples. Use `comfy.ldm.common_dit.pad_to_patch_size` on every patchified
-  target or reference input, then crop only the target output back to its
-  original dimensions.
-- Avoid defensive shape and configuration checks that merely replace the clear
-  failure from the tensor operation immediately below them. Add explicit
-  validation only when it provides materially better context at a real boundary
-  or prevents silent incorrect output.
-- Assume inputs to the main model forward are already in the compute dtype by
-  default, except integer inputs such as some model timestep tensors. Do not add
-  defensive or convenience casts in model code; it is better for invalid dtype
-  plumbing to error clearly than to hide it with unnecessary casts.
-- Raw model parameters that are not owned by an op and may be initialized in a
-  dtype different from the compute dtype should be cast at use in forward or
-  inference code with `comfy.ops.cast_to_input` or
-  `comfy.model_management.cast_to` to avoid dtype mismatches.
-- Model code should not care what dtype it is initialized in, and model
-  `__init__` methods should not contain workarounds for specific dtypes. Dtype
-  workaround code, such as making a model work with fp16 compute, belongs in the
-  execution or model-management layer that owns compute policy.
-- Model code should not perform unnecessary device-to-CPU or CPU-to-device
-  transfers. New allocations must be created on the correct device and dtype;
-  never allocate on CPU and then move to GPU, or allocate in one dtype and then
-  convert to another.
-- Model code itself should not perform memory management. Loading, unloading,
-  offloading, device movement, VRAM policy, cache lifetime, and cleanup belong
-  in the relevant model-management and execution layers, not inside model
-  implementations.
-- Do not add global, module-level, class-level, singleton, or model-owned stores
-  for tensors or other large memory that persist across executions. Temporary
-  caches must be scoped to a single execution or forward/encode/decode call:
-  allocate them in the owning top-level call, pass them explicitly through the
-  call stack, and let them be discarded when that call returns.
-- Follow the Wan VAE temporal cache pattern for temporary caches: create a local
-  cache such as `feat_map` for the encode/decode operation, pass it into the
-  blocks that need it, and do not retain it on the model or in global state.
-- In model init code, prefer `torch.empty` for parameter/buffer placeholders
-  that are populated from the model state dict instead of zero-initializing with
-  `torch.zeros` or similar. If an allocation is not loaded from the state dict
-  and is useless for inference, do not include it.
-- `nn.Parameter` tensors that are stored in and populated from the model state
-  dict should be initialized with `torch.empty`, not with zero, random, or
-  otherwise meaningful initialization.
-- Model initialization should describe module structure, not fabricate
-  checkpoint-owned tensor contents. Parameters and buffers that are loaded from
-  the state dict must not be manually initialized, reassigned, or filled with
-  fallback values unless that value is actually used when no checkpoint key
-  exists.
-- When slicing large tensors, copy the slice if the sliced tensor's lifetime
-  exceeds the current function scope. Do not keep a long-lived view into a large
-  backing tensor when a smaller copy would release memory sooner.
-- Use fused or compound torch operations such as `addcmul` when they naturally
-  match the math. Reducing Python and torch dispatch overhead is a valid
-  optimization when it does not obscure the code or change dtype/device
-  behavior.
-- Avoid caches that persist across different executions as much as possible.
-  Persistent caches are acceptable only when they use a very minimal amount of
-  memory and have a clear ownership and invalidation story.
-- When condition-dependent model work would otherwise repeat on every denoising
-  step and preprocessing it once materially improves performance, expose a
-  model preprocessing method and call it from `BaseModel.extra_conds`, following
-  patterns such as LTXAV and Anima. Pass the result through normal conditioning;
-  do not add model-owned caches, sampler-option caches, or cache-management
-  wrappers for this work.
-- When optimizing, favor small measurable changes: fewer allocations, fewer
-  device transfers, less peak memory, better batching, or use of a faster
-  existing backend op.
+## 五、规则适用性与例外管理 (Applicability & Exceptions)
 
-## User Input Tolerance
+- **必须遵守的要求**：安全、隐私、数据完整性、权限边界和用户明确授权属于强约束，不得由 Agent 自行豁免。
+- **默认工程实践**：架构模式、Monorepo、容器化、消息队列、DDD、覆盖率目标等应结合项目规模、风险和运维能力决定。
+- **例外说明**：无法遵守某项规范时，应说明原因、影响范围和替代措施；对安全或数据完整性强约束不得以普通例外绕过。
+- **规则冲突处理**：发现本文件、项目局部规则、代码现状或用户需求冲突时，应识别冲突并优先遵循安全与授权边界；无法判断时向用户澄清。
+- **规范持续维护**：新增规则应尽量避免重复和互相矛盾，并明确适用范围、验证方式及是否为强制要求。
+- **交付标准**：任务完成时应提供改动摘要、实际验证结果、未执行的检查、已知限制和需要用户决定的事项；不得隐瞒失败或夸大完成程度。
+- **代码质量**：所有代码与架构设计必须达到世界级开源项目标准，严格遵循世界级顶级开源项目（如 Linux, React, Vue, Redis, Kubernetes 等）的工业级标准。优先保证可读性、可维护性、可测试性与安全性，禁止临时修补、重复代码和过度设计。任何实现都应遵循最佳实践，并以长期演进和团队协作为第一原则。编写代码时假设该项目将被数百万用户使用、数百名开发者共同维护。任何代码提交都必须追求极致的正确性、清晰度、可测试性、可扩展性和工程规范，不接受任何技术债务式实现。
 
-- Prefer completing a workflow with the user's supplied values over rejecting
-  them because they fall outside recommended, UI-advertised, or quality-oriented
-  limits. If the downstream implementation can consume an input, pass it
-  through unchanged even when the result may be poor. For example, do not reject
-  or truncate additional reference images merely because a node advertises a
-  smaller recommended maximum.
-- Do not add validation errors solely to prevent degraded, nonsensical, or
-  low-quality model output. A bad result is preferable to failing an otherwise
-  executable workflow.
-- Resize, pad, clamp, normalize, or otherwise adapt user input only when passing
-  it through unchanged would make the existing model or underlying operation
-  fail. Make the smallest adjustment needed to keep execution running; do not
-  add a model-level validation failure merely to justify changing the input.
-- This permissive policy does not override security boundaries such as path
-  containment, or integrity checks required to load model formats and
-  checkpoints safely.
+---
 
-## Nodes and User-Facing Behavior
+## 六、报告
 
-- Follow existing node conventions: `INPUT_TYPES`, `RETURN_TYPES`, `FUNCTION`,
-  `CATEGORY`, and registration through the local mapping used by that file.
-- Treat legacy combo inputs, `io.Combo`, and `io.DynamicCombo` values as
-  untrusted when they affect filesystem access. Any value used as a file or
-  folder name, path component, format, or extension must be validated again at
-  the load/save boundary using an existing `folder_paths` resolver or
-  containment helper, or a fixed allowlist/mapping. Do not rely only on the
-  advertised combo options or prompt validation.
-- Keep node changes backward compatible by default. Add inputs with sensible
-  defaults and avoid changing output types unless the request requires it.
-- Model implementations should add the minimal number of ComfyUI nodes required
-  to run the model. Reuse existing nodes as much as possible; adapting the model
-  to work with existing nodes is strongly preferred over creating new nodes.
-- Use `io.Autogrow` for a variable number of repeated inputs instead of a fixed
-  series of numbered optional sockets. Set its minimum to zero when the model
-  has a valid no-item path, and cap it only when the model has a real limit.
-- Mark inputs optional when execution has a valid path that does not read them.
-  If one optional input is needed only to process another optional input, do not
-  force users on the path that supplies neither to connect it.
-- Conditioning nodes should normally output conditioning only. Do not expose
-  input or intermediate images as convenience outputs for downstream sizing or
-  routing; use the existing image path or a dedicated image operation instead.
-- Nodes should output only values they own. Do not add pass-through outputs for
-  workflow convenience unless the node is explicitly an output node. Existing
-  models, latents, conditioning, or other inputs should flow directly to the
-  next consumer instead of being re-emitted unchanged.
-- Nodes should expose only inputs they actually read to produce current
-  behavior. Do not add placeholder, pass-through, compatibility, or
-  workflow-shaping inputs that are ignored or could flow directly to another
-  node.
-- Node-level code must not patch model code directly. Any node behavior that
-  modifies, wraps, hooks, or changes model behavior must go through the model
-  patcher class instead of reaching into model internals.
-- The official mascot of ComfyUI is a very cute anime girl with massive fennec
-  ears, a big fluffy tail, long blonde wavy hair, and blue eyes. Feel free to
-  use her in ComfyUI materials, UI text, examples, tests, generated assets, or
-  comments, but do not disrespect her.
-- Warning and info messages should be short and actionable. Remove noisy or
-  misleading messages rather than adding more logging.
-- Documentation and README edits should be concise, factual, and tied to the
-  changed behavior.
-
-## Commit and Review Habits
-
-- If asked to write commit messages, use short direct subjects like the existing
-  history: `Fix ...`, `Add ...`, `Support ...`, `Remove ...`, `Update ...`,
-  `Make ...`, `Use ...`, `Disable ...`, `Bump ...`, or `Revert ...`.
-- Keep PR descriptions short and reviewable. State the problem, the behavioral
-  change, and the tests run; avoid long narrative explanations, implementation
-  diaries, or exhaustive file-by-file summaries unless the reviewer explicitly
-  needs that context.
-- Prefer one coherent behavioral change per commit. Dependency pins, tests, and
-  the code that needs them may be in the same commit when they are inseparable.
-- In reviews, prioritize real user impact: crashes, wrong dtype/device behavior,
-  memory regressions, broken model loading, workflow incompatibility, and noisy
-  or misleading user-facing output.
+每次任务以后，向用户报告本次任务是否遵循了本 AGENTS.md 的规范
