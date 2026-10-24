@@ -197,6 +197,9 @@ window.history.pushState({}, '', '/studio/projects/PRJ-0001')
 window.dispatchEvent(new window.PopStateEvent('popstate'))
 await wait(500)
 const detailText = rootText()
+const activeNavOnProject = [...document.querySelectorAll('aside a[aria-current="page"]')].map(
+  (el) => el.textContent?.trim() ?? '',
+)
 
 // —— 分集：新建后侧边栏出现，进入分集资产页显示集标题 ——
 document.querySelector('button[aria-label="新建分集"]')?.click()
@@ -211,6 +214,9 @@ window.history.pushState({}, '', '/studio/projects/PRJ-0001/episodes/EP01/assets
 window.dispatchEvent(new window.PopStateEvent('popstate'))
 await wait(400)
 const episodeText = rootText()
+const activeNavOnEpisode = [...document.querySelectorAll('aside a[aria-current="page"]')].map(
+  (el) => el.textContent?.trim() ?? '',
+)
 
 // —— 资产编辑：菜单必须挂在 body 上（不被滚动容器裁剪），且能改文本 ——
 window.history.pushState({}, '', '/studio/projects/PRJ-0001/assets/text')
@@ -261,6 +267,8 @@ const checks = [
   ['项目页有资产导航', ['文本', '图片', '视频', '音频'].every((label) => detailText.includes(label))],
   ['项目页有文本资产', detailText.includes('第一幕')],
   ['项目页有 chat 输入框', Boolean(document.querySelector('textarea[aria-label="消息输入"]'))],
+  ['项目资产页仅「资产」高亮', activeNavOnProject.length === 1 && activeNavOnProject[0] === '资产'],
+  ['分集页仅当前集高亮', activeNavOnEpisode.length === 1 && activeNavOnEpisode[0].includes('EP01')],
   ['分集创建后出现在导航', afterEpisodeCreate.includes('EP01')],
   ['分集页显示集标题', episodeText.includes('EP01 · 第 1 集')],
   ['项目内不出现删除项目', projectMenuItems.includes('编辑') && !projectMenuItems.includes('删除')],

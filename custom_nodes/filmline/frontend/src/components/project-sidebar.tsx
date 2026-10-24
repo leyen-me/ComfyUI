@@ -21,8 +21,10 @@ export function ProjectSidebar({
   onDeleteEpisode,
 }: ProjectSidebarProps) {
   const { pathname } = useLocation()
-  const inAssets = pathname.includes('/assets/')
-  const inEpisodes = pathname.includes('/episodes')
+  // 按路径段判断，避免 /episodes/EP01/assets/text 同时命中“资产”“分集”和分集项
+  const parts = pathname.split('/').filter(Boolean) // projects / {code} / ...
+  const inProjectAssets = parts[2] === 'assets'
+  const inEpisodeOverview = parts[2] === 'episodes' && parts.length === 3
 
   const itemClass = (active: boolean) =>
     cn(
@@ -52,11 +54,19 @@ export function ProjectSidebar({
       </div>
 
       <nav className="flex min-h-0 flex-1 flex-col gap-0.5 px-3" aria-label="项目导航">
-        <Link to={`/projects/${project.code}/assets/text`} className={itemClass(inAssets)}>
+        <Link
+          to={`/projects/${project.code}/assets/text`}
+          className={itemClass(inProjectAssets)}
+          aria-current={inProjectAssets ? 'page' : undefined}
+        >
           资产
         </Link>
 
-        <Link to={`/projects/${project.code}/episodes`} className={itemClass(inEpisodes)}>
+        <Link
+          to={`/projects/${project.code}/episodes`}
+          className={itemClass(inEpisodeOverview)}
+          aria-current={inEpisodeOverview ? 'page' : undefined}
+        >
           分集
           <span className="ml-auto font-mono text-[11px] text-muted-foreground">
             {episodes.length}
@@ -78,9 +88,8 @@ export function ProjectSidebar({
 
         <div className="mt-1 min-h-0 flex-1 overflow-y-auto pb-3">
           {episodes.map((episode) => {
-            const active = pathname.startsWith(
-              `/projects/${project.code}/episodes/${episode.code}`,
-            )
+            const active =
+              parts[2] === 'episodes' && parts[3] === episode.code
             return (
               <div
                 key={episode.id}
@@ -91,6 +100,7 @@ export function ProjectSidebar({
               >
                 <Link
                   to={`/projects/${project.code}/episodes/${episode.code}/assets/text`}
+                  aria-current={active ? 'page' : undefined}
                   className={cn(
                     'flex min-w-0 flex-1 items-center gap-2 rounded-lg py-1.5 pl-7 text-xs',
                     active ? 'font-medium text-foreground' : 'text-muted-foreground',
