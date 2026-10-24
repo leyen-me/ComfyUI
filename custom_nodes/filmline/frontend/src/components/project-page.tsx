@@ -2,16 +2,18 @@ import { useCallback, useEffect, useState } from 'react'
 import { Loader2 } from 'lucide-react'
 import { Link, Navigate, Route, Routes, useNavigate, useParams } from 'react-router-dom'
 
-import { ApiError, api, type Project } from '@/lib/api'
-import { useAssetCounts } from '@/hooks/use-assets'
-import { AssetView } from './asset-view'
+import { ApiError, api, type Episode, type Project } from '@/lib/api'
+import { useEpisodes } from '@/hooks/use-episodes'
+import { AssetPanel } from './asset-panel'
 import { ChatPanel } from './chat-panel'
-import { ProjectSidebar } from './project-sidebar'
+import { EpisodeDialog } from './episode-dialog'
+import { EpisodeOverview } from './episode-overview'
+import { isAssetKind } from './kind-tabs'
 import { ProjectDialog } from './project-dialog'
+import { ProjectSidebar } from './project-sidebar'
 import { Toast, type ToastMessage } from './toast'
 import { Button } from './ui/button'
 import { Dialog } from './ui/dialog'
-import { MoreMenu } from './ui/more-menu'
 
 export function ProjectPage() {
   const { ref = '' } = useParams()
@@ -20,13 +22,19 @@ export function ProjectPage() {
   const [project, setProject] = useState<Project | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [countsVersion, setCountsVersion] = useState(0)
-  const [editing, setEditing] = useState(false)
-  const [pendingDelete, setPendingDelete] = useState(false)
-  const [deleting, setDeleting] = useState(false)
-  const [toast, setToast] = useState<ToastMessage | null>(null)
+  const { episodes, loading: episodesLoading, reload: reloadEpisodes } = useEpisodes(
+    project?.code ?? '',
+  )
 
-  const counts = useAssetCounts(project?.code ?? '', countsVersion)
+  const [editingProject, setEditingProject] = useState(false)
+  const [deletingProject, setDeletingProject] = useState(false)
+  const [episodeDialog, setEpisodeDialog] = useState<{ open: boolean; episode: Episode | null }>({
+    open: false,
+    episode: null,
+  })
+  const [deletingEpisode, setDeletingEpisode] = useState<Episode | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [toast, setToast] = useState<ToastMessage | null>(null)
 
   const notify = useCallback((text: string, tone: ToastMessage['tone'] = 'ok') => {
     setToast({ id: Date.now(), text, tone })
@@ -59,17 +67,36 @@ export function ProjectPage() {
     return () => controller.abort()
   }, [ref])
 
-  async function confirmDelete() {
+  async function confirmDeleteProject() {
     if (!project) return
-    setDeleting(true)
+    setBusy(true)
     try {
       await api.projects.remove(project.id)
       navigate('/', { replace: true })
     } catch (cause) {
       notify(cause instanceof ApiError ? cause.fullMessage : '删除失败', 'error')
-      setDeleting(false)
+      setBusy(false)
     }
   }
+
+  async function confirmDeleteEpisode() {
+    if (!deletingEpisode) return
+    setBusy(true)
+    try {
+      await api.projects.episodes.remove(deletingEpisode.id)
+      notify(`已删除「${deletingEpisode.code}」`)
+      setDeletingEpisode(null)
+      reloadEpisodes()
+      navigate(`/projects/${project?.code}/episodes`, { replace: true })
+    } catch (cause) {
+      notify(cause instanceof ApiError ? cause.fullMessage : '删除失败', 'error')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const openEpisodeCreate = () => setEpisodeDialog({ open: true, episode: null })
+  const openEpisodeEdit = (episode: Episode) => setEpisodeDialog({ open: true, episode })
 
   if (loading) {
     return (
@@ -93,81 +120,99 @@ export function ProjectPage() {
 
   return (
     <div className="flex h-full">
-      <ProjectSidebar project={project} counts={counts} />
+      <ProjectSidebar
+        project={project}
+        episodes={episodes}
+        onCreateEpisode={openEpisodeCreate}
+        onEditEpisode={openEpisodeEdit}
+        onDeleteEpisode={setDeletingEpisode}
+      />
 
-      {/* 资产列：与导航同量级（导航 224px，这里 320px） */}
       <section className="flex w-80 shrink-0 flex-col border-r border-border">
-        <header className="border-b border-border px-4 py-3">
-          <div className="flex items-start gap-2">
-            <div className="min-w-0 flex-1">
-              <div className="truncate text-sm font-medium" title={project.name}>
-                {project.name}
-              </div>
-              <div className="font-mono text-[11px] text-muted-foreground">{project.code}</div>
-            </div>
-            <MoreMenu
-              label="项目操作"
-              actions={[
-                { label: '编辑', onSelect: () => setEditing(true) },
-                { label: '删除', onSelect: () => setPendingDelete(true), destructive: true },
-              ]}
-            />
-          </div>
-          {project.description ? (
-            <p
-              className="mt-1.5 line-clamp-2 text-xs leading-relaxed text-muted-foreground"
-              title={project.description}
-            >
-              {project.description}
-            </p>
-          ) : null}
-        </header>
+        <Routes>
+          <Route index element={<Navigate to="assets/text" replace />} />
 
-        <div className="min-h-0 flex-1">
-          <Routes>
-            <Route index element={<Navigate to="assets/text" replace />} />
-            <Route
-              path="assets/:kind"
-              element={
-                <AssetView
-                  project={project}
-                  onChanged={() => setCountsVersion((value) => value + 1)}
-                />
-              }
-            />
-            <Route path="*" element={<Navigate to="assets/text" replace />} />
-          </Routes>
-        </div>
+          <Route
+            path="assets/:kind"
+            element={
+              <ProjectAssetRoute
+                project={project}
+                onEditScope={() => setEditingProject(true)}
+                onDeleteScope={() => setDeletingProject(true)}
+              />
+            }
+          />
+
+          <Route
+            path="episodes"
+            element={
+              <EpisodeOverview
+                project={project}
+                episodes={episodes}
+                loading={episodesLoading}
+                onCreate={openEpisodeCreate}
+                onEdit={openEpisodeEdit}
+                onDelete={setDeletingEpisode}
+              />
+            }
+          />
+
+          <Route
+            path="episodes/:ep/assets/:kind"
+            element={
+              <EpisodeAssetRoute
+                project={project}
+                episodes={episodes}
+                loading={episodesLoading}
+                onEditEpisode={openEpisodeEdit}
+                onDeleteEpisode={setDeletingEpisode}
+              />
+            }
+          />
+
+          <Route path="*" element={<Navigate to="assets/text" replace />} />
+        </Routes>
       </section>
 
       <ChatPanel />
 
       <ProjectDialog
-        open={editing}
+        open={editingProject}
         project={project}
-        onOpenChange={setEditing}
+        onOpenChange={setEditingProject}
         onSaved={(saved) => {
           setProject(saved)
           notify('已保存')
         }}
       />
 
+      <EpisodeDialog
+        open={episodeDialog.open}
+        projectRef={project.code}
+        episode={episodeDialog.episode}
+        onOpenChange={(open) => setEpisodeDialog((prev) => ({ ...prev, open }))}
+        onSaved={(episode, created) => {
+          notify(created ? `已新建「${episode.code}」` : '已保存')
+          reloadEpisodes()
+        }}
+      />
+
       <Dialog
-        open={pendingDelete}
-        onOpenChange={setPendingDelete}
+        open={deletingProject}
+        onOpenChange={setDeletingProject}
         title="删除项目"
         footer={
           <>
-            <Button onClick={() => setPendingDelete(false)} disabled={deleting}>
+            <Button onClick={() => setDeletingProject(false)} disabled={busy}>
               取消
             </Button>
             <Button
               variant="primary"
               className="bg-destructive text-white"
-              onClick={confirmDelete}
-              disabled={deleting}
+              onClick={confirmDeleteProject}
+              disabled={busy}
             >
-              {deleting ? '删除中…' : '删除'}
+              {busy ? '删除中…' : '删除'}
             </Button>
           </>
         }
@@ -177,7 +222,109 @@ export function ProjectPage() {
         </p>
       </Dialog>
 
+      <Dialog
+        open={deletingEpisode !== null}
+        onOpenChange={(open) => {
+          if (!open) setDeletingEpisode(null)
+        }}
+        title="删除分集"
+        footer={
+          <>
+            <Button onClick={() => setDeletingEpisode(null)} disabled={busy}>
+              取消
+            </Button>
+            <Button
+              variant="primary"
+              className="bg-destructive text-white"
+              onClick={confirmDeleteEpisode}
+              disabled={busy}
+            >
+              {busy ? '删除中…' : '删除'}
+            </Button>
+          </>
+        }
+      >
+        <p className="pb-4 text-sm text-muted-foreground">
+          确定删除「{deletingEpisode?.code} · {deletingEpisode?.title}」吗？其下资产会被保留。
+        </p>
+      </Dialog>
+
       <Toast message={toast} />
     </div>
+  )
+}
+
+function ProjectAssetRoute({
+  project,
+  onEditScope,
+  onDeleteScope,
+}: {
+  project: Project
+  onEditScope: () => void
+  onDeleteScope: () => void
+}) {
+  const { kind } = useParams()
+  if (!isAssetKind(kind)) return <Navigate to="assets/text" replace />
+  return (
+    <AssetPanel
+      project={project}
+      kind={kind}
+      onEditScope={onEditScope}
+      onDeleteScope={onDeleteScope}
+    />
+  )
+}
+
+function EpisodeAssetRoute({
+  project,
+  episodes,
+  loading,
+  onEditEpisode,
+  onDeleteEpisode,
+}: {
+  project: Project
+  episodes: Episode[]
+  loading: boolean
+  onEditEpisode: (episode: Episode) => void
+  onDeleteEpisode: (episode: Episode) => void
+}) {
+  const { ep, kind } = useParams()
+  const episode = episodes.find((item) => item.code === ep)
+
+  if (loading && episodes.length === 0) {
+    return (
+      <div className="flex h-full items-center justify-center gap-2 text-xs text-muted-foreground">
+        <Loader2 className="size-3.5 animate-spin" />
+        加载中…
+      </div>
+    )
+  }
+
+  if (!episode) {
+    return (
+      <div className="flex h-full flex-col items-center justify-center gap-3 px-4 text-center">
+        <p className="text-xs text-muted-foreground">分集不存在：{ep}</p>
+        <Link
+          to={`/projects/${project.code}/episodes`}
+          className="text-xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+        >
+          返回分集列表
+        </Link>
+      </div>
+    )
+  }
+
+  if (!isAssetKind(kind)) {
+    return <Navigate to={`/projects/${project.code}/episodes/${episode.code}/assets/text`} replace />
+  }
+
+  return (
+    <AssetPanel
+      project={project}
+      episode={episode}
+      kind={kind}
+      onEditScope={() => onEditEpisode(episode)}
+      onDeleteScope={() => onDeleteEpisode(episode)}
+    />
   )
 }

@@ -55,7 +55,7 @@ class AssetApiTest(ApiTestCase):
 
         res = await self.client.get(f"/studio/api/projects/{ref}/assets/counts")
         counts = (await res.json())["data"]
-        self.assertEqual(counts, {"text": 1, "image": 1, "video": 1})
+        self.assertEqual(counts, {"text": 1, "image": 1, "video": 1, "audio": 0})
 
     async def test_upload_marks_source(self) -> None:
         project = await self._project()

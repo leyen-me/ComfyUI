@@ -1,33 +1,39 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Loader2, Plus, Upload } from 'lucide-react'
-import { Navigate, useParams } from 'react-router-dom'
 
-import { ApiError, api, type Asset, type AssetKind, type Project } from '@/lib/api'
-import { ASSET_KINDS, assetKindMeta } from '@/lib/asset-kinds'
-import { useAssets } from '@/hooks/use-assets'
-import { AssetList } from './asset-list'
+import { ApiError, api, type Asset, type AssetKind, type Episode, type Project } from '@/lib/api'
+import { assetKindMeta } from '@/lib/asset-kinds'
+import { useAssetCounts, useAssets } from '@/hooks/use-assets'
 import { AssetDialog } from './asset-dialog'
+import { AssetList } from './asset-list'
+import { KindTabs } from './kind-tabs'
 import { Toast, type ToastMessage } from './toast'
 import { Button } from './ui/button'
 import { Dialog } from './ui/dialog'
+import { MoreMenu } from './ui/more-menu'
 
-interface AssetViewProps {
+interface AssetPanelProps {
   project: Project
-  onChanged: () => void
+  /** 为空表示项目级资产 */
+  episode?: Episode | null
+  kind: AssetKind
+  onEditScope: () => void
+  onDeleteScope: () => void
 }
 
-function normalizeKind(raw: string | undefined): AssetKind {
-  return ASSET_KINDS.some((item) => item.value === raw) ? (raw as AssetKind) : 'text'
-}
+export function AssetPanel({
+  project,
+  episode = null,
+  kind,
+  onEditScope,
+  onDeleteScope,
+}: AssetPanelProps) {
+  const scope = episode?.code
+  const { data, loading, error, reload } = useAssets(project.code, kind, scope)
 
-export function AssetView({ project, onChanged }: AssetViewProps) {
-  const params = useParams()
-  const rawKind = params.kind
-  const valid = rawKind === undefined || ASSET_KINDS.some((item) => item.value === rawKind)
-  const kind = normalizeKind(rawKind)
-  const meta = assetKindMeta(kind)
+  const [countsVersion, setCountsVersion] = useState(0)
+  const counts = useAssetCounts(project.code, scope, countsVersion)
 
-  const { data, loading, error, reload } = useAssets(project.code, kind)
   const [creating, setCreating] = useState(false)
   const [editing, setEditing] = useState<Asset | null>(null)
   const [pendingDelete, setPendingDelete] = useState<Asset | null>(null)
@@ -35,6 +41,13 @@ export function AssetView({ project, onChanged }: AssetViewProps) {
   const [uploading, setUploading] = useState(false)
   const [toast, setToast] = useState<ToastMessage | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
+
+  const meta = assetKindMeta(kind)
+  const assets = data?.items ?? []
+  const total = data?.total ?? assets.length
+  const basePath = episode
+    ? `/projects/${project.code}/episodes/${episode.code}/assets`
+    : `/projects/${project.code}/assets`
 
   const notify = useCallback((text: string, tone: ToastMessage['tone'] = 'ok') => {
     setToast({ id: Date.now(), text, tone })
@@ -46,17 +59,18 @@ export function AssetView({ project, onChanged }: AssetViewProps) {
     return () => clearTimeout(timer)
   }, [toast])
 
-  const assets = data?.items ?? []
-  const total = data?.total ?? assets.length
+  function refresh() {
+    reload()
+    setCountsVersion((value) => value + 1)
+  }
 
   async function handleFile(file: File | undefined) {
     if (!file) return
     setUploading(true)
     try {
-      await api.projects.assets.upload(project.code, file)
+      await api.projects.assets.upload(project.code, file, { episode: scope })
       notify(`已上传「${file.name}」`)
-      reload()
-      onChanged()
+      refresh()
     } catch (cause) {
       notify(cause instanceof ApiError ? cause.fullMessage : '上传失败', 'error')
     } finally {
@@ -71,8 +85,7 @@ export function AssetView({ project, onChanged }: AssetViewProps) {
       await api.projects.assets.remove(pendingDelete.id)
       notify(`已删除「${pendingDelete.name}」`)
       setPendingDelete(null)
-      reload()
-      onChanged()
+      refresh()
     } catch (cause) {
       notify(cause instanceof ApiError ? cause.fullMessage : '删除失败', 'error')
     } finally {
@@ -80,14 +93,40 @@ export function AssetView({ project, onChanged }: AssetViewProps) {
     }
   }
 
-  if (!valid) return <Navigate to="assets/text" replace />
-
   return (
     <div className="flex h-full flex-col">
-      <div className="flex items-center gap-2 border-b border-border px-4 py-2.5">
-        <h2 className="text-sm font-medium">{meta.label}</h2>
-        <span className="font-mono text-[11px] text-muted-foreground">{total}</span>
+      <header className="border-b border-border px-4 py-3">
+        <div className="flex items-start gap-2">
+          <div className="min-w-0 flex-1">
+            <div className="truncate text-sm font-medium" title={episode?.title ?? project.name}>
+              {episode ? `${episode.code} · ${episode.title}` : '项目资产'}
+            </div>
+            <div className="font-mono text-[11px] text-muted-foreground">
+              {episode ? project.code : project.code}
+            </div>
+          </div>
+          <MoreMenu
+            label={episode ? '分集操作' : '项目操作'}
+            actions={[
+              { label: '编辑', onSelect: onEditScope },
+              { label: '删除', destructive: true, onSelect: onDeleteScope },
+            ]}
+          />
+        </div>
+        {(episode?.synopsis || project.description) ? (
+          <p
+            className="mt-1.5 line-clamp-2 text-xs leading-relaxed text-muted-foreground"
+            title={episode?.synopsis || project.description}
+          >
+            {episode?.synopsis || project.description}
+          </p>
+        ) : null}
+      </header>
 
+      <KindTabs basePath={basePath} counts={counts} />
+
+      <div className="flex items-center gap-2 px-4 py-2">
+        <span className="font-mono text-[11px] text-muted-foreground">{total}</span>
         <div className="ml-auto">
           {kind === 'text' ? (
             <Button size="sm" variant="secondary" onClick={() => setCreating(true)}>
@@ -125,9 +164,9 @@ export function AssetView({ project, onChanged }: AssetViewProps) {
         </div>
       </div>
 
-      <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4">
+      <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-4">
         {error ? (
-          <div className="mb-4 flex items-center gap-2 rounded-lg border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">
+          <div className="mb-3 flex items-center gap-2 rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive">
             <span>{error}</span>
             <Button variant="ghost" size="sm" className="ml-auto" onClick={reload}>
               重试
@@ -136,31 +175,32 @@ export function AssetView({ project, onChanged }: AssetViewProps) {
         ) : null}
 
         {loading && assets.length === 0 ? (
-          <div className="flex items-center gap-2 text-sm text-muted-foreground">
-            <Loader2 className="size-4 animate-spin" />
+          <div className="flex items-center gap-2 text-xs text-muted-foreground">
+            <Loader2 className="size-3.5 animate-spin" />
             加载中…
           </div>
         ) : null}
 
         {!loading && !error && assets.length === 0 ? (
-          <div className="rounded-xl border border-dashed border-border px-4 py-20 text-center text-sm text-muted-foreground">
+          <div className="rounded-xl border border-dashed border-border px-4 py-16 text-center text-xs text-muted-foreground">
             还没有{meta.label}资产
           </div>
         ) : null}
 
         {assets.length > 0 ? (
           <AssetList
-              kind={kind}
-              assets={assets}
-              onEdit={setEditing}
-              onDelete={setPendingDelete}
-            />
+            kind={kind}
+            assets={assets}
+            onEdit={setEditing}
+            onDelete={setPendingDelete}
+          />
         ) : null}
       </div>
 
       <AssetDialog
         open={creating || editing !== null}
         projectRef={project.code}
+        episode={scope}
         asset={editing}
         onOpenChange={(open) => {
           if (!open) {
@@ -170,8 +210,7 @@ export function AssetView({ project, onChanged }: AssetViewProps) {
         }}
         onSaved={(asset, created) => {
           notify(created ? `已创建「${asset.name}」` : '已保存')
-          reload()
-          onChanged()
+          refresh()
         }}
       />
 

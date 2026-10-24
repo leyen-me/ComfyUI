@@ -36,6 +36,7 @@ def _to_out(row: Asset) -> AssetOut:
     return AssetOut(
         id=row.id,
         project_id=row.project_id,
+        episode_id=row.episode_id,
         kind=AssetKind(row.kind),
         source=AssetSource(row.source),
         name=row.name,
@@ -57,6 +58,7 @@ class AssetService:
         self,
         project_id: int,
         *,
+        episode_id: int | None = None,
         kind: AssetKind | None = None,
         limit: int = MAX_LIST,
         offset: int = 0,
@@ -64,7 +66,11 @@ class AssetService:
         if not 1 <= limit <= MAX_LIST:
             raise InvalidArgument(f"limit 必须介于 1 和 {MAX_LIST} 之间")
 
-        conditions = [Asset.project_id == project_id, Asset.deleted_at.is_(None)]
+        conditions = [
+            Asset.project_id == project_id,
+            Asset.deleted_at.is_(None),
+            Asset.episode_id.is_(None) if episode_id is None else Asset.episode_id == episode_id,
+        ]
         if kind is not None:
             conditions.append(Asset.kind == kind.value)
 
@@ -85,11 +91,17 @@ class AssetService:
             )
             return AssetList(items=[_to_out(row) for row in rows], total=int(total))
 
-    def counts(self, project_id: int) -> AssetCounts:
+    def counts(self, project_id: int, *, episode_id: int | None = None) -> AssetCounts:
         with self._scope() as session:
             rows = session.execute(
                 select(Asset.kind, func.count())
-                .where(Asset.project_id == project_id, Asset.deleted_at.is_(None))
+                .where(
+                    Asset.project_id == project_id,
+                    Asset.deleted_at.is_(None),
+                    Asset.episode_id.is_(None)
+                    if episode_id is None
+                    else Asset.episode_id == episode_id,
+                )
                 .group_by(Asset.kind)
             ).all()
         by_kind = {kind: int(count) for kind, count in rows}
@@ -97,12 +109,16 @@ class AssetService:
             text=by_kind.get(AssetKind.text.value, 0),
             image=by_kind.get(AssetKind.image.value, 0),
             video=by_kind.get(AssetKind.video.value, 0),
+            audio=by_kind.get(AssetKind.audio.value, 0),
         )
 
-    def create_text(self, project_id: int, payload: TextAssetCreate) -> AssetOut:
+    def create_text(
+        self, project_id: int, payload: TextAssetCreate, *, episode_id: int | None = None
+    ) -> AssetOut:
         with self._scope() as session:
             row = Asset(
                 project_id=project_id,
+                episode_id=episode_id,
                 kind=AssetKind.text.value,
                 source=AssetSource.user.value,
                 name=payload.name,
@@ -122,6 +138,7 @@ class AssetService:
         relative_path: str,
         mime_type: str,
         size_bytes: int,
+        episode_id: int | None = None,
         meta: dict | None = None,
     ) -> AssetOut:
         clean_name = (name or "").strip() or "未命名"
@@ -133,6 +150,7 @@ class AssetService:
         with self._scope() as session:
             row = Asset(
                 project_id=project_id,
+                episode_id=episode_id,
                 kind=kind.value,
                 source=source.value,
                 name=clean_name,

@@ -89,11 +89,44 @@ def _migration_004_assets(conn: Connection) -> None:
         conn.exec_driver_sql(f"CREATE INDEX {index} ON assets ({column})")
 
 
+def _migration_005_episodes(conn: Connection) -> None:
+    """分集与资产归属；资产增加 audio 类型（kind 是字符串，无需改表结构）。"""
+    conn.exec_driver_sql(
+        """
+        CREATE TABLE episodes (
+            id INTEGER NOT NULL,
+            project_id INTEGER NOT NULL,
+            number INTEGER NOT NULL,
+            code VARCHAR(16) NOT NULL,
+            title VARCHAR(200) NOT NULL,
+            synopsis TEXT DEFAULT '' NOT NULL,
+            sort_index INTEGER NOT NULL DEFAULT 0,
+            created_at DATETIME NOT NULL,
+            updated_at DATETIME NOT NULL,
+            deleted_at DATETIME,
+            PRIMARY KEY (id),
+            FOREIGN KEY(project_id) REFERENCES projects (id)
+        )
+        """
+    )
+    conn.exec_driver_sql("CREATE INDEX ix_episodes_project_id ON episodes (project_id)")
+    conn.exec_driver_sql("CREATE INDEX ix_episodes_deleted_at ON episodes (deleted_at)")
+    conn.exec_driver_sql(
+        "CREATE UNIQUE INDEX ux_episodes_project_code ON episodes (project_id, code)"
+    )
+
+    conn.exec_driver_sql(
+        "ALTER TABLE assets ADD COLUMN episode_id INTEGER REFERENCES episodes (id)"
+    )
+    conn.exec_driver_sql("CREATE INDEX ix_assets_episode_id ON assets (episode_id)")
+
+
 MIGRATIONS: list[tuple[int, object]] = [
     (1, _migration_001_initial),
     (2, _migration_002_drop_project_status),
     (3, _migration_003_project_sort_index),
     (4, _migration_004_assets),
+    (5, _migration_005_episodes),
 ]
 
 

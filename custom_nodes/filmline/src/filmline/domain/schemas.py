@@ -53,6 +53,7 @@ class AssetKind(str, Enum):
     text = "text"
     image = "image"
     video = "video"
+    audio = "audio"
 
 
 class AssetSource(str, Enum):
@@ -63,6 +64,7 @@ class AssetSource(str, Enum):
 class AssetOut(BaseModel):
     id: int
     project_id: int
+    episode_id: int | None = None
     kind: AssetKind
     source: AssetSource
     name: str
@@ -84,6 +86,7 @@ class AssetCounts(BaseModel):
     text: int = 0
     image: int = 0
     video: int = 0
+    audio: int = 0
 
 
 class TextAssetCreate(BaseModel):
@@ -101,3 +104,34 @@ class AssetUpdate(BaseModel):
 
     name: str | None = Field(default=None, min_length=1, max_length=200)
     text_content: str | None = Field(default=None, max_length=200_000)
+
+
+class EpisodeOut(BaseModel):
+    id: int
+    project_id: int
+    number: int
+    code: str
+    title: str
+    synopsis: str
+    created_at: str
+    updated_at: str
+
+
+class EpisodeCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    title: str | None = Field(default=None, max_length=200)
+    synopsis: str = Field(default="", max_length=5000)
+
+
+class EpisodeUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    title: str | None = Field(default=None, min_length=1, max_length=200)
+    synopsis: str | None = Field(default=None, max_length=5000)
+
+
+class EpisodeReorder(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    ids: list[int] = Field(min_length=1, max_length=500)

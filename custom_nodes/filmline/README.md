@@ -28,8 +28,9 @@ React 19 + Vite 7 + TypeScript + Tailwind CSS v4，组件按 shadcn/ui 的写法
   侧边栏可切换浅色，偏好持久化。
 - **路由**：`/studio` 项目列表，`/studio/projects/{编号}` 项目详情。后端对
   `/studio/*` 做 SPA 回落（`/studio/api/*`、`/studio/static/*` 除外）。
-- **项目内布局**：左侧项目导航（资产 → 文本 / 图片 / 视频），中间资产列表，
-  右侧对话输入框。项目页不套全局侧边栏。
+- **项目内布局**：左侧项目导航（项目资产 + 分集列表），中间资产面板
+  （分类用顶部标签页：文本 / 图片 / 视频 / 音频），右侧对话输入框。
+  项目页不套全局侧边栏。
 - **资产来源标记**：`source=user`（用户创建或上传）与 `source=ai`（ComfyUI 生成），
   界面上以徽章区分。文本资产由用户创建；图片/视频支持上传并指定来源。
 - **拖拽排序**：HTML5 原生拖拽，松手即保存；菜单里另有「上移/下移」作为键盘替代。
@@ -57,10 +58,16 @@ npm run test:logic   # 纯函数单测（页码计算）
 | GET | `/studio/api/projects/{ref}` | 详情，`ref` 可为数字 id 或项目编号 |
 | PATCH | `/studio/api/projects/{ref}` | 更新 `name` / `description` |
 | DELETE | `/studio/api/projects/{ref}` | 软删除，返回 204 |
-| GET | `/studio/api/projects/{ref}/assets` | 资产列表，`kind=text\|image\|video` |
-| GET | `/studio/api/projects/{ref}/assets/counts` | 各分类数量 |
+| GET | `/studio/api/projects/{ref}/episodes` | 分集列表 |
+| POST | `/studio/api/projects/{ref}/episodes` | 新建分集（自动 EP01 / 第 N 集） |
+| PUT | `/studio/api/projects/{ref}/episodes/order` | 分集排序（需覆盖全部） |
+| GET | `/studio/api/projects/{ref}/episodes/{code}` | 按编号查分集 |
+| PATCH / DELETE | `/studio/api/episodes/{id}` | 改名/改简介、软删除 |
+| GET | `/studio/api/projects/{ref}/assets` | 资产列表，`kind=text\|image\|video\|audio`，`episode=EP01` 限定分集 |
+| GET | `/studio/api/projects/{ref}/assets/counts` | 各分类数量（同样支持 `episode`） |
 | POST | `/studio/api/projects/{ref}/assets` | 新建文本资产 `{name, content?}` |
-| POST | `/studio/api/projects/{ref}/assets/upload` | 上传图片/视频，`?source=user\|ai` |
+| POST | `/studio/api/projects/{ref}/assets/upload` | 上传图片/视频/音频，`?source=user\|ai&episode=EP01` |
+| PATCH | `/studio/api/assets/{id}` | 改名（全部）与改正文（仅文本） |
 | GET | `/studio/api/assets/{id}/content` | 资产文件内容 |
 | DELETE | `/studio/api/assets/{id}` | 软删除资产 |
 | GET | `/studio/api/health` | 版本、库路径、schema 版本、项目数 |
@@ -78,9 +85,10 @@ npm run test:logic   # 纯函数单测（页码计算）
 
 ```
 ComfyUI/user/filmline/
-├── filmline.db          # 元数据
-├── assets/{project_id}/ # 上传与生成的图片 / 视频
-└── tmp/                 # 上传中转，成功后移入 assets
+├── filmline.db                       # 元数据
+├── assets/{project_id}/project/      # 项目级资产文件
+├── assets/{project_id}/EP01/         # 分集资产文件
+└── tmp/                              # 上传中转，成功后移入 assets
 ```
 
 可用环境变量覆盖：
@@ -112,15 +120,18 @@ custom_nodes/filmline/
    `/ws`、`/view`、`/object_info`（`/api/*` 会被 ComfyUI 自动镜像一份）。
 2. **编号由系统生成**：`PRJ-0001` 自增，客户端传入 `code` 直接 400；只有 `name`
    必填，其余字段可选。
-3. **排序**：`sort_index` 由 `PUT /projects/order` 整体重写，请求必须覆盖全部
-   未删除项目，否则 400——部分提交会让顺序静默错乱。
-3. **软删除**：`deleted_at` 标记，列表与详情默认排除。渲染记录与素材血缘不能断。
-4. **迁移冻结**：迁移一经发布即写死，**必须用显式 DDL，不得引用 ORM 元数据**
+3. **排序**：`sort_index` 由 `PUT /projects/order`、`PUT /episodes/order` 整体重写，
+   请求必须覆盖全部未删除项，否则 400——部分提交会让顺序静默错乱。
+4. **分集归属**：`assets.episode_id` 为空表示项目级资产，非空属于某一集；
+   `episode_id` 用查询参数 `?episode=EP01` 表达，不额外开一套路由。
+5. **删集不删资产**：分集软删除后其资产保留（恢复分集即可再用），只是暂时不可见。
+6. **软删除**：`deleted_at` 标记，列表与详情默认排除。渲染记录与素材血缘不能断。
+7. **迁移冻结**：迁移一经发布即写死，**必须用显式 DDL，不得引用 ORM 元数据**
    （否则模型一改，新库建出的表就和历史语义不一致）。每次模型改动追加新迁移，
    并补 `tests/test_migrations.py` 的断言。
-5. **不阻塞事件循环**：业务调用统一走 `asyncio.to_thread`，Session 短生命周期。
-6. **错误不外泄**：未预期异常只写日志，对外返回通用 500。
-7. **前端异步**：列表请求带 `AbortController`，过期响应不覆盖新状态；搜索防抖 250ms。
+8. **不阻塞事件循环**：业务调用统一走 `asyncio.to_thread`，Session 短生命周期。
+9. **错误不外泄**：未预期异常只写日志，对外返回通用 500。
+10. **前端异步**：列表请求带 `AbortController`，过期响应不覆盖新状态；搜索防抖 250ms。
 
 ## 测试
 

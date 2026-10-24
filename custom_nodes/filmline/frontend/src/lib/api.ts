@@ -112,12 +112,13 @@ function toQuery(params: ListParams): string {
   return search.toString()
 }
 
-export type AssetKind = 'text' | 'image' | 'video'
+export type AssetKind = 'text' | 'image' | 'video' | 'audio'
 export type AssetSource = 'user' | 'ai'
 
 export interface Asset {
   id: number
   project_id: number
+  episode_id: number | null
   kind: AssetKind
   source: AssetSource
   name: string
@@ -136,6 +137,27 @@ export interface AssetList {
 }
 
 export type AssetCounts = Record<AssetKind, number>
+
+export interface Episode {
+  id: number
+  project_id: number
+  number: number
+  code: string
+  title: string
+  synopsis: string
+  created_at: string
+  updated_at: string
+}
+
+export interface EpisodeList {
+  items: Episode[]
+  total: number
+}
+
+export interface EpisodeInput {
+  title?: string
+  synopsis?: string
+}
 
 export interface TextAssetInput {
   name: string
@@ -168,25 +190,43 @@ export const api = {
       request<void>('/projects/order', { method: 'PUT', body: JSON.stringify({ ids }) }),
 
     assets: {
-      list: (ref: string | number, kind: AssetKind, signal?: AbortSignal) =>
-        request<AssetList>(
-          `/projects/${encodeURIComponent(ref)}/assets?kind=${kind}&limit=200`,
-          { signal },
-        ),
+      list: (
+        ref: string | number,
+        params: { kind: AssetKind; episode?: string; signal?: AbortSignal },
+      ) => {
+        const query = new URLSearchParams({ kind: params.kind, limit: '200' })
+        if (params.episode) query.set('episode', params.episode)
+        return request<AssetList>(
+          `/projects/${encodeURIComponent(ref)}/assets?${query.toString()}`,
+          { signal: params.signal },
+        )
+      },
 
-      counts: (ref: string | number, signal?: AbortSignal) =>
-        request<AssetCounts>(`/projects/${encodeURIComponent(ref)}/assets/counts`, { signal }),
+      counts: (
+        ref: string | number,
+        params: { episode?: string; signal?: AbortSignal } = {},
+      ) => {
+        const query = new URLSearchParams()
+        if (params.episode) query.set('episode', params.episode)
+        const suffix = query.toString() ? `?${query.toString()}` : ''
+        return request<AssetCounts>(
+          `/projects/${encodeURIComponent(ref)}/assets/counts${suffix}`,
+          { signal: params.signal },
+        )
+      },
 
-      createText: (ref: string | number, input: TextAssetInput) =>
-        request<Asset>(
-          `/projects/${encodeURIComponent(ref)}/assets`,
-          { method: 'POST', body: JSON.stringify({ kind: 'text', ...input }) },
-        ),
+      createText: (ref: string | number, input: TextAssetInput, episode?: string) => {
+        const query = episode ? `?episode=${encodeURIComponent(episode)}` : ''
+        return request<Asset>(`/projects/${encodeURIComponent(ref)}/assets${query}`, {
+          method: 'POST',
+          body: JSON.stringify({ kind: 'text', ...input }),
+        })
+      },
 
       upload: async (
         ref: string | number,
         file: File,
-        options: { source?: AssetSource; name?: string } = {},
+        options: { source?: AssetSource; name?: string; episode?: string } = {},
       ): Promise<Asset> => {
         const form = new FormData()
         form.append('file', file)
@@ -194,6 +234,7 @@ export const api = {
         const query = new URLSearchParams()
         if (options.source) query.set('source', options.source)
         if (options.name) query.set('name', options.name)
+        if (options.episode) query.set('episode', options.episode)
 
         const response = await fetch(
           `${BASE}/projects/${encodeURIComponent(ref)}/assets/upload?${query.toString()}`,
@@ -210,6 +251,38 @@ export const api = {
 
       remove: (assetId: number) =>
         request<void>(`/assets/${assetId}`, { method: 'DELETE' }),
+    },
+
+    episodes: {
+      list: (ref: string | number, signal?: AbortSignal) =>
+        request<EpisodeList>(`/projects/${encodeURIComponent(ref)}/episodes`, { signal }),
+
+      get: (ref: string | number, code: string, signal?: AbortSignal) =>
+        request<Episode>(
+          `/projects/${encodeURIComponent(ref)}/episodes/${encodeURIComponent(code)}`,
+          { signal },
+        ),
+
+      create: (ref: string | number, input: EpisodeInput = {}) =>
+        request<Episode>(`/projects/${encodeURIComponent(ref)}/episodes`, {
+          method: 'POST',
+          body: JSON.stringify(input),
+        }),
+
+      update: (episodeId: number, patch: EpisodeInput) =>
+        request<Episode>(`/episodes/${episodeId}`, {
+          method: 'PATCH',
+          body: JSON.stringify(patch),
+        }),
+
+      remove: (episodeId: number) =>
+        request<void>(`/episodes/${episodeId}`, { method: 'DELETE' }),
+
+      reorder: (ref: string | number, ids: number[]) =>
+        request<void>(`/projects/${encodeURIComponent(ref)}/episodes/order`, {
+          method: 'PUT',
+          body: JSON.stringify({ ids }),
+        }),
     },
   },
 }

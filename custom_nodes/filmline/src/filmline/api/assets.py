@@ -20,6 +20,7 @@ from aiohttp import web
 
 from .. import storage
 from ..domain.assets import AssetService
+from ..domain.episodes import EpisodeService
 from ..domain.projects import ProjectService
 from ..domain.schemas import AssetKind, AssetSource, AssetUpdate, TextAssetCreate
 from ..errors import InvalidArgument, NotFound
@@ -31,6 +32,15 @@ CHUNK = 1024 * 1024
 
 def _project_id(ref: str) -> int:
     return ProjectService().get(ref).id
+
+
+def _episode_scope(request: web.Request, project_id: int) -> tuple[int | None, str]:
+    """解析 ?episode=EP01，返回（分集 id 或 None, 存储目录名）。"""
+    raw = (request.query.get("episode") or "").strip()
+    if not raw:
+        return None, "project"
+    code = raw.upper()
+    return EpisodeService().resolve_id(project_id, code), code
 
 
 def _asset_id(request: web.Request) -> int:
@@ -110,9 +120,11 @@ def register_asset_routes(routes: web.RouteTableDef) -> None:
     @handle_errors
     async def list_assets(request: web.Request) -> web.Response:
         project_id = await asyncio.to_thread(_project_id, request.match_info["ref"])
+        episode_id, _ = await asyncio.to_thread(_episode_scope, request, project_id)
         result = await asyncio.to_thread(
             service.list,
             project_id,
+            episode_id=episode_id,
             kind=_parse_kind(request.query.get("kind")),
             limit=parse_int(request, "limit", default=200, minimum=1, maximum=200),
             offset=parse_int(request, "offset", default=0, minimum=0, maximum=10_000_000),
@@ -123,21 +135,26 @@ def register_asset_routes(routes: web.RouteTableDef) -> None:
     @handle_errors
     async def asset_counts(request: web.Request) -> web.Response:
         project_id = await asyncio.to_thread(_project_id, request.match_info["ref"])
-        counts = await asyncio.to_thread(service.counts, project_id)
+        episode_id, _ = await asyncio.to_thread(_episode_scope, request, project_id)
+        counts = await asyncio.to_thread(service.counts, project_id, episode_id=episode_id)
         return ok(counts.model_dump(mode="json"))
 
     @routes.post("/studio/api/projects/{ref}/assets")
     @handle_errors
     async def create_text_asset(request: web.Request) -> web.Response:
         project_id = await asyncio.to_thread(_project_id, request.match_info["ref"])
+        episode_id, _ = await asyncio.to_thread(_episode_scope, request, project_id)
         payload = TextAssetCreate.model_validate(await read_object(request))
-        asset = await asyncio.to_thread(service.create_text, project_id, payload)
+        asset = await asyncio.to_thread(
+            service.create_text, project_id, payload, episode_id=episode_id
+        )
         return ok(asset.model_dump(mode="json"), status=201)
 
     @routes.post("/studio/api/projects/{ref}/assets/upload")
     @handle_errors
     async def upload_asset(request: web.Request) -> web.Response:
         project_id = await asyncio.to_thread(_project_id, request.match_info["ref"])
+        episode_id, scope = await asyncio.to_thread(_episode_scope, request, project_id)
 
         original_name, tmp_path, size = await _save_upload(request)
         try:
@@ -147,7 +164,7 @@ def register_asset_routes(routes: web.RouteTableDef) -> None:
             meta = _parse_meta(request.query.get("meta"))
             name = request.query.get("name") or original_name
 
-            relative, target = storage.allocate(project_id, suffix)
+            relative, target = storage.allocate(project_id, scope, suffix)
             tmp_path.replace(target)
 
             asset = await asyncio.to_thread(
@@ -159,6 +176,7 @@ def register_asset_routes(routes: web.RouteTableDef) -> None:
                 relative_path=relative,
                 mime_type=storage.MIME_BY_SUFFIX.get(suffix.lower(), "application/octet-stream"),
                 size_bytes=size,
+                episode_id=episode_id,
                 meta=meta,
             )
         except BaseException:

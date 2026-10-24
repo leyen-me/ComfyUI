@@ -8,6 +8,8 @@ import { Input, Label, Textarea } from './ui/field'
 interface AssetDialogProps {
   open: boolean
   projectRef: string
+  /** 分集编号；为空表示项目级 */
+  episode?: string
   /** 传入表示编辑；不传则是新建文本资产 */
   asset?: Asset | null
   onOpenChange: (open: boolean) => void
@@ -17,6 +19,7 @@ interface AssetDialogProps {
 export function AssetDialog({
   open,
   projectRef,
+  episode,
   asset = null,
   onOpenChange,
   onSaved,
@@ -55,10 +58,11 @@ export function AssetDialog({
         })
         onSaved(saved, false)
       } else {
-        const created = await api.projects.assets.createText(projectRef, {
-          name: name.trim(),
-          content,
-        })
+        const created = await api.projects.assets.createText(
+          projectRef,
+          { name: name.trim(), content },
+          episode,
+        )
         onSaved(created, true)
       }
       onOpenChange(false)

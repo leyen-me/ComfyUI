@@ -10,6 +10,7 @@ from .errors import InvalidArgument
 
 IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp", ".avif"}
 VIDEO_SUFFIXES = {".mp4", ".webm", ".mov", ".mkv", ".m4v"}
+AUDIO_SUFFIXES = {".mp3", ".wav", ".flac", ".m4a", ".aac", ".ogg", ".opus"}
 
 MIME_BY_SUFFIX = {
     ".png": "image/png",
@@ -24,6 +25,13 @@ MIME_BY_SUFFIX = {
     ".mov": "video/quicktime",
     ".mkv": "video/x-matroska",
     ".m4v": "video/x-m4v",
+    ".mp3": "audio/mpeg",
+    ".wav": "audio/wav",
+    ".flac": "audio/flac",
+    ".m4a": "audio/mp4",
+    ".aac": "audio/aac",
+    ".ogg": "audio/ogg",
+    ".opus": "audio/opus",
 }
 
 
@@ -45,12 +53,17 @@ def kind_for_suffix(suffix: str) -> str:
         return "image"
     if lowered in VIDEO_SUFFIXES:
         return "video"
+    if lowered in AUDIO_SUFFIXES:
+        return "audio"
     raise InvalidArgument(f"不支持的文件类型: {suffix or '未知'}")
 
 
-def allocate(project_id: int, suffix: str) -> tuple[str, Path]:
-    """为一次上传分配最终路径，返回（相对路径, 绝对路径）。"""
-    relative = f"{project_id}/{uuid4().hex}{suffix.lower()}"
+def allocate(project_id: int, scope: str, suffix: str) -> tuple[str, Path]:
+    """为一次上传分配最终路径，返回（相对路径, 绝对路径）。
+
+    scope 是 ``project`` 或分集编号（``EP01``），让磁盘目录可读。
+    """
+    relative = f"{project_id}/{scope}/{uuid4().hex}{suffix.lower()}"
     absolute = assets_dir() / relative
     absolute.parent.mkdir(parents=True, exist_ok=True)
     return relative, absolute

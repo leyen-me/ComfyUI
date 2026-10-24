@@ -54,6 +54,10 @@ class Asset(Base):
     kind: Mapped[str] = mapped_column(String(8), index=True)
     # user | ai
     source: Mapped[str] = mapped_column(String(8), index=True)
+    # 为空表示项目级资产；否则属于某一集
+    episode_id: Mapped[int | None] = mapped_column(
+        ForeignKey("episodes.id"), nullable=True, index=True
+    )
 
     name: Mapped[str] = mapped_column(String(200))
     text_content: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -65,5 +69,25 @@ class Asset(Base):
     meta: Mapped[dict | None] = mapped_column(JSON, nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, index=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
+
+
+class Episode(Base):
+    """分集。项目下按 number 自增编号，code 形如 EP01。"""
+
+    __tablename__ = "episodes"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    project_id: Mapped[int] = mapped_column(
+        ForeignKey("projects.id"), index=True, nullable=False
+    )
+    number: Mapped[int] = mapped_column(Integer, nullable=False)
+    code: Mapped[str] = mapped_column(String(16), nullable=False)
+    title: Mapped[str] = mapped_column(String(200), nullable=False)
+    synopsis: Mapped[str] = mapped_column(Text, default="", server_default="")
+    sort_index: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)

@@ -1,4 +1,4 @@
-import { FileText, Image as ImageIcon, Video } from 'lucide-react'
+import { FileText, Image as ImageIcon, Music, Video } from 'lucide-react'
 
 import type { AssetKind } from './api'
 
@@ -6,6 +6,7 @@ export const ASSET_KINDS = [
   { value: 'text', label: '文本', icon: FileText, accept: undefined },
   { value: 'image', label: '图片', icon: ImageIcon, accept: 'image/*' },
   { value: 'video', label: '视频', icon: Video, accept: 'video/*' },
+  { value: 'audio', label: '音频', icon: Music, accept: 'audio/*' },
 ] as const satisfies readonly {
   value: AssetKind
   label: string

@@ -95,6 +95,8 @@ const project = {
   updated_at: '2026-10-24T07:00:00.000Z',
 }
 
+const episodes = []
+
 const asset = {
   id: 9,
   project_id: 1,
@@ -118,7 +120,24 @@ globalThis.fetch = async (input, init = {}) => {
   if (path.endsWith('/health')) {
     data = { version: '0.1.0', db: ':memory:', schema_version: 4, projects: 1 }
   } else if (path.endsWith('/assets/counts')) {
-    data = { text: 1, image: 0, video: 0 }
+    data = { text: 1, image: 0, video: 0, audio: 0 }
+  } else if (path.endsWith('/episodes')) {
+    if (method === 'POST') {
+      const episode = {
+        id: 100 + episodes.length,
+        project_id: 1,
+        number: episodes.length + 1,
+        code: `EP0${episodes.length + 1}`,
+        title: `第 ${episodes.length + 1} 集`,
+        synopsis: '',
+        created_at: '2026-10-24T07:00:00.000Z',
+        updated_at: '2026-10-24T07:00:00.000Z',
+      }
+      episodes.push(episode)
+      data = episode
+    } else {
+      data = { items: episodes, total: episodes.length }
+    }
   } else if (path.endsWith('/assets')) {
     data = { items: [{ ...asset }], total: 1 }
   } else if (/^\/studio\/api\/assets\/\d+$/.test(path)) {
@@ -179,7 +198,25 @@ window.dispatchEvent(new window.PopStateEvent('popstate'))
 await wait(500)
 const detailText = rootText()
 
+// —— 分集：新建后侧边栏出现，进入分集资产页显示集标题 ——
+document.querySelector('button[aria-label="新建分集"]')?.click()
+await wait()
+document
+  .querySelector('#episode-form')
+  ?.dispatchEvent(new window.Event('submit', { bubbles: true, cancelable: true }))
+await wait(500)
+const afterEpisodeCreate = rootText()
+
+window.history.pushState({}, '', '/studio/projects/PRJ-0001/episodes/EP01/assets/text')
+window.dispatchEvent(new window.PopStateEvent('popstate'))
+await wait(400)
+const episodeText = rootText()
+
 // —— 资产编辑：菜单必须挂在 body 上（不被滚动容器裁剪），且能改文本 ——
+window.history.pushState({}, '', '/studio/projects/PRJ-0001/assets/text')
+window.dispatchEvent(new window.PopStateEvent('popstate'))
+await wait(400)
+
 byLabel('第一幕 的操作')?.click()
 await wait()
 const menuInBody = Boolean(document.body.querySelector('[role="menu"]'))
@@ -213,9 +250,11 @@ const checks = [
   ['默认深色主题', document.documentElement.classList.contains('dark')],
   ['改名后列表立即更新', afterEditText.includes(renamed)],
   ['项目页显示项目名', detailText.includes(renamed)],
-  ['项目页有资产导航', ['文本', '图片', '视频'].every((label) => detailText.includes(label))],
+  ['项目页有资产导航', ['文本', '图片', '视频', '音频'].every((label) => detailText.includes(label))],
   ['项目页有文本资产', detailText.includes('第一幕')],
   ['项目页有 chat 输入框', Boolean(document.querySelector('textarea[aria-label="消息输入"]'))],
+  ['分集创建后出现在导航', afterEpisodeCreate.includes('EP01')],
+  ['分集页显示集标题', episodeText.includes('EP01 · 第 1 集')],
   ['资产菜单挂在 body 上（不被裁剪）', menuInBody && !menuInRoot],
   ['编辑弹窗回填文本内容', prefilled],
   ['资产改名立即更新', afterAssetEdit.includes('第一幕（改）')],

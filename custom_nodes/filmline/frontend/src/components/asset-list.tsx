@@ -45,6 +45,39 @@ export function AssetList({ kind, assets, onEdit, onDelete }: AssetListProps) {
     )
   }
 
+  if (kind === 'audio') {
+    return (
+      <div className="flex flex-col gap-3">
+        {assets.map((asset) => (
+          <article key={asset.id} className="rounded-xl border border-border bg-card p-3">
+            <div className="flex items-start gap-2">
+              <div className="min-w-0 flex-1">
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <h3 className="truncate text-sm font-medium">{asset.name}</h3>
+                  <SourceBadge source={asset.source} kind={asset.kind} />
+                </div>
+                <div className="mt-1 flex items-center gap-2 font-mono text-[11px] text-muted-foreground">
+                  <span>{formatTime(asset.created_at)}</span>
+                  <span>{formatSize(asset.size_bytes)}</span>
+                </div>
+              </div>
+              <MoreMenu
+                actions={assetActions(asset, onEdit, onDelete)}
+                label={`${asset.name} 的操作`}
+              />
+            </div>
+            <audio
+              controls
+              preload="metadata"
+              src={asset.content_url ?? ''}
+              className="mt-2 w-full"
+            />
+          </article>
+        ))}
+      </div>
+    )
+  }
+
   return (
     <div className="flex flex-col gap-3">
       {assets.map((asset) => (
