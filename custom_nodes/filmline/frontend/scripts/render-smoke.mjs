@@ -642,6 +642,18 @@ const projectMenuItems = [...document.querySelectorAll('[role="menuitem"]')].map
 document.body.dispatchEvent(new window.MouseEvent('mousedown', { bubbles: true }))
 await wait()
 
+// 文本资产：单击条目直接进入编辑（不必展开菜单）
+byLabel('编辑 第一幕')?.click()
+await wait(300)
+const clickEditDialog = document.querySelector('dialog[open]')
+const clickOpensEdit =
+  clickEditDialog?.querySelector('#asset-name')?.value === '第一幕' &&
+  clickEditDialog?.querySelector('#asset-content')?.value === '夜，外景，长安城。'
+;[...(clickEditDialog?.querySelectorAll('button') ?? [])]
+  .find((el) => el.textContent?.trim() === '取消')
+  ?.click()
+await wait(200)
+
 byLabel('第一幕 的操作')?.click()
 await wait()
 const menuInBody = Boolean(document.body.querySelector('[role="menu"]'))
@@ -789,6 +801,7 @@ const checks = [
   ['项目内不出现删除项目', projectMenuItems.includes('编辑') && !projectMenuItems.includes('删除')],
   ['资产菜单挂在 body 上（不被裁剪）', menuInBody && !menuInRoot],
   ['编辑弹窗回填文本内容', prefilled],
+  ['文本资产单击进入编辑', clickOpensEdit],
   ['资产改名立即更新', afterAssetEdit.includes('第一幕（改）')],
   ['列表不展示提示词', !imageTabText.includes('雪夜长安街，红灯笼')],
   ['点击图片打开预览', previewText.includes('让他图1笑起来') && previewText.includes('1344×768')],

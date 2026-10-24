@@ -105,24 +105,32 @@ export function AssetList({
             draggable={Boolean(asset.text_content?.trim())}
             title="可拖到右侧提示词输入框"
             onDragStart={(event) => startAssetDrag(event, asset)}
-            className="flex cursor-grab items-start gap-2 px-3 py-3 active:cursor-grabbing"
+            className="flex items-start gap-2"
           >
-            <div className="min-w-0 flex-1">
-              <div className="flex flex-wrap items-center gap-1.5">
-                <h3 className="truncate text-sm font-medium">{asset.name}</h3>
+            <button
+              type="button"
+              title={`单击编辑「${asset.name}」，也可拖到右侧提示词输入框`}
+              aria-label={`编辑 ${asset.name}`}
+              className="min-w-0 flex-1 cursor-pointer px-3 py-3 text-left transition-colors hover:bg-muted focus-visible:bg-muted focus-visible:outline-none"
+              onClick={() => onEdit(asset)}
+            >
+              <span className="flex flex-wrap items-center gap-1.5">
+                <span className="truncate text-sm font-medium">{asset.name}</span>
                 <SourceBadge source={asset.source} kind={asset.kind} />
-              </div>
+              </span>
               {asset.text_content ? (
-                <p className="mt-1 line-clamp-2 text-xs leading-relaxed whitespace-pre-wrap text-muted-foreground">
+                <span className="mt-1 line-clamp-2 block text-xs leading-relaxed whitespace-pre-wrap text-muted-foreground">
                   {asset.text_content}
-                </p>
+                </span>
               ) : null}
               <AssetDimensions asset={asset} />
-              <div className="mt-1 font-mono text-[11px] text-muted-foreground/70">
+              <span className="mt-1 block font-mono text-[11px] text-muted-foreground/70">
                 {formatTime(asset.created_at)}
-              </div>
+              </span>
+            </button>
+            <div className="py-3 pr-1">
+              <MoreMenu actions={buildActions(asset, handlers)} label={`${asset.name} 的操作`} />
             </div>
-            <MoreMenu actions={buildActions(asset, handlers)} label={`${asset.name} 的操作`} />
           </article>
         ))}
       </div>
