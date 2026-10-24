@@ -50,12 +50,30 @@ def register_generate_routes(routes: web.RouteTableDef) -> None:
         project = await asyncio.to_thread(ProjectService().get, request.match_info["ref"])
         episode_id, scope = await asyncio.to_thread(_episode_scope, request, project.id)
 
+        raw_refs = payload.get("refs") or []
+        if not isinstance(raw_refs, list) or not all(
+            isinstance(item, int) and item > 0 for item in raw_refs
+        ):
+            raise InvalidArgument("refs 必须是资产 id 数组")
+        ref_paths = await asyncio.to_thread(
+            assets.resolve_ref_paths,
+            project.id,
+            raw_refs,
+            limit=generation.MAX_IMAGE_REFS if kind == "image" else generation.MAX_VIDEO_REFS,
+        )
+
         if kind == "image":
             count = payload.get("count", 1)
             if not isinstance(count, int):
                 raise InvalidArgument("count 必须是整数")
+            if ref_paths:
+                count = 1
             workflow = generation.image_workflow(
-                prompt=prompt, size=size, count=count, prefix=f"filmline/{project.code}/{scope}"
+                prompt=prompt,
+                size=size,
+                count=count,
+                refs=ref_paths,
+                prefix=f"filmline/{project.code}/{scope}",
             )
         else:
             duration = payload.get("duration", 5)
@@ -65,6 +83,7 @@ def register_generate_routes(routes: web.RouteTableDef) -> None:
                 prompt=prompt,
                 size=size,
                 duration=duration,
+                refs=ref_paths,
                 prefix=f"filmline/{project.code}/{scope}",
             )
 
@@ -83,6 +102,18 @@ def register_generate_routes(routes: web.RouteTableDef) -> None:
         for product in products:
             relative, target = storage.allocate(project.id, scope, product.suffix)
             target.write_bytes(product.data)
+
+            # 参考图模式下实际尺寸由参考图决定，以产物为准修正元数据
+            meta = dict(workflow.meta)
+            if workflow.kind == "image":
+                try:
+                    from PIL import Image
+
+                    with Image.open(target) as produced:
+                        meta["width"], meta["height"] = produced.width, produced.height
+                        meta["size"] = generation.ratio_label(produced.width, produced.height)
+                except Exception:
+                    _LOG.warning("无法读取产物尺寸: %s", target)
             asset = await asyncio.to_thread(
                 assets.create_from_file,
                 project.id,
@@ -95,7 +126,7 @@ def register_generate_routes(routes: web.RouteTableDef) -> None:
                 ),
                 size_bytes=len(product.data),
                 episode_id=episode_id,
-                meta=workflow.meta,
+                meta=meta,
             )
             created.append(asset.model_dump(mode="json"))
 

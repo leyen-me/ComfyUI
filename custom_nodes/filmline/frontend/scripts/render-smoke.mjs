@@ -37,6 +37,20 @@ Object.defineProperty(window.HTMLDialogElement.prototype, 'open', {
     else this.removeAttribute('open')
   },
 })
+// ProseMirror 会测量选区；jsdom 没有这些实现，补最小桩避免报错
+const zeroRect = () => ({
+  x: 0, y: 0, top: 0, left: 0, right: 0, bottom: 0, width: 0, height: 0,
+  toJSON() { return this },
+})
+window.Range.prototype.getClientRects = function getClientRects() {
+  return { length: 0, item: () => null, [Symbol.iterator]: function* iterator() {} }
+}
+window.Range.prototype.getBoundingClientRect = zeroRect
+window.Element.prototype.getClientRects = window.Element.prototype.getClientRects ?? function getClientRects() {
+  return { length: 0, item: () => null, [Symbol.iterator]: function* iterator() {} }
+}
+window.document.elementFromPoint = () => window.document.body
+
 window.HTMLDialogElement.prototype.showModal = function showModal() {
   this.open = true
 }
@@ -216,7 +230,7 @@ await wait(500)
 const detailText = rootText()
 
 const panel = {
-  hasPrompt: Boolean(document.querySelector('textarea[aria-label="提示词"]')),
+  hasPrompt: Boolean(document.querySelector('[aria-label="提示词"][contenteditable="true"]')),
   imageDefault: [...document.querySelectorAll('button[aria-pressed="true"]')].some((el) =>
     el.textContent?.includes('图片'),
   ),
@@ -327,8 +341,8 @@ await wait(150)
   .find((el) => el.textContent?.includes('用此提示词生成'))
   ?.click()
 await wait(200)
-const promptField = document.querySelector('textarea[aria-label="提示词"]')
-const reused = promptField?.value === '雪夜长安街，红灯笼'
+const promptField = document.querySelector('[aria-label="提示词"]')
+const reused = (promptField?.textContent ?? '').includes('雪夜长安街，红灯笼')
 
 const checks = [
   ['列表页渲染品牌', listText.includes('Filmline')],

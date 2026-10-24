@@ -257,8 +257,8 @@ export const api = {
       generate: (
         ref: string | number,
         input:
-          | { kind: 'image'; prompt: string; size: string; count: number }
-          | { kind: 'video'; prompt: string; size: string; duration: number },
+          | { kind: 'image'; prompt: string; size: string; count: number; refs?: number[] }
+          | { kind: 'video'; prompt: string; size: string; duration: number; refs?: number[] },
         episode?: string,
       ) => {
         const query = episode ? `?episode=${encodeURIComponent(episode)}` : ''

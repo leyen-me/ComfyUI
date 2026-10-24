@@ -81,3 +81,66 @@ class VideoWorkflowTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ReferenceWorkflowTest(unittest.TestCase):
+    def test_image_refs_feed_encoder_and_use_its_latent(self) -> None:
+        wf = generation.image_workflow(
+            prompt="把图1的人放到图2的场景",
+            size="16:9",
+            count=1,
+            refs=["4/project/a.png", "4/project/b.png"],
+            seed=3,
+        )
+        graph = wf.prompt
+
+        self.assertEqual(graph["10"]["inputs"]["path"], "4/project/a.png")
+        self.assertEqual(graph["11"]["inputs"]["path"], "4/project/b.png")
+        self.assertEqual(graph["5"]["inputs"]["images.image_1"], ["10", 0])
+        self.assertEqual(graph["5"]["inputs"]["images.image_2"], ["11", 0])
+        # 参考图模式下 latent 来自编码节点，且不再使用空 latent 节点
+        self.assertEqual(graph["7"]["inputs"]["latent_image"], ["5", 2])
+        self.assertNotIn("6", graph)
+        self.assertEqual(wf.meta["refs"], 2)
+
+    def test_image_refs_limit_and_count(self) -> None:
+        with self.assertRaises(InvalidArgument):
+            generation.image_workflow(
+                prompt="x",
+                size="1:1",
+                count=1,
+                refs=[f"a{i}.png" for i in range(generation.MAX_IMAGE_REFS + 1)],
+            )
+
+    def test_max_refs_allowed(self) -> None:
+        refs = [f"a{i}.png" for i in range(generation.MAX_IMAGE_REFS)]
+        wf = generation.image_workflow(prompt="满额参考图", size="1:1", count=1, refs=refs)
+        keys = [k for k in wf.prompt["5"]["inputs"] if k.startswith("images.")]
+        self.assertEqual(len(keys), generation.MAX_IMAGE_REFS)
+        self.assertEqual(generation.MAX_IMAGE_REFS, 16)
+        self.assertEqual(wf.meta["refs"], 16)
+        with self.assertRaises(InvalidArgument):
+            generation.image_workflow(prompt="x", size="1:1", count=2, refs=["a.png"])
+
+    def test_video_first_frame(self) -> None:
+        wf = generation.video_workflow(
+            prompt="镜头推进", size="16:9", duration=5, refs=["4/project/a.png"]
+        )
+        self.assertEqual(wf.prompt["14"]["class_type"], "FilmlineLoadImage")
+        self.assertEqual(wf.prompt["7"]["inputs"]["first_frame"], ["14", 0])
+        self.assertEqual(wf.meta["refs"], 1)
+
+    def test_video_single_ref_only(self) -> None:
+        with self.assertRaises(InvalidArgument):
+            generation.video_workflow(
+                prompt="x", size="16:9", duration=5, refs=["a.png", "b.png"]
+            )
+
+
+class RatioLabelTest(unittest.TestCase):
+    def test_labels(self) -> None:
+        self.assertEqual(generation.ratio_label(1344, 768), "16:9")
+        self.assertEqual(generation.ratio_label(768, 1344), "9:16")
+        self.assertEqual(generation.ratio_label(1024, 1024), "1:1")
+        self.assertEqual(generation.ratio_label(1000, 999), "1:1")
+        self.assertEqual(generation.ratio_label(1200, 500), "1200:500")

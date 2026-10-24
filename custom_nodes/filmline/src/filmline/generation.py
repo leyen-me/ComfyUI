@@ -44,6 +44,11 @@ VIDEO_VAE = "minimax_h3_video_vae_fp16.safetensors"
 VIDEO_AUDIO_VAE = "minimax_h3_audio_vae_fp32.safetensors"
 VIDEO_LORA = "minimax_h3_fl2v_turbo_4step_v1.0_768p_comfyui_bf16.safetensors"
 
+# TextEncodeQwenImage21 声明 image_1…image_16，上限 16 张；
+# 参考图越多采样越慢（每张都会作为 token 过每一步）
+MAX_IMAGE_REFS = 16
+MAX_VIDEO_REFS = 1
+
 IMAGE_STEPS = 20
 IMAGE_CFG = 4.0
 IMAGE_SHIFT = 3.1
@@ -75,6 +80,7 @@ def image_workflow(
     size: str,
     count: int,
     seed: int | None = None,
+    refs: list[str] | None = None,
     prefix: str = "filmline/image",
 ) -> Workflow:
     if size not in IMAGE_SIZES:
@@ -83,6 +89,12 @@ def image_workflow(
         raise InvalidArgument("生成数量必须在 1-4 之间")
     if not prompt.strip():
         raise InvalidArgument("提示词不能为空")
+
+    refs = refs or []
+    if len(refs) > MAX_IMAGE_REFS:
+        raise InvalidArgument(f"参考图最多 {MAX_IMAGE_REFS} 张")
+    if refs and count != 1:
+        raise InvalidArgument("带参考图时只能生成 1 张")
 
     width, height = IMAGE_SIZES[size]
     actual_seed = _seed() if seed is None else seed
@@ -107,15 +119,6 @@ def image_workflow(
                 "resolution": max(width, height),
             },
         },
-        "6": {
-            "class_type": "FilmlineEmptyLatent",
-            "inputs": {
-                "model": ["4", 0],
-                "width": width,
-                "height": height,
-                "batch_size": count,
-            },
-        },
         "7": {
             "class_type": "KSampler",
             "inputs": {
@@ -127,7 +130,7 @@ def image_workflow(
                 "scheduler": "simple",
                 "positive": ["5", 0],
                 "negative": ["5", 1],
-                "latent_image": ["6", 0],
+                "latent_image": None,  # 参考图/空 latent 差异见下方
                 "denoise": 1.0,
             },
         },
@@ -140,6 +143,30 @@ def image_workflow(
             "inputs": {"images": ["8", 0], "filename_prefix": prefix},
         },
     }
+
+    if refs:
+        # 有参考图时 latent 由编码节点按第一张参考图的尺寸产出
+        for index, path in enumerate(refs, start=1):
+            node_id = f"{9 + index}"
+            graph[node_id] = {
+                "class_type": "FilmlineLoadImage",
+                "inputs": {"path": path},
+            }
+            graph["5"]["inputs"][f"images.image_{index}"] = [node_id, 0]
+        latent_source = ["5", 2]
+    else:
+        graph["6"] = {
+            "class_type": "FilmlineEmptyLatent",
+            "inputs": {
+                "model": ["4", 0],
+                "width": width,
+                "height": height,
+                "batch_size": count,
+            },
+        }
+        latent_source = ["6", 0]
+
+    graph["7"]["inputs"]["latent_image"] = latent_source
 
     return Workflow(
         prompt=graph,
@@ -154,6 +181,7 @@ def image_workflow(
             "model": IMAGE_MODEL,
             "steps": IMAGE_STEPS,
             "cfg": IMAGE_CFG,
+            "refs": len(refs),
         },
     )
 
@@ -164,6 +192,7 @@ def video_workflow(
     size: str,
     duration: int,
     seed: int | None = None,
+    refs: list[str] | None = None,
     prefix: str = "filmline/video",
 ) -> Workflow:
     if size not in VIDEO_SIZES:
@@ -172,6 +201,10 @@ def video_workflow(
         raise InvalidArgument("视频时长只支持 5 或 10 秒")
     if not prompt.strip():
         raise InvalidArgument("提示词不能为空")
+
+    refs = refs or []
+    if len(refs) > 1:
+        raise InvalidArgument("视频首帧只支持 1 张")
 
     width, height = VIDEO_SIZES[size]
     length = VIDEO_DURATIONS[duration]
@@ -244,6 +277,10 @@ def video_workflow(
         },
     }
 
+    if refs:
+        graph["14"] = {"class_type": "FilmlineLoadImage", "inputs": {"path": refs[0]}}
+        graph["7"]["inputs"]["first_frame"] = ["14", 0]
+
     return Workflow(
         prompt=graph,
         kind="video",
@@ -259,6 +296,7 @@ def video_workflow(
             "lora": VIDEO_LORA,
             "steps": VIDEO_STEPS,
             "cfg": VIDEO_CFG,
+            "refs": len(refs),
         },
     )
 
@@ -338,3 +376,12 @@ async def run(workflow: Workflow, *, timeout: float) -> list[Product]:
 
 def timeout_for(kind: str) -> float:
     return 1800.0 if kind == "video" else 900.0
+
+
+def ratio_label(width: int, height: int) -> str:
+    """按实际像素推断比例标签，带参考图时以产物为准。"""
+    ratio = width / height if height else 0
+    for label, target in (("16:9", 16 / 9), ("9:16", 9 / 16), ("1:1", 1.0)):
+        if abs(ratio - target) / target < 0.04:
+            return label
+    return f"{width}:{height}"

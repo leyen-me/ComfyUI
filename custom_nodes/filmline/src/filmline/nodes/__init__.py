@@ -48,6 +48,68 @@ class FilmlineEmptyLatent:
         return ({"samples": latent},)
 
 
-NODE_CLASS_MAPPINGS = {"FilmlineEmptyLatent": FilmlineEmptyLatent}
+class FilmlineLoadImage:
+    """从本扩展的资产目录读取图片，供参考图 / 首帧使用。
 
-NODE_DISPLAY_NAME_MAPPINGS = {"FilmlineEmptyLatent": "Filmline 空 Latent（任意尺寸）"}
+    ``path`` 是相对 ``data/assets`` 的路径，由后端校验后传入，避免图生图时
+    把文件复制进 ComfyUI 的 input 目录。
+    """
+
+    CATEGORY = "filmline"
+    FUNCTION = "load"
+    RETURN_TYPES = ("IMAGE", "MASK")
+    RETURN_NAMES = ("IMAGE", "MASK")
+    DESCRIPTION = "读取 Filmline 资产文件作为参考图或首帧。"
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {"required": {"path": ("STRING", {"default": "", "multiline": False})}}
+
+    def load(self, path):
+        import numpy as np
+        from PIL import Image, ImageOps, ImageSequence
+
+        from .. import storage
+
+        target = storage.resolve(path)
+        if not target.is_file():
+            raise FileNotFoundError(f"资产文件不存在: {path}")
+
+        dtype = comfy.model_management.intermediate_dtype()
+        device = comfy.model_management.intermediate_device()
+
+        images = []
+        masks = []
+        with Image.open(target) as source:
+            for frame in ImageSequence.Iterator(source):
+                frame = ImageOps.exif_transpose(frame)
+                has_alpha = frame.mode in ("RGBA", "LA") or (
+                    frame.mode == "P" and "transparency" in frame.info
+                )
+                rgba = frame.convert("RGBA")
+                rgb = np.array(rgba.convert("RGB")).astype(np.float32) / 255.0
+                images.append(torch.from_numpy(rgb)[None,])
+                if has_alpha:
+                    alpha = np.array(rgba.getchannel("A")).astype(np.float32) / 255.0
+                    masks.append(torch.from_numpy(1.0 - alpha)[None,])
+
+        if not images:
+            raise ValueError(f"无法读取图片: {path}")
+
+        image = torch.cat(images, dim=0).to(device=device, dtype=dtype)
+        if masks:
+            mask = torch.cat(masks, dim=0).to(device=device, dtype=dtype)
+        else:
+            mask = torch.zeros((image.shape[0], 64, 64), dtype=dtype, device=device)
+        return (image, mask)
+
+
+NODE_CLASS_MAPPINGS = {
+    "FilmlineEmptyLatent": FilmlineEmptyLatent,
+    "FilmlineLoadImage": FilmlineLoadImage,
+}
+
+NODE_DISPLAY_NAME_MAPPINGS = {
+    "FilmlineEmptyLatent": "Filmline 空 Latent（任意尺寸）",
+    "FilmlineLoadImage": "Filmline 读取资产图片",
+}

@@ -117,7 +117,20 @@ export function AssetList({
       {assets.map((asset) => (
         <article
           key={asset.id}
-          className="overflow-hidden rounded-xl border border-border bg-card"
+          draggable
+          onDragStart={(event) => {
+            if (asset.kind !== 'image') {
+              event.preventDefault()
+              return
+            }
+            event.dataTransfer.effectAllowed = 'copy'
+            event.dataTransfer.setData(
+              'application/x-filmline-asset',
+              JSON.stringify({ assetId: asset.id, src: asset.content_url, name: asset.name }),
+            )
+            event.dataTransfer.setData('text/plain', asset.name)
+          }}
+          className="cursor-grab overflow-hidden rounded-xl border border-border bg-card active:cursor-grabbing"
         >
           <div className="relative aspect-video bg-muted">
             {kind === 'image' ? (
@@ -131,6 +144,7 @@ export function AssetList({
                   src={asset.content_url ?? ''}
                   alt={asset.name}
                   loading="lazy"
+                  draggable={false}
                   className="size-full object-cover"
                 />
               </button>

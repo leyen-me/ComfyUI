@@ -163,6 +163,43 @@ class AssetService:
             session.flush()
             return _to_out(row)
 
+    def resolve_ref_paths(
+        self, project_id: int, asset_ids: list[int], *, limit: int
+    ) -> list[str]:
+        """把参考图 id 解析成存储路径，并校验归属与类型。"""
+        if not asset_ids:
+            return []
+        if len(asset_ids) > limit:
+            raise InvalidArgument(f"参考图最多 {limit} 张")
+        if len(set(asset_ids)) != len(asset_ids):
+            raise InvalidArgument("参考图有重复")
+
+        with self._scope() as session:
+            rows = (
+                session.execute(
+                    select(Asset).where(
+                        Asset.id.in_(asset_ids), Asset.deleted_at.is_(None)
+                    )
+                )
+                .scalars()
+                .all()
+            )
+            if len(rows) != len(asset_ids):
+                raise NotFound("参考图不存在")
+
+            by_id = {row.id: row for row in rows}
+            paths: list[str] = []
+            for asset_id in asset_ids:
+                row = by_id[asset_id]
+                if row.project_id != project_id:
+                    raise InvalidArgument("参考图不属于当前项目")
+                if row.kind != AssetKind.image.value:
+                    raise InvalidArgument("参考图必须是图片资产")
+                if not row.file_path:
+                    raise InvalidArgument("参考图缺少文件")
+                paths.append(row.file_path)
+            return paths
+
     def get(self, asset_id: int) -> AssetOut:
         with self._scope() as session:
             return _to_out(self._find(session, asset_id))
