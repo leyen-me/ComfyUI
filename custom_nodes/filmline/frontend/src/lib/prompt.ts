@@ -41,3 +41,43 @@ export function serializePrompt(doc: PromptDoc): PromptValue {
 
   return { text: parts.join('').replace(/\n+$/, '').trim(), refs }
 }
+
+export interface RefAsset {
+  assetId: number
+  src: string
+}
+
+export interface PromptDocJson {
+  type: 'doc'
+  content: Array<{ type: 'paragraph'; content?: Array<Record<string, unknown>> }>
+}
+
+/**
+ * 把已保存的提示词文本还原成带图片块的文档。
+ * 文本里的「图N」按顺序对应 refs[N-1]；找不到对应资产时保留为普通文字。
+ */
+export function buildPromptDoc(
+  text: string,
+  refs: Array<RefAsset | null>,
+): PromptDocJson {
+  return {
+    type: 'doc',
+    content: text.split('\n').map((line) => {
+      const nodes: Array<Record<string, unknown>> = []
+      for (const token of line.split(/(图\d+)/g)) {
+        if (!token) continue
+        const matched = /^图(\d+)$/.exec(token)
+        const ref = matched ? (refs[Number(matched[1]) - 1] ?? undefined) : undefined
+        if (ref) {
+          nodes.push({
+            type: 'imageChip',
+            attrs: { assetId: ref.assetId, src: ref.src, label: token },
+          })
+        } else {
+          nodes.push({ type: 'text', text: token })
+        }
+      }
+      return nodes.length ? { type: 'paragraph', content: nodes } : { type: 'paragraph' }
+    }),
+  }
+}

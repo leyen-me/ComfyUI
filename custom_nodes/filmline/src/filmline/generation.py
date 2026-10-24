@@ -116,7 +116,9 @@ def image_workflow(
                 "clip": ["2", 0],
                 "prompt": prompt,
                 "negative_prompt": "",
-                "resolution": max(width, height),
+                # 无参考图时按所选尺寸的较长边作为参考分辨率；
+                # 有参考图时必须为 0，保持原图像素，否则尺寸变化会让编辑漂移
+                "resolution": 0 if refs else max(width, height),
             },
         },
         "7": {
@@ -145,14 +147,28 @@ def image_workflow(
     }
 
     if refs:
-        # 有参考图时 latent 由编码节点按第一张参考图的尺寸产出
+        # 参考图必须接 vae，否则只作为视觉条件、不进入采样序列
+        graph["5"]["inputs"]["vae"] = ["3", 0]
+        # 参考图先按目标比例居中裁切缩放：素材适配输出，而不是输出迁就素材。
+        # 这样画布始终等于所选尺寸，同时参考图与画布比例一致，避免编辑漂移。
         for index, path in enumerate(refs, start=1):
-            node_id = f"{9 + index}"
-            graph[node_id] = {
+            loader_id = f"{10 + index}"
+            scale_id = f"{30 + index}"
+            graph[loader_id] = {
                 "class_type": "FilmlineLoadImage",
                 "inputs": {"path": path},
             }
-            graph["5"]["inputs"][f"images.image_{index}"] = [node_id, 0]
+            graph[scale_id] = {
+                "class_type": "ImageScale",
+                "inputs": {
+                    "image": [loader_id, 0],
+                    "upscale_method": "lanczos",
+                    "width": width,
+                    "height": height,
+                    "crop": "center",
+                },
+            }
+            graph["5"]["inputs"][f"images.image_{index}"] = [scale_id, 0]
         latent_source = ["5", 2]
     else:
         graph["6"] = {
@@ -279,7 +295,17 @@ def video_workflow(
 
     if refs:
         graph["14"] = {"class_type": "FilmlineLoadImage", "inputs": {"path": refs[0]}}
-        graph["7"]["inputs"]["first_frame"] = ["14", 0]
+        graph["15"] = {
+            "class_type": "ImageScale",
+            "inputs": {
+                "image": ["14", 0],
+                "upscale_method": "lanczos",
+                "width": width,
+                "height": height,
+                "crop": "center",
+            },
+        }
+        graph["7"]["inputs"]["first_frame"] = ["15", 0]
 
     return Workflow(
         prompt=graph,

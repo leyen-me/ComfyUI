@@ -11,6 +11,7 @@ export interface GenerationMeta {
   cfg?: number
   duration?: number
   count?: number
+  ref_ids?: number[]
   model?: string
 }
 

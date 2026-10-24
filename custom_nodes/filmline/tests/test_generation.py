@@ -29,6 +29,9 @@ class ImageWorkflowTest(unittest.TestCase):
 
         self.assertEqual(graph["9"]["class_type"], "SaveImage")
         self.assertEqual(wf.meta["size"], "16:9")
+        # 纯文生图不接 vae，resolution 用较长边
+        self.assertNotIn("vae", graph["5"]["inputs"])
+        self.assertEqual(graph["5"]["inputs"]["resolution"], 1344)
 
     def test_portrait_and_square(self) -> None:
         portrait = generation.image_workflow(prompt="x", size="9:16", count=1)
@@ -94,10 +97,18 @@ class ReferenceWorkflowTest(unittest.TestCase):
         )
         graph = wf.prompt
 
-        self.assertEqual(graph["10"]["inputs"]["path"], "4/project/a.png")
-        self.assertEqual(graph["11"]["inputs"]["path"], "4/project/b.png")
-        self.assertEqual(graph["5"]["inputs"]["images.image_1"], ["10", 0])
-        self.assertEqual(graph["5"]["inputs"]["images.image_2"], ["11", 0])
+        self.assertEqual(graph["11"]["inputs"]["path"], "4/project/a.png")
+        self.assertEqual(graph["12"]["inputs"]["path"], "4/project/b.png")
+        # 参考图先按目标比例居中裁切，保证输出尺寸由用户决定
+        self.assertEqual(graph["31"]["class_type"], "ImageScale")
+        self.assertEqual(graph["31"]["inputs"]["crop"], "center")
+        self.assertEqual(graph["31"]["inputs"]["width"], 1344)
+        self.assertEqual(graph["31"]["inputs"]["height"], 768)
+        self.assertEqual(graph["5"]["inputs"]["images.image_1"], ["31", 0])
+        self.assertEqual(graph["5"]["inputs"]["images.image_2"], ["32", 0])
+        # 参考图要接 vae（否则不参与采样），且 resolution=0 保持原图尺寸
+        self.assertEqual(graph["5"]["inputs"]["vae"], ["3", 0])
+        self.assertEqual(graph["5"]["inputs"]["resolution"], 0)
         # 参考图模式下 latent 来自编码节点，且不再使用空 latent 节点
         self.assertEqual(graph["7"]["inputs"]["latent_image"], ["5", 2])
         self.assertNotIn("6", graph)
@@ -127,7 +138,9 @@ class ReferenceWorkflowTest(unittest.TestCase):
             prompt="镜头推进", size="16:9", duration=5, refs=["4/project/a.png"]
         )
         self.assertEqual(wf.prompt["14"]["class_type"], "FilmlineLoadImage")
-        self.assertEqual(wf.prompt["7"]["inputs"]["first_frame"], ["14", 0])
+        self.assertEqual(wf.prompt["15"]["class_type"], "ImageScale")
+        self.assertEqual(wf.prompt["15"]["inputs"]["crop"], "center")
+        self.assertEqual(wf.prompt["7"]["inputs"]["first_frame"], ["15", 0])
         self.assertEqual(wf.meta["refs"], 1)
 
     def test_video_single_ref_only(self) -> None:

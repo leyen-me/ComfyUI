@@ -9,6 +9,8 @@ export interface PromptInputHandle {
   clear: () => void
   focus: () => void
   setText: (text: string) => void
+  /** 还原带图片块的文档 */
+  setDoc: (doc: unknown) => void
   getValue: () => PromptValue
 }
 
@@ -144,6 +146,10 @@ export function PromptInput({
         clear: () => editor?.commands.clearContent(true),
         focus: () => editor?.commands.focus(),
         setText,
+        setDoc: (doc) => {
+          editor?.commands.setContent(doc as never)
+          if (editor) changeRef.current(serializePrompt(editor.state.doc))
+        },
         getValue: () => (editor ? serializePrompt(editor.state.doc) : EMPTY),
       }
     }

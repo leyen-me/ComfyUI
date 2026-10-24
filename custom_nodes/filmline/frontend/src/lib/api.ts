@@ -202,6 +202,9 @@ export const api = {
         )
       },
 
+      get: (assetId: number, signal?: AbortSignal) =>
+        request<Asset>(`/assets/${assetId}`, { signal }),
+
       counts: (
         ref: string | number,
         params: { episode?: string; signal?: AbortSignal } = {},

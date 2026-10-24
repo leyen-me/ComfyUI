@@ -10,6 +10,8 @@ export interface ReusePromptDetail {
   size?: string
   count?: number
   duration?: number
+  /** 原生成使用的参考图 id，复用时用来还原图片块 */
+  refIds?: number[]
 }
 
 export function emitAssetsChanged(): void {

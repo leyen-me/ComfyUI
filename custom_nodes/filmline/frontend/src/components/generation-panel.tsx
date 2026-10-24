@@ -3,6 +3,7 @@ import { Image as ImageIcon, Loader2, Sparkles, Video } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 
 import { ApiError, api, type Project } from '@/lib/api'
+import { buildPromptDoc, type RefAsset } from '@/lib/prompt'
 import { emitAssetsChanged, REUSE_PROMPT, type ReusePromptDetail } from '@/lib/events'
 import { cn } from '@/lib/utils'
 import { PromptInput, type PromptInputHandle } from './prompt-input'
@@ -58,7 +59,7 @@ export function GenerationPanel({ project, episodeCode }: GenerationPanelProps) 
 
   // 资产预览里点“用此提示词生成”：回填模式与参数
   useEffect(() => {
-    function onReuse(event: Event) {
+    async function onReuse(event: Event) {
       const detail = (event as CustomEvent<ReusePromptDetail>).detail
       if (detail.kind === 'video') {
         setMode('video')
@@ -73,7 +74,19 @@ export function GenerationPanel({ project, episodeCode }: GenerationPanelProps) 
           setCount(detail.count)
         }
       }
-      editorRef.current?.setText(detail.prompt)
+      const refIds = detail.refIds ?? []
+      if (refIds.length > 0) {
+        // 还原参考图块；已被删除的资产保留为普通文字「图N」
+        const loaded = await Promise.all(
+          refIds.map((assetId) => api.projects.assets.get(assetId).catch(() => null)),
+        )
+        const refs: Array<RefAsset | null> = loaded.map((asset) =>
+          asset ? { assetId: asset.id, src: asset.content_url ?? '' } : null,
+        )
+        editorRef.current?.setDoc(buildPromptDoc(detail.prompt, refs))
+      } else {
+        editorRef.current?.setText(detail.prompt)
+      }
       editorRef.current?.focus()
     }
     window.addEventListener(REUSE_PROMPT, onReuse)
@@ -173,7 +186,6 @@ export function GenerationPanel({ project, episodeCode }: GenerationPanelProps) 
                 aria-label="尺寸"
                 value={mode === 'image' ? imageSize : videoSize}
                 options={mode === 'image' ? IMAGE_SIZES : VIDEO_SIZES}
-                disabled={hasRefs && mode === 'image'}
                 onChange={(next) =>
                   mode === 'image' ? setImageSize(next) : setVideoSize(next)
                 }
@@ -201,8 +213,7 @@ export function GenerationPanel({ project, episodeCode }: GenerationPanelProps) 
 
               {hasRefs ? (
                 <span className="text-[11px] text-muted-foreground">
-                  已引用 {value.refs.length} 张
-                  {mode === 'image' ? '，尺寸跟随第一张' : '，作为首帧'}
+                  已引用 {value.refs.length} 张，按所选比例居中裁切
                 </span>
               ) : null}
 

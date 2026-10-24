@@ -4,7 +4,7 @@
  *   npm run test:logic
  */
 import assert from 'node:assert/strict'
-import { serializePrompt } from '../src/lib/prompt.ts'
+import { buildPromptDoc, serializePrompt } from '../src/lib/prompt.ts'
 
 const text = (value) => ({ type: { name: 'text' }, text: value })
 const chip = (assetId) => ({ type: { name: 'imageChip' }, attrs: { assetId } })
@@ -58,5 +58,47 @@ for (const item of cases) {
   }
 }
 
+
+// —— buildPromptDoc：把「图N」还原成图片块 ——
+const chipsOf = (doc) =>
+  (doc.content[0].content ?? []).filter((n) => n.type === 'imageChip').map((n) => n.attrs.assetId)
+
+const docs = [
+  {
+    name: '无参考图时保持纯文本',
+    input: ['让他图1笑起来', []],
+    text: '让他图1笑起来',
+    chips: [],
+  },
+  {
+    name: '中间引用还原成图片块',
+    input: ['让他图1笑起来', [{ assetId: 5, src: '/a' }]],
+    chips: [5],
+  },
+  {
+    name: '多张按顺序还原',
+    input: ['用图1的场景放图2的人', [{ assetId: 5, src: '/a' }, { assetId: 9, src: '/b' }]],
+    chips: [5, 9],
+  },
+  {
+    name: '资产缺失时降级为文字',
+    input: ['用图1和图2', [{ assetId: 5, src: '/a' }, null]],
+    chips: [5],
+  },
+]
+
+for (const item of docs) {
+  const [text, refs] = item.input
+  const doc = buildPromptDoc(text, refs)
+  try {
+    assert.deepEqual(chipsOf(doc), item.chips)
+    console.log(`✓ ${item.name}`)
+  } catch (error) {
+    failed += 1
+    console.error(`✗ ${item.name}`)
+    console.error(error.message)
+  }
+}
+
 if (failed > 0) process.exit(1)
-console.log('\n提示词序列化正常')
+console.log('\n提示词还原正常')

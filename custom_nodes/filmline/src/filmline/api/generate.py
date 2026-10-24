@@ -105,6 +105,7 @@ def register_generate_routes(routes: web.RouteTableDef) -> None:
 
             # 参考图模式下实际尺寸由参考图决定，以产物为准修正元数据
             meta = dict(workflow.meta)
+            meta["ref_ids"] = raw_refs
             if workflow.kind == "image":
                 try:
                     from PIL import Image

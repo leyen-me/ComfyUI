@@ -113,6 +113,7 @@ export function AssetPanel({
       size: meta.size,
       count: meta.count ?? 1,
       duration: meta.duration ?? 5,
+      refIds: meta.ref_ids ?? [],
     })
     setPreview(null)
     notify('已填入生成面板')

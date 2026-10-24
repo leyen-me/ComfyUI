@@ -122,7 +122,15 @@ const aiImage = {
   mime_type: 'image/png',
   size_bytes: 123456,
   content_url: '/studio/api/assets/10/content',
-  meta: { prompt: '雪夜长安街，红灯笼', size: '16:9', width: 1344, height: 768, seed: 42, steps: 20 },
+  meta: {
+    prompt: '让他图1笑起来',
+    size: '16:9',
+    width: 1344,
+    height: 768,
+    seed: 42,
+    steps: 20,
+    ref_ids: [7],
+  },
   created_at: '2026-10-24T07:00:00.000Z',
   updated_at: '2026-10-24T07:00:00.000Z',
 }
@@ -167,6 +175,13 @@ globalThis.fetch = async (input, init = {}) => {
       data = episode
     } else {
       data = { items: episodes, total: episodes.length }
+    }
+  } else if (/^\/studio\/api\/assets\/\d+$/.test(path)) {
+    if (method === 'PATCH') {
+      Object.assign(asset, JSON.parse(init.body))
+      data = { ...asset }
+    } else {
+      data = { ...aiImage, id: 7, meta: null, content_url: '/studio/api/assets/7/content' }
     }
   } else if (path.endsWith('/assets')) {
     const kind = new URL(String(input), 'http://127.0.0.1:8188').searchParams.get('kind')
@@ -328,7 +343,7 @@ const previewText = previewDialog?.textContent ?? ''
   ?.click()
 await wait(200)
 const fallbackArea = document.querySelector('dialog[open] textarea')
-const fallbackShown = fallbackArea?.value === '雪夜长安街，红灯笼'
+const fallbackShown = fallbackArea?.value === '让他图1笑起来'
 fallbackArea
   ?.closest('dialog')
   ?.querySelectorAll('button')
@@ -340,9 +355,12 @@ await wait(150)
 ;[...document.querySelectorAll('dialog[open] button')]
   .find((el) => el.textContent?.includes('用此提示词生成'))
   ?.click()
-await wait(200)
+await wait(500)
 const promptField = document.querySelector('[aria-label="提示词"]')
-const reused = (promptField?.textContent ?? '').includes('雪夜长安街，红灯笼')
+const reused = (promptField?.textContent ?? '').includes('图1')
+const chipRestored =
+  document.querySelectorAll('[data-image-chip]').length === 1 &&
+  (promptField?.textContent ?? '').includes('让他')
 
 const checks = [
   ['列表页渲染品牌', listText.includes('Filmline')],
@@ -366,8 +384,9 @@ const checks = [
   ['编辑弹窗回填文本内容', prefilled],
   ['资产改名立即更新', afterAssetEdit.includes('第一幕（改）')],
   ['列表不展示提示词', !imageTabText.includes('雪夜长安街，红灯笼')],
-  ['点击图片打开预览', previewText.includes('雪夜长安街，红灯笼') && previewText.includes('1344×768')],
+  ['点击图片打开预览', previewText.includes('让他图1笑起来') && previewText.includes('1344×768')],
   ['复用提示词回填面板', reused],
+  ['复用后「图1」还原为图片块', chipRestored],
   ['复制失败时兜底弹窗可手动复制', fallbackShown],
   ['无控制台错误', errors.length === 0],
 ]

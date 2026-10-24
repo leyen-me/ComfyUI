@@ -185,6 +185,12 @@ def register_asset_routes(routes: web.RouteTableDef) -> None:
 
         return ok(asset.model_dump(mode="json"), status=201)
 
+    @routes.get("/studio/api/assets/{asset_id}")
+    @handle_errors
+    async def get_asset(request: web.Request) -> web.Response:
+        asset = await asyncio.to_thread(service.get, _asset_id(request))
+        return ok(asset.model_dump(mode="json"))
+
     @routes.get("/studio/api/assets/{asset_id}/content")
     @handle_errors
     async def asset_content(request: web.Request) -> web.StreamResponse:

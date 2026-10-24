@@ -176,3 +176,12 @@ class AssetApiTest(ApiTestCase):
 
         listed = (await (await self.client.get(f"/studio/api/projects/{project['code']}/assets?kind=image")).json())["data"]
         self.assertEqual(listed["items"][0]["meta"]["prompt"], "雪夜长安街")
+
+    async def test_get_single_asset(self) -> None:
+        project = await self._project()
+        asset = (await (await self._upload(project["code"], "a.png", PNG_BYTES)).json())["data"]
+        res = await self.client.get(f"/studio/api/assets/{asset['id']}")
+        body = await res.json()
+        self.assertEqual(res.status, 200)
+        self.assertEqual(body["data"]["name"], asset["name"])
+        self.assertEqual(body["data"]["content_url"], asset["content_url"])
