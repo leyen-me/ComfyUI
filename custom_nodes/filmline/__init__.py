@@ -53,8 +53,7 @@ try:
 except Exception:  # 路由注册失败不应拖垮整个 ComfyUI 启动
     _LOG.exception("filmline 路由注册失败，相关接口不可用")
 
-# 本扩展只提供 HTTP 服务，不注册任何 ComfyUI 节点。
-NODE_CLASS_MAPPINGS: dict[str, object] = {}
-NODE_DISPLAY_NAME_MAPPINGS: dict[str, str] = {}
+# HTTP 服务为主；节点仅提供生成流程需要的辅助能力（如任意尺寸空 latent）。
+NODE_CLASS_MAPPINGS, NODE_DISPLAY_NAME_MAPPINGS = _pkg.node_class_mappings()
 
 __all__ = ["NODE_CLASS_MAPPINGS", "NODE_DISPLAY_NAME_MAPPINGS"]

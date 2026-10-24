@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Loader2 } from 'lucide-react'
-import { Link, Navigate, Route, Routes, useNavigate, useParams } from 'react-router-dom'
+import { Link, Navigate, Route, Routes, useLocation, useNavigate, useParams } from 'react-router-dom'
 
 import { ApiError, api, type Episode, type Project } from '@/lib/api'
 import { useEpisodes } from '@/hooks/use-episodes'
 import { AssetPanel } from './asset-panel'
-import { ChatPanel } from './chat-panel'
+import { GenerationPanel } from './generation-panel'
 import { EpisodeDialog } from './episode-dialog'
 import { EpisodeOverview } from './episode-overview'
 import { isAssetKind } from './kind-tabs'
@@ -18,6 +18,10 @@ import { Dialog } from './ui/dialog'
 export function ProjectPage() {
   const { ref = '' } = useParams()
   const navigate = useNavigate()
+  const { pathname } = useLocation()
+  // 生成产物要落到当前作用域：在分集里就归到该集
+  const parts = pathname.split('/').filter(Boolean)
+  const episodeCode = parts[2] === 'episodes' ? parts[3] : undefined
 
   const [project, setProject] = useState<Project | null>(null)
   const [loading, setLoading] = useState(true)
@@ -160,7 +164,7 @@ export function ProjectPage() {
         </Routes>
       </section>
 
-      <ChatPanel />
+      <GenerationPanel project={project} episodeCode={episodeCode} />
 
       <ProjectDialog
         open={editingProject}

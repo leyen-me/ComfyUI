@@ -251,7 +251,22 @@ export const api = {
 
       remove: (assetId: number) =>
         request<void>(`/assets/${assetId}`, { method: 'DELETE' }),
+
     },
+
+      generate: (
+        ref: string | number,
+        input:
+          | { kind: 'image'; prompt: string; size: string; count: number }
+          | { kind: 'video'; prompt: string; size: string; duration: number },
+        episode?: string,
+      ) => {
+        const query = episode ? `?episode=${encodeURIComponent(episode)}` : ''
+        return request<{ items: Asset[]; kind: string; elapsed: number }>(
+          `/projects/${encodeURIComponent(ref)}/generate${query}`,
+          { method: 'POST', body: JSON.stringify(input) },
+        )
+      },
 
     episodes: {
       list: (ref: string | number, signal?: AbortSignal) =>

@@ -4,6 +4,7 @@ import { Loader2, Plus, Upload } from 'lucide-react'
 import { ApiError, api, type Asset, type AssetKind, type Episode, type Project } from '@/lib/api'
 import { assetKindMeta } from '@/lib/asset-kinds'
 import { useAssetCounts, useAssets } from '@/hooks/use-assets'
+import { ASSETS_CHANGED } from '@/lib/events'
 import { AssetDialog } from './asset-dialog'
 import { AssetList } from './asset-list'
 import { KindTabs } from './kind-tabs'
@@ -61,6 +62,16 @@ export function AssetPanel({
     const timer = setTimeout(() => setToast(null), 2600)
     return () => clearTimeout(timer)
   }, [toast])
+
+  // 生成完成后刷新当前列表与计数
+  useEffect(() => {
+    function onChanged() {
+      reload()
+      setCountsVersion((value) => value + 1)
+    }
+    window.addEventListener(ASSETS_CHANGED, onChanged)
+    return () => window.removeEventListener(ASSETS_CHANGED, onChanged)
+  }, [reload])
 
   function refresh() {
     reload()

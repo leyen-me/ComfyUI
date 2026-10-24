@@ -13,6 +13,7 @@ from .. import __version__, config, db
 from ..domain.projects import ProjectService
 from .assets import register_asset_routes
 from .episodes import register_episode_routes
+from .generate import register_generate_routes
 from .http import handle_errors, ok
 from .projects import register_project_routes
 
@@ -30,6 +31,7 @@ def register_routes(app: web.Application) -> None:
     register_project_routes(routes)
     register_asset_routes(routes)
     register_episode_routes(routes)
+    register_generate_routes(routes)
 
     @routes.get(f"{API_PREFIX}/health")
     @handle_errors

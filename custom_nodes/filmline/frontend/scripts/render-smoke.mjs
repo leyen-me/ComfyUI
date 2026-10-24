@@ -197,6 +197,29 @@ window.history.pushState({}, '', '/studio/projects/PRJ-0001')
 window.dispatchEvent(new window.PopStateEvent('popstate'))
 await wait(500)
 const detailText = rootText()
+
+const panel = {
+  hasPrompt: Boolean(document.querySelector('textarea[aria-label="提示词"]')),
+  imageDefault: [...document.querySelectorAll('button[aria-pressed="true"]')].some((el) =>
+    el.textContent?.includes('图片'),
+  ),
+  hasSize: Boolean(document.querySelector('select[aria-label="尺寸"]')),
+  hasCount: Boolean(document.querySelector('select[aria-label="生成数量"]')),
+}
+
+// 切到视频：应当出现时长、且不再有数量
+;[...document.querySelectorAll('button')]
+  .find((el) => el.textContent?.includes('视频'))
+  ?.click()
+await wait()
+const videoMode = {
+  hasDuration: Boolean(document.querySelector('select[aria-label="视频时长"]')),
+  noCount: !document.querySelector('select[aria-label="生成数量"]'),
+}
+;[...document.querySelectorAll('button')]
+  .find((el) => el.textContent?.includes('图片'))
+  ?.click()
+await wait()
 const activeNavOnProject = [...document.querySelectorAll('aside a[aria-current="page"]')].map(
   (el) => el.textContent?.trim() ?? '',
 )
@@ -266,7 +289,10 @@ const checks = [
   ['项目页显示项目名', detailText.includes(renamed)],
   ['项目页有资产导航', ['文本', '图片', '视频', '音频'].every((label) => detailText.includes(label))],
   ['项目页有文本资产', detailText.includes('第一幕')],
-  ['项目页有 chat 输入框', Boolean(document.querySelector('textarea[aria-label="消息输入"]'))],
+  ['生成面板有提示词输入', panel.hasPrompt],
+  ['默认图片模式', panel.imageDefault],
+  ['图片有尺寸与数量', panel.hasSize && panel.hasCount],
+  ['视频有尺寸与时长', videoMode.hasDuration && videoMode.noCount],
   ['项目资产页仅「资产」高亮', activeNavOnProject.length === 1 && activeNavOnProject[0] === '资产'],
   ['分集页仅当前集高亮', activeNavOnEpisode.length === 1 && activeNavOnEpisode[0].includes('EP01')],
   ['分集创建后出现在导航', afterEpisodeCreate.includes('EP01')],

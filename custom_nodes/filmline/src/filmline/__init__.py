@@ -8,7 +8,14 @@ from __future__ import annotations
 
 __version__ = "0.1.0"
 
-__all__ = ["__version__", "attach_to_prompt_server"]
+__all__ = ["__version__", "attach_to_prompt_server", "node_class_mappings"]
+
+
+def node_class_mappings() -> tuple[dict, dict]:
+    """供 custom_nodes 入口取节点表（本扩展主要为 HTTP 服务，节点仅作辅助）。"""
+    from .nodes import NODE_CLASS_MAPPINGS, NODE_DISPLAY_NAME_MAPPINGS
+
+    return NODE_CLASS_MAPPINGS, NODE_DISPLAY_NAME_MAPPINGS
 
 
 def attach_to_prompt_server() -> bool:
