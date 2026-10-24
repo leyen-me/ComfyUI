@@ -16,7 +16,7 @@ class ImageWorkflowTest(unittest.TestCase):
 
         self.assertEqual(wf.kind, "image")
         self.assertEqual(graph["6"]["class_type"], "FilmlineEmptyLatent")
-        self.assertEqual(graph["6"]["inputs"]["width"], 1344)
+        self.assertEqual(graph["6"]["inputs"]["width"], 1376)
         self.assertEqual(graph["6"]["inputs"]["height"], 768)
         self.assertEqual(graph["6"]["inputs"]["batch_size"], 2)
 
@@ -31,14 +31,14 @@ class ImageWorkflowTest(unittest.TestCase):
         self.assertEqual(wf.meta["size"], "16:9")
         # 纯文生图不接 vae，resolution 用较长边
         self.assertNotIn("vae", graph["5"]["inputs"])
-        self.assertEqual(graph["5"]["inputs"]["resolution"], 1344)
+        self.assertEqual(graph["5"]["inputs"]["resolution"], 1376)
 
     def test_portrait_and_square(self) -> None:
         portrait = generation.image_workflow(prompt="x", size="9:16", count=1)
         square = generation.image_workflow(prompt="x", size="1:1", count=1)
         self.assertEqual(
             (portrait.prompt["6"]["inputs"]["width"], portrait.prompt["6"]["inputs"]["height"]),
-            (768, 1344),
+            (768, 1376),
         )
         self.assertEqual(
             (square.prompt["6"]["inputs"]["width"], square.prompt["6"]["inputs"]["height"]),
@@ -102,7 +102,7 @@ class ReferenceWorkflowTest(unittest.TestCase):
         # 参考图先按目标比例居中裁切，保证输出尺寸由用户决定
         self.assertEqual(graph["31"]["class_type"], "ImageScale")
         self.assertEqual(graph["31"]["inputs"]["crop"], "center")
-        self.assertEqual(graph["31"]["inputs"]["width"], 1344)
+        self.assertEqual(graph["31"]["inputs"]["width"], 1376)
         self.assertEqual(graph["31"]["inputs"]["height"], 768)
         self.assertEqual(graph["5"]["inputs"]["images.image_1"], ["31", 0])
         self.assertEqual(graph["5"]["inputs"]["images.image_2"], ["32", 0])
@@ -128,8 +128,8 @@ class ReferenceWorkflowTest(unittest.TestCase):
         wf = generation.image_workflow(prompt="满额参考图", size="1:1", count=1, refs=refs)
         keys = [k for k in wf.prompt["5"]["inputs"] if k.startswith("images.")]
         self.assertEqual(len(keys), generation.MAX_IMAGE_REFS)
-        self.assertEqual(generation.MAX_IMAGE_REFS, 16)
-        self.assertEqual(wf.meta["refs"], 16)
+        self.assertEqual(generation.MAX_IMAGE_REFS, 10)
+        self.assertEqual(wf.meta["refs"], 10)
         with self.assertRaises(InvalidArgument):
             generation.image_workflow(prompt="x", size="1:1", count=2, refs=["a.png"])
 
@@ -148,6 +148,27 @@ class ReferenceWorkflowTest(unittest.TestCase):
             generation.video_workflow(
                 prompt="x", size="16:9", duration=5, refs=["a.png", "b.png"]
             )
+
+
+class DimensionsTest(unittest.TestCase):
+    def test_tiers(self) -> None:
+        # 2K 行与官方原生表一致
+        self.assertEqual(generation.image_dimensions("16:9", "2k"), (2752, 1536))
+        self.assertEqual(generation.image_dimensions("9:16", "2k"), (1536, 2752))
+        self.assertEqual(generation.image_dimensions("1:1", "2k"), (2048, 2048))
+        # 1K / 4K 是它的等比缩放
+        self.assertEqual(generation.image_dimensions("16:9", "1k"), (1376, 768))
+        self.assertEqual(generation.image_dimensions("1:1", "1k"), (1024, 1024))
+
+    def test_tier_feeds_workflow(self) -> None:
+        wf = generation.image_workflow(prompt="x", size="16:9", count=1, tier="2k", seed=1)
+        self.assertEqual(wf.prompt["6"]["inputs"]["width"], 2752)
+        self.assertEqual(wf.prompt["6"]["inputs"]["height"], 1536)
+        self.assertEqual(wf.meta["tier"], "2k")
+
+    def test_rejects_bad_tier(self) -> None:
+        with self.assertRaises(InvalidArgument):
+            generation.image_workflow(prompt="x", size="16:9", count=1, tier="8k")
 
 
 class RatioLabelTest(unittest.TestCase):

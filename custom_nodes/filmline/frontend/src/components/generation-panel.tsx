@@ -6,22 +6,12 @@ import { ApiError, api, type Project } from '@/lib/api'
 import { buildPromptDoc, type RefAsset } from '@/lib/prompt'
 import { emitAssetsChanged, REUSE_PROMPT, type ReusePromptDetail } from '@/lib/events'
 import { cn } from '@/lib/utils'
+import { GenerationOptions } from './generation-options'
 import { PromptInput, type PromptInputHandle } from './prompt-input'
 import type { PromptValue } from './prompt-editor'
 import { Button } from './ui/button'
 
 type Mode = 'image' | 'video'
-
-const IMAGE_SIZES = [
-  { value: '16:9', label: '横屏 16:9' },
-  { value: '9:16', label: '竖屏 9:16' },
-  { value: '1:1', label: '方形 1:1' },
-] as const
-
-const VIDEO_SIZES = [
-  { value: '16:9', label: '横屏 16:9' },
-  { value: '9:16', label: '竖屏 9:16' },
-] as const
 
 const COUNTS = [1, 2, 3, 4]
 const DURATIONS = [5, 10]
@@ -40,6 +30,7 @@ export function GenerationPanel({ project, episodeCode }: GenerationPanelProps) 
   const [mode, setMode] = useState<Mode>('image')
   const [value, setValue] = useState<PromptValue>(EMPTY_VALUE)
   const [imageSize, setImageSize] = useState<string>('16:9')
+  const [tier, setTier] = useState<string>('1k')
   const [videoSize, setVideoSize] = useState<string>('16:9')
   const [count, setCount] = useState(1)
   const [duration, setDuration] = useState(5)
@@ -69,6 +60,9 @@ export function GenerationPanel({ project, episodeCode }: GenerationPanelProps) 
         setMode('image')
         if (detail.size === '16:9' || detail.size === '9:16' || detail.size === '1:1') {
           setImageSize(detail.size)
+        }
+        if (detail.tier === '1k' || detail.tier === '2k' || detail.tier === '4k') {
+          setTier(detail.tier)
         }
         if (typeof detail.count === 'number' && detail.count >= 1 && detail.count <= 4) {
           setCount(detail.count)
@@ -115,6 +109,7 @@ export function GenerationPanel({ project, episodeCode }: GenerationPanelProps) 
               kind: 'image',
               prompt: current.text,
               size: imageSize,
+              resolution: tier,
               count: hasRefs ? 1 : count,
               refs: current.refs,
             }
@@ -182,13 +177,14 @@ export function GenerationPanel({ project, episodeCode }: GenerationPanelProps) 
                 </ModeButton>
               </div>
 
-              <CompactSelect
-                aria-label="尺寸"
-                value={mode === 'image' ? imageSize : videoSize}
-                options={mode === 'image' ? IMAGE_SIZES : VIDEO_SIZES}
-                onChange={(next) =>
+              <GenerationOptions
+                mode={mode}
+                size={mode === 'image' ? imageSize : videoSize}
+                tier={tier}
+                onSizeChange={(next) =>
                   mode === 'image' ? setImageSize(next) : setVideoSize(next)
                 }
+                onTierChange={setTier}
               />
 
               {mode === 'image' ? (

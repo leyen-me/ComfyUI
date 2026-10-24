@@ -4,6 +4,7 @@ import type { Asset } from '@/lib/api'
 export interface GenerationMeta {
   prompt?: string
   size?: string
+  tier?: string
   width?: number
   height?: number
   seed?: number

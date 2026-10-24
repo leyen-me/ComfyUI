@@ -8,6 +8,7 @@ export interface ReusePromptDetail {
   prompt: string
   kind: 'image' | 'video'
   size?: string
+  tier?: string
   count?: number
   duration?: number
   /** 原生成使用的参考图 id，复用时用来还原图片块 */

@@ -21,11 +21,18 @@ _LOG = logging.getLogger("filmline")
 
 COMFY_URL = os.environ.get("FILMLINE_COMFY_URL", "http://127.0.0.1:8188").rstrip("/")
 
-# 尺寸：与模型原生分辨率保持同一量级，且都是 32 的倍数
-IMAGE_SIZES: dict[str, tuple[int, int]] = {
-    "16:9": (1344, 768),
-    "9:16": (768, 1344),
-    "1:1": (1024, 1024),
+# 比例 + 分辨率档位共同决定像素：档位是「长边」，短边按比例推导并对齐 32
+IMAGE_RATIOS: dict[str, tuple[int, int]] = {
+    "16:9": (16, 9),
+    "9:16": (9, 16),
+    "1:1": (1, 1),
+}
+# 档位尺寸对齐官方给出的原生比例表（Qwen-Image-2.1：2K 为原生，
+# 16:9 = 2752×1536、1:1 = 2048×2048）；1K 取其一半。
+# 不提供 4K：超出官方支持范围（原生 2K），容易糊且耗时数倍
+IMAGE_TIERS: dict[str, dict[str, tuple[int, int]]] = {
+    "1k": {"16:9": (1376, 768), "9:16": (768, 1376), "1:1": (1024, 1024)},
+    "2k": {"16:9": (2752, 1536), "9:16": (1536, 2752), "1:1": (2048, 2048)},
 }
 VIDEO_SIZES: dict[str, tuple[int, int]] = {
     "16:9": (1344, 768),
@@ -44,13 +51,14 @@ VIDEO_VAE = "minimax_h3_video_vae_fp16.safetensors"
 VIDEO_AUDIO_VAE = "minimax_h3_audio_vae_fp32.safetensors"
 VIDEO_LORA = "minimax_h3_fl2v_turbo_4step_v1.0_768p_comfyui_bf16.safetensors"
 
-# TextEncodeQwenImage21 声明 image_1…image_16，上限 16 张；
-# 参考图越多采样越慢（每张都会作为 token 过每一步）
-MAX_IMAGE_REFS = 16
+# 官方说明：参考图最多 10 张（image_1…image_10），image_1 是编辑目标
+MAX_IMAGE_REFS = 10
 MAX_VIDEO_REFS = 1
 
-IMAGE_STEPS = 20
-IMAGE_CFG = 4.0
+# 官方参数：cfg 固定 1（不用负面提示词），euler/simple，步数 40-50；
+# 这里取 30 兼顾质量与速度
+IMAGE_STEPS = 30
+IMAGE_CFG = 1.0
 IMAGE_SHIFT = 3.1
 VIDEO_STEPS = 4
 VIDEO_CFG = 1.0
@@ -74,17 +82,25 @@ def _seed() -> int:
     return random.randint(0, 2**31 - 1)
 
 
+def image_dimensions(size: str, tier: str) -> tuple[int, int]:
+    """由比例与档位查表得到像素（对齐官方原生比例表）。"""
+    if size not in IMAGE_RATIOS:
+        raise InvalidArgument(f"图片比例只支持: {', '.join(IMAGE_RATIOS)}")
+    if tier not in IMAGE_TIERS:
+        raise InvalidArgument(f"分辨率只支持: {', '.join(IMAGE_TIERS)}")
+    return IMAGE_TIERS[tier][size]
+
+
 def image_workflow(
     *,
     prompt: str,
     size: str,
     count: int,
+    tier: str = "1k",
     seed: int | None = None,
     refs: list[str] | None = None,
     prefix: str = "filmline/image",
 ) -> Workflow:
-    if size not in IMAGE_SIZES:
-        raise InvalidArgument(f"图片尺寸只支持: {', '.join(IMAGE_SIZES)}")
     if not 1 <= count <= 4:
         raise InvalidArgument("生成数量必须在 1-4 之间")
     if not prompt.strip():
@@ -96,7 +112,7 @@ def image_workflow(
     if refs and count != 1:
         raise InvalidArgument("带参考图时只能生成 1 张")
 
-    width, height = IMAGE_SIZES[size]
+    width, height = image_dimensions(size, tier)
     actual_seed = _seed() if seed is None else seed
 
     graph: dict[str, Any] = {
@@ -118,7 +134,8 @@ def image_workflow(
                 "negative_prompt": "",
                 # 无参考图时按所选尺寸的较长边作为参考分辨率；
                 # 有参考图时必须为 0，保持原图像素，否则尺寸变化会让编辑漂移
-                "resolution": 0 if refs else max(width, height),
+                # 该参数上限 4096（ComfyUI 节点定义），仅作参考图缩放预算
+                "resolution": 0 if refs else min(4096, max(width, height)),
             },
         },
         "7": {
@@ -190,6 +207,7 @@ def image_workflow(
         meta={
             "prompt": prompt,
             "size": size,
+            "tier": tier,
             "width": width,
             "height": height,
             "count": count,

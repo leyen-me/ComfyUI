@@ -111,6 +111,7 @@ export function AssetPanel({
       prompt,
       kind: asset.kind === 'video' ? 'video' : 'image',
       size: meta.size,
+      tier: meta.tier,
       count: meta.count ?? 1,
       duration: meta.duration ?? 5,
       refIds: meta.ref_ids ?? [],

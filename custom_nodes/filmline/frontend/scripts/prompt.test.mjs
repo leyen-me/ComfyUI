@@ -21,19 +21,19 @@ const cases = [
   {
     name: '引用块前后都有文字',
     input: doc(para(text('把'), chip(12), text('的人物放到'), chip(37), text('的场景里'))),
-    text: '把图1的人物放到图2的场景里',
+    text: '把<image1>的人物放到<image2>的场景里',
     refs: [12, 37],
   },
   {
     name: '多段落',
     input: doc(para(text('第一行')), para(chip(5), text('结尾'))),
-    text: '第一行\n图1结尾',
+    text: '第一行\n<image1>结尾',
     refs: [5],
   },
   {
     name: '只有引用块',
     input: doc(para(chip(9))),
-    text: '图1',
+    text: '<image1>',
     refs: [9],
   },
   {
@@ -66,23 +66,23 @@ const chipsOf = (doc) =>
 const docs = [
   {
     name: '无参考图时保持纯文本',
-    input: ['让他图1笑起来', []],
-    text: '让他图1笑起来',
+    input: ['让他<image1>笑起来', []],
+    text: '让他<image1>笑起来',
     chips: [],
   },
   {
     name: '中间引用还原成图片块',
-    input: ['让他图1笑起来', [{ assetId: 5, src: '/a' }]],
+    input: ['让他<image1>笑起来', [{ assetId: 5, src: '/a' }]],
     chips: [5],
   },
   {
     name: '多张按顺序还原',
-    input: ['用图1的场景放图2的人', [{ assetId: 5, src: '/a' }, { assetId: 9, src: '/b' }]],
+    input: ['用<image1>的场景放<image2>的人', [{ assetId: 5, src: '/a' }, { assetId: 9, src: '/b' }]],
     chips: [5, 9],
   },
   {
     name: '资产缺失时降级为文字',
-    input: ['用图1和图2', [{ assetId: 5, src: '/a' }, null]],
+    input: ['用<image1>和<image2>', [{ assetId: 5, src: '/a' }, null]],
     chips: [5],
   },
 ]

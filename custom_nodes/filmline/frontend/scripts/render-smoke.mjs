@@ -246,23 +246,42 @@ window.dispatchEvent(new window.PopStateEvent('popstate'))
 await wait(500)
 const detailText = rootText()
 
+const optionsTrigger = document.querySelector('button[aria-label="尺寸与分辨率"]')
 const panel = {
   hasPrompt: Boolean(document.querySelector('[aria-label="提示词"][contenteditable="true"]')),
   imageDefault: [...document.querySelectorAll('button[aria-pressed="true"]')].some((el) =>
     el.textContent?.includes('图片'),
   ),
-  hasSize: Boolean(document.querySelector('select[aria-label="尺寸"]')),
+  hasOptions: Boolean(optionsTrigger) && (optionsTrigger?.textContent ?? '').includes('·'),
   hasCount: Boolean(document.querySelector('select[aria-label="生成数量"]')),
 }
+
+// 打开尺寸面板：应同时有「比例」「分辨率」两组，且不含 4K
+optionsTrigger?.click()
+await wait(250)
+const optionsPanel = [...document.querySelectorAll('[role="dialog"]')].find((el) =>
+  el.textContent?.includes('比例'),
+)
+const optionsText = optionsPanel?.textContent ?? ''
+const has4k = optionsText.includes('4K')
+;[...(optionsPanel?.querySelectorAll('button[aria-pressed]') ?? [])]
+  .find((el) => el.textContent?.includes('2K'))
+  ?.click()
+await wait(200)
+const triggerAfterTier = document.querySelector('button[aria-label="尺寸与分辨率"]')?.textContent ?? ''
+document.body.dispatchEvent(new window.MouseEvent('mousedown', { bubbles: true }))
+await wait(150)
 
 // 切到视频：应当出现时长、且不再有数量
 ;[...document.querySelectorAll('button')]
   .find((el) => el.textContent?.includes('视频'))
   ?.click()
 await wait()
+const videoTrigger = document.querySelector('button[aria-label="尺寸与分辨率"]')?.textContent ?? ''
 const videoMode = {
   hasDuration: Boolean(document.querySelector('select[aria-label="视频时长"]')),
   noCount: !document.querySelector('select[aria-label="生成数量"]'),
+  noTier: !videoTrigger.includes('·'),
 }
 ;[...document.querySelectorAll('button')]
   .find((el) => el.textContent?.includes('图片'))
@@ -375,8 +394,11 @@ const checks = [
   ['项目页有文本资产', detailText.includes('第一幕')],
   ['生成面板有提示词输入', panel.hasPrompt],
   ['默认图片模式', panel.imageDefault],
-  ['图片有尺寸与数量', panel.hasSize && panel.hasCount],
-  ['视频有尺寸与时长', videoMode.hasDuration && videoMode.noCount],
+  ['尺寸选择是一个组合按钮', panel.hasOptions && panel.hasCount],
+  ['面板含比例与分辨率两组', optionsText.includes('比例') && optionsText.includes('分辨率')],
+  ['只提供 1K/2K（无 4K）', optionsText.includes('1K') && optionsText.includes('2K') && !has4k],
+  ['选择 2K 后按钮同步显示', triggerAfterTier.includes('2K')],
+  ['视频有尺寸与时长', videoMode.hasDuration && videoMode.noCount && videoMode.noTier],
   ['项目资产页仅「资产」高亮', activeNavOnProject.length === 1 && activeNavOnProject[0] === '资产'],
   ['分集页仅当前集高亮', activeNavOnEpisode.length === 1 && activeNavOnEpisode[0].includes('EP01')],
   ['分集创建后出现在导航', afterEpisodeCreate.includes('EP01')],

@@ -31,7 +31,8 @@ export function serializePrompt(doc: PromptDoc): PromptValue {
     block.forEach((node) => {
       if (node.type.name === 'imageChip') {
         refs.push(Number(node.attrs?.assetId))
-        parts.push(`图${refs.length}`)
+        // 官方用 <imageN> 标记参考图，模型按这个约定理解
+        parts.push(`<image${refs.length}>`)
       } else if (typeof node.text === 'string') {
         parts.push(node.text)
       }
@@ -64,10 +65,12 @@ export function buildPromptDoc(
     type: 'doc',
     content: text.split('\n').map((line) => {
       const nodes: Array<Record<string, unknown>> = []
-      for (const token of line.split(/(图\d+)/g)) {
+      // 同时兼容官方 <imageN> 与旧数据的「图N」
+      for (const token of line.split(/(<image\d+>|图\d+)/g)) {
         if (!token) continue
-        const matched = /^图(\d+)$/.exec(token)
-        const ref = matched ? (refs[Number(matched[1]) - 1] ?? undefined) : undefined
+        const matched = /^(?:<image(\d+)>|图(\d+))$/.exec(token)
+        const index = matched ? Number(matched[1] ?? matched[2]) : 0
+        const ref = index ? (refs[index - 1] ?? undefined) : undefined
         if (ref) {
           nodes.push({
             type: 'imageChip',

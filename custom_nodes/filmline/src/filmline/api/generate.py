@@ -64,6 +64,9 @@ def register_generate_routes(routes: web.RouteTableDef) -> None:
         )
 
         if kind == "image":
+            tier = str(payload.get("resolution") or "1k").lower()
+            if tier not in generation.IMAGE_TIERS:
+                raise InvalidArgument(f"resolution 只支持: {' / '.join(generation.IMAGE_TIERS)}")
             count = payload.get("count", 1)
             if not isinstance(count, int):
                 raise InvalidArgument("count 必须是整数")
@@ -73,6 +76,7 @@ def register_generate_routes(routes: web.RouteTableDef) -> None:
                 prompt=prompt,
                 size=size,
                 count=count,
+                tier=tier,
                 refs=ref_paths,
                 prefix=f"filmline/{project.code}/{scope}",
             )
