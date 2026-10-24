@@ -19,6 +19,8 @@ interface AssetPanelProps {
   kind: AssetKind
   onEditScope: () => void
   onDeleteScope: () => void
+  /** 项目页内不再提供删除项目入口，删除只能回到项目列表操作 */
+  allowDeleteScope?: boolean
 }
 
 export function AssetPanel({
@@ -27,6 +29,7 @@ export function AssetPanel({
   kind,
   onEditScope,
   onDeleteScope,
+  allowDeleteScope = true,
 }: AssetPanelProps) {
   const scope = episode?.code
   const { data, loading, error, reload } = useAssets(project.code, kind, scope)
@@ -109,7 +112,9 @@ export function AssetPanel({
             label={episode ? '分集操作' : '项目操作'}
             actions={[
               { label: '编辑', onSelect: onEditScope },
-              { label: '删除', destructive: true, onSelect: onDeleteScope },
+              ...(allowDeleteScope
+                ? [{ label: '删除', destructive: true, onSelect: onDeleteScope }]
+                : []),
             ]}
           />
         </div>

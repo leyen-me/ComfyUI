@@ -27,7 +27,6 @@ export function ProjectPage() {
   )
 
   const [editingProject, setEditingProject] = useState(false)
-  const [deletingProject, setDeletingProject] = useState(false)
   const [episodeDialog, setEpisodeDialog] = useState<{ open: boolean; episode: Episode | null }>({
     open: false,
     episode: null,
@@ -66,18 +65,6 @@ export function ProjectPage() {
 
     return () => controller.abort()
   }, [ref])
-
-  async function confirmDeleteProject() {
-    if (!project) return
-    setBusy(true)
-    try {
-      await api.projects.remove(project.id)
-      navigate('/', { replace: true })
-    } catch (cause) {
-      notify(cause instanceof ApiError ? cause.fullMessage : '删除失败', 'error')
-      setBusy(false)
-    }
-  }
 
   async function confirmDeleteEpisode() {
     if (!deletingEpisode) return
@@ -138,7 +125,6 @@ export function ProjectPage() {
               <ProjectAssetRoute
                 project={project}
                 onEditScope={() => setEditingProject(true)}
-                onDeleteScope={() => setDeletingProject(true)}
               />
             }
           />
@@ -198,31 +184,6 @@ export function ProjectPage() {
       />
 
       <Dialog
-        open={deletingProject}
-        onOpenChange={setDeletingProject}
-        title="删除项目"
-        footer={
-          <>
-            <Button onClick={() => setDeletingProject(false)} disabled={busy}>
-              取消
-            </Button>
-            <Button
-              variant="primary"
-              className="bg-destructive text-white"
-              onClick={confirmDeleteProject}
-              disabled={busy}
-            >
-              {busy ? '删除中…' : '删除'}
-            </Button>
-          </>
-        }
-      >
-        <p className="pb-4 text-sm text-muted-foreground">
-          确定删除「<span className="text-foreground">{project.name}</span>」吗？
-        </p>
-      </Dialog>
-
-      <Dialog
         open={deletingEpisode !== null}
         onOpenChange={(open) => {
           if (!open) setDeletingEpisode(null)
@@ -257,11 +218,9 @@ export function ProjectPage() {
 function ProjectAssetRoute({
   project,
   onEditScope,
-  onDeleteScope,
 }: {
   project: Project
   onEditScope: () => void
-  onDeleteScope: () => void
 }) {
   const { kind } = useParams()
   if (!isAssetKind(kind)) return <Navigate to="assets/text" replace />
@@ -270,7 +229,8 @@ function ProjectAssetRoute({
       project={project}
       kind={kind}
       onEditScope={onEditScope}
-      onDeleteScope={onDeleteScope}
+      onDeleteScope={() => undefined}
+      allowDeleteScope={false}
     />
   )
 }

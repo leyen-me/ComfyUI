@@ -217,6 +217,14 @@ window.history.pushState({}, '', '/studio/projects/PRJ-0001/assets/text')
 window.dispatchEvent(new window.PopStateEvent('popstate'))
 await wait(400)
 
+byLabel('项目操作')?.click()
+await wait()
+const projectMenuItems = [...document.querySelectorAll('[role="menuitem"]')].map((el) =>
+  el.textContent?.trim(),
+)
+document.body.dispatchEvent(new window.MouseEvent('mousedown', { bubbles: true }))
+await wait()
+
 byLabel('第一幕 的操作')?.click()
 await wait()
 const menuInBody = Boolean(document.body.querySelector('[role="menu"]'))
@@ -255,6 +263,7 @@ const checks = [
   ['项目页有 chat 输入框', Boolean(document.querySelector('textarea[aria-label="消息输入"]'))],
   ['分集创建后出现在导航', afterEpisodeCreate.includes('EP01')],
   ['分集页显示集标题', episodeText.includes('EP01 · 第 1 集')],
+  ['项目内不出现删除项目', projectMenuItems.includes('编辑') && !projectMenuItems.includes('删除')],
   ['资产菜单挂在 body 上（不被裁剪）', menuInBody && !menuInRoot],
   ['编辑弹窗回填文本内容', prefilled],
   ['资产改名立即更新', afterAssetEdit.includes('第一幕（改）')],
