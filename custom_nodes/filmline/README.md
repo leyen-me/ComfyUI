@@ -73,6 +73,7 @@ npm run test:logic   # 纯函数单测（页码计算）
 | DELETE | `/studio/api/assets/{id}` | 软删除资产 |
 | GET | `/studio/api/tasks` | 生成任务列表（合并 ComfyUI 外部队列），`?active=1&limit=30` |
 | GET | `/studio/api/tasks/{id}` | 单个任务状态；前端提交后轮询 |
+| POST | `/studio/api/tasks/{id}/cancel` | 取消排队/运行中的 Filmline 任务 |
 | GET | `/studio/api/health` | 版本、库路径、schema 版本、项目数 |
 
 统一响应信封：
@@ -139,6 +140,10 @@ ComfyUI/user/filmline/
 - 任务持久化在 `generation_tasks` 表，记录 ComfyUI `prompt_id`、项目/分集、参数、产物 id、错误与耗时。
 - 右上角任务队列每 3 秒轮询 `/studio/api/tasks`，显示进行中/最近完成；所有打开页面的同事共享同一份状态。
 - 任务列表会合并 ComfyUI `/queue` 中不属于 Filmline 的 prompt，显示为「ComfyUI 外部任务」。
+- 可取消进行中的 Filmline 任务：优先调用 ComfyUI 原子取消接口，运行中的会 interrupt，排队中的会 dequeue；
+  外部 ComfyUI 任务目前只读。
+- 每个浏览器有一个 localStorage 昵称（默认「访客-XXXX」，可在任务面板里改），随任务记录展示；它只是标识，不是登录鉴权。
+- 终态任务保留 30 天 / 最近 200 条，后台每 6 小时清理一次；进行中任务不会被清理。
 - 后端重启时从数据库恢复 queued/running 任务：有 prompt_id 的继续等结果，尚未提交的用保存的工作流补提交。
 - 目前不提供取消/调整队列顺序；ComfyUI 队列顺序即执行顺序。
 

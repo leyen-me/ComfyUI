@@ -84,6 +84,7 @@ def register_generate_routes(routes: web.RouteTableDef) -> None:
         kind = str(payload.get("kind") or "image")
         prompt = str(payload.get("prompt") or "")
         size = str(payload.get("size") or ("16:9" if kind == "video" else "1:1"))
+        client_label = str(payload.get("client_label") or "").strip()[:40]
 
         if kind not in ("image", "video"):
             raise InvalidArgument("kind 只支持 image / video")
@@ -287,7 +288,7 @@ def register_generate_routes(routes: web.RouteTableDef) -> None:
             episode_id=episode_id,
             kind=workflow.kind,
             prompt=prompt,
-            payload={"graph": workflow.prompt, "meta": meta, "scope": scope},
+            payload={"graph": workflow.prompt, "meta": meta, "scope": scope, "client_label": client_label},
         )
         runner = request.app.get(RUNNER_KEY)
         if runner is None:

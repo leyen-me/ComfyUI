@@ -23,23 +23,35 @@ class TaskRunner:
     def __init__(self) -> None:
         self._tasks: dict[int, asyncio.Task[None]] = {}
         self._recovery: asyncio.Task[None] | None = None
+        self._maintenance: asyncio.Task[None] | None = None
 
     async def start(self, app: web.Application) -> None:
         app[RUNNER_KEY] = self
         self._recovery = asyncio.create_task(self._recover(), name="filmline-recover-tasks")
+        self._maintenance = asyncio.create_task(self._maintain(), name="filmline-task-maintenance")
         _LOG.info("生成任务执行器已启动")
 
     async def stop(self, app: web.Application) -> None:
-        if self._recovery is not None:
-            self._recovery.cancel()
-            await asyncio.gather(self._recovery, return_exceptions=True)
-            self._recovery = None
+        for task in (self._recovery, self._maintenance):
+            if task is not None:
+                task.cancel()
+        await asyncio.gather(
+            *[task for task in (self._recovery, self._maintenance) if task is not None],
+            return_exceptions=True,
+        )
+        self._recovery = self._maintenance = None
         tasks = list(self._tasks.values())
         for task in tasks:
             task.cancel()
         if tasks:
             await asyncio.gather(*tasks, return_exceptions=True)
         self._tasks.clear()
+
+    def cancel_local(self, task_id: int) -> None:
+        """停止本进程里的等待协程；ComfyUI 侧的取消由调用方负责。"""
+        task = self._tasks.get(task_id)
+        if task is not None and not task.done():
+            task.cancel()
 
     def schedule(self, task_id: int) -> None:
         existing = self._tasks.get(task_id)
@@ -63,6 +75,18 @@ class TaskRunner:
             _LOG.info("恢复 %s 个未完成生成任务", len(records))
         for record in records:
             self.schedule(record.id)
+
+    async def _maintain(self) -> None:
+        while True:
+            try:
+                deleted = await asyncio.to_thread(
+                    TaskService().prune, keep_days=30, keep_count=200
+                )
+                if deleted:
+                    _LOG.info("清理历史生成任务: %s 条", deleted)
+            except Exception:
+                _LOG.exception("清理历史生成任务失败")
+            await asyncio.sleep(6 * 3600)
 
     async def _run(self, task_id: int) -> None:
         service = TaskService()
@@ -98,14 +122,22 @@ class TaskRunner:
                         error="任务缺少 ComfyUI prompt_id，无法恢复",
                     )
                     return
+                # 取消可能发生在读取记录之后；提交前再确认一次
+                latest = await asyncio.to_thread(service.get_record, task_id)
+                if latest.status != "queued":
+                    return
                 prompt_id = await generation.submit(workflow, client_id=record.client_id)
                 started_at = utcnow()
-                await asyncio.to_thread(
+                marked = await asyncio.to_thread(
                     service.mark_running,
                     task_id,
                     prompt_id=prompt_id,
                     started_at=started_at,
                 )
+                if not marked:
+                    # 提交与取消竞态：任务已被取消，顺手取消刚提交的 ComfyUI 任务
+                    await generation.cancel(prompt_id)
+                    return
             elif started_at is None:
                 started_at = utcnow()
 
@@ -114,6 +146,11 @@ class TaskRunner:
                 kind=record.kind,
                 timeout=generation.timeout_for(record.kind),
             )
+
+            # 等待期间可能被取消；取消的任务不再登记产物
+            latest = await asyncio.to_thread(service.get_record, task_id)
+            if latest.status != "running":
+                return
 
             wall = (utcnow() - started_at).total_seconds() if started_at else 0.0
             # 展示耗时优先用 ComfyUI 的真实执行时间；排队时间单独记录

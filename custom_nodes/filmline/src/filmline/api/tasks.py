@@ -11,6 +11,7 @@ from aiohttp import web
 from .. import generation
 from ..domain.tasks import ACTIVE_STATUSES, TaskOut, TaskService
 from ..errors import InvalidArgument
+from ..runner import RUNNER_KEY
 from .http import handle_errors, ok, parse_int
 
 API_PREFIX = "/studio/api"
@@ -61,6 +62,7 @@ def _external_payload(
         "kind": _graph_kind(entry.graph),
         "status": status,
         "prompt_excerpt": _graph_prompt(entry.graph),
+        "client_label": "",
         "created_at": None,
         "started_at": None,
         "finished_at": None,
@@ -126,3 +128,29 @@ def register_task_routes(routes: web.RouteTableDef) -> None:
                     position = index + 1
                     break
         return ok(_task_payload(task, position))
+
+    @routes.post(f"{API_PREFIX}/tasks/{{task_id}}/cancel")
+    @handle_errors
+    async def cancel_task(request: web.Request) -> web.Response:
+        try:
+            task_id = int(request.match_info["task_id"])
+        except ValueError as exc:
+            raise InvalidArgument("task_id 必须是整数") from exc
+
+        task = await asyncio.to_thread(service.get, task_id)
+        if task.status not in ACTIVE_STATUSES:
+            return ok(_task_payload(task, None))
+
+        # 先落库为 cancelled，runner 在提交前后都会检查终态，避免竞态
+        await asyncio.to_thread(service.mark_cancelled, task_id)
+        updated = await asyncio.to_thread(service.get, task_id)
+
+        if updated.prompt_id:
+            await generation.cancel(updated.prompt_id)
+            runner = request.app.get(RUNNER_KEY)
+            if runner is not None:
+                runner.cancel_local(task_id)
+        # 没有 prompt_id 时不取消本地协程：runner 会在提交前/后检查状态，
+        # 若已提交则自己调用 generation.cancel，避免丢下孤儿任务。
+
+        return ok(_task_payload(updated, None))

@@ -617,6 +617,38 @@ def _queue_entry(item: Any) -> QueuedPrompt | None:
     return QueuedPrompt(prompt_id=prompt_id, graph=graph, extra_data=extra)
 
 
+async def cancel(prompt_id: str) -> bool:
+    """取消 ComfyUI 的排队/运行任务；返回 ComfyUI 是否真的取消了它。
+
+    优先用 ComfyUI 的原子取消接口；旧版本回退到 delete queue + 定向 interrupt。
+    """
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                f"{COMFY_URL}/api/jobs/{prompt_id}/cancel"
+            ) as response:
+                if response.status == 200:
+                    body = await response.json(content_type=None)
+                    return bool((body or {}).get("cancelled"))
+                if response.status not in (404, 405):
+                    _LOG.warning("取消任务失败: HTTP %s", response.status)
+                    return False
+
+            # 兼容没有 /api/jobs/{id}/cancel 的 ComfyUI
+            async with session.post(
+                f"{COMFY_URL}/queue", json={"delete": [prompt_id]}
+            ) as response:
+                await response.read()
+            async with session.post(
+                f"{COMFY_URL}/interrupt", json={"prompt_id": prompt_id}
+            ) as response:
+                await response.read()
+            return True
+    except Exception:
+        _LOG.warning("取消 ComfyUI 任务失败", exc_info=True)
+        return False
+
+
 async def queue_snapshot() -> tuple[list[QueuedPrompt], list[QueuedPrompt]]:
     """读取 ComfyUI 当前队列（运行中 + 排队），用于任务面板合并外部任务。"""
     try:

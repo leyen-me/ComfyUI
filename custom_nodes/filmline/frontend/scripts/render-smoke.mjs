@@ -182,6 +182,7 @@ const runningTask = {
   kind: 'video',
   status: 'running',
   prompt_excerpt: '雪夜长安街，红灯笼',
+  client_label: '冒烟测试员',
   created_at: '2026-10-24T07:00:00.000Z',
   started_at: '2026-10-24T07:00:02.000Z',
   finished_at: null,
@@ -213,6 +214,15 @@ globalThis.fetch = async (input, init = {}) => {
     data = { version: '0.1.0', db: ':memory:', schema_version: 4, projects: 1 }
   } else if (path.endsWith('/tasks')) {
     data = { items: [{ ...runningTask }, { ...doneTask }], active: 1 }
+  } else if (/\/tasks\/\d+\/cancel$/.test(path) && method === 'POST') {
+    data = {
+      ...runningTask,
+      status: 'cancelled',
+      finished_at: '2026-10-24T07:00:10.000Z',
+      queue_position: null,
+    }
+  } else if (/\/tasks\/\d+$/.test(path)) {
+    data = { ...runningTask }
   } else if (path.endsWith('/assets/counts')) {
     data = { text: 1, image: 0, video: 0, audio: 0 }
   } else if (path.endsWith('/episodes')) {
@@ -599,6 +609,11 @@ const taskQueueVisible =
   queueText.includes('运行中') &&
   queueText.includes('已完成') &&
   queueText.includes('冒烟测试项目')
+document.querySelector('button[aria-label="取消任务 100"]')?.click()
+await wait(250)
+const cancelUpdated = (
+  document.querySelector('[role="dialog"]')?.textContent ?? ''
+).includes('已取消')
 document.body.dispatchEvent(new window.MouseEvent('mousedown', { bubbles: true }))
 await wait(150)
 
@@ -650,6 +665,7 @@ const checks = [
   ['复制失败时兜底弹窗可手动复制', fallbackShown],
   ['视频卡片下半部分可打开预览', videoPreviewOpened],
   ['右上角任务队列显示进行中/完成', taskQueueVisible],
+  ['任务队列可取消进行中任务', cancelUpdated],
   ['无控制台错误', errors.length === 0],
 ]
 

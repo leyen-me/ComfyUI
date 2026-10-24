@@ -6,6 +6,7 @@ import { ApiError, api, type Asset, type Project, type TaskInfo } from '@/lib/ap
 import type { AssetDragPayload } from '@/lib/asset-drag'
 import type { KeyframeSlot } from '@/lib/keyframes'
 import { buildPromptDoc, type RefAsset } from '@/lib/prompt'
+import { readClientName } from '@/lib/client-name'
 import {
   EMPTY_REFERENCES,
   MAX_REFERENCE_AUDIOS,
@@ -578,6 +579,7 @@ export function GenerationPanel({ project, episodeCode }: GenerationPanelProps) 
       : `/projects/${project.code}/assets`
 
     const token = ++taskTokenRef.current
+    const clientLabel = readClientName()
     try {
       const { task } = await api.projects.generate(
         project.code,
@@ -589,6 +591,7 @@ export function GenerationPanel({ project, episodeCode }: GenerationPanelProps) 
               resolution: imageTier,
               count: hasRefs ? 1 : count,
               refs: current.refs,
+              client_label: clientLabel,
             }
           : videoMode === 'keyframes'
             ? {
@@ -599,6 +602,7 @@ export function GenerationPanel({ project, episodeCode }: GenerationPanelProps) 
                 duration,
                 first_frame_id: keyframes.first?.assetId ?? null,
                 last_frame_id: keyframes.last?.assetId ?? null,
+                client_label: clientLabel,
               }
             : {
                 kind: 'video',
@@ -612,6 +616,7 @@ export function GenerationPanel({ project, episodeCode }: GenerationPanelProps) 
                   use_audio: item.useAudio && item.hasAudio !== false,
                 })),
                 ref_audios: referenceLists.audios.map((item) => item.assetId),
+                client_label: clientLabel,
               },
         episodeCode,
       )

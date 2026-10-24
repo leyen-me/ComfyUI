@@ -6,12 +6,14 @@ import {
   Image as ImageIcon,
   ListTodo,
   Loader2,
+  Square,
   Video,
   XCircle,
 } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 
 import { api, type TaskInfo } from '@/lib/api'
+import { readClientName, saveClientName } from '@/lib/client-name'
 import { emitAssetsChanged } from '@/lib/events'
 import { formatClock } from '@/lib/format'
 import { cn } from '@/lib/utils'
@@ -35,6 +37,8 @@ export function TaskQueue() {
   const [tasks, setTasks] = useState<TaskInfo[]>([])
   const [active, setActive] = useState(0)
   const [failed, setFailed] = useState(false)
+  const [cancelling, setCancelling] = useState<Set<number>>(new Set())
+  const [name, setName] = useState(() => readClientName())
   const [now, setNow] = useState(() => Date.now())
   const seen = useRef<Set<number>>(new Set())
   const firstLoad = useRef(true)
@@ -96,6 +100,27 @@ export function TaskQueue() {
     setOpen(false)
   }
 
+  async function cancelTask(task: TaskInfo) {
+    if (task.id === null) return
+    const id = task.id
+    setCancelling((previous) => new Set(previous).add(id))
+    try {
+      const updated = await api.tasks.cancel(id)
+      setTasks((previous) => previous.map((item) => (item.id === id ? updated : item)))
+      if (ACTIVE.has(task.status)) {
+        setActive((previous) => Math.max(0, previous - 1))
+      }
+    } catch {
+      setFailed(true)
+    } finally {
+      setCancelling((previous) => {
+        const next = new Set(previous)
+        next.delete(id)
+        return next
+      })
+    }
+  }
+
   return (
     <>
       <button
@@ -133,6 +158,22 @@ export function TaskQueue() {
           </span>
         </div>
 
+        <div className="flex items-center gap-1.5 px-1.5 pb-2">
+          <span className="shrink-0 text-[10px] text-muted-foreground">我的昵称</span>
+          <input
+            value={name}
+            maxLength={40}
+            aria-label="我的任务昵称"
+            title="只影响之后提交的任务"
+            className="h-6 min-w-0 flex-1 rounded border border-border bg-input px-1.5 text-[11px] text-foreground outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/25"
+            onChange={(event) => setName(event.target.value)}
+            onBlur={() => setName(saveClientName(name))}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter') event.currentTarget.blur()
+            }}
+          />
+        </div>
+
         <div className="max-h-[64vh] space-y-2 overflow-y-auto pb-1">
           {tasks.length === 0 ? (
             <p className="px-2 py-8 text-center text-xs text-muted-foreground">
@@ -148,6 +189,8 @@ export function TaskQueue() {
                   task={task}
                   now={now}
                   onOpen={() => openTask(task)}
+                  onCancel={() => void cancelTask(task)}
+                  cancelling={task.id !== null && cancelling.has(task.id)}
                 />
               ))}
             </Section>
@@ -161,6 +204,8 @@ export function TaskQueue() {
                   task={task}
                   now={now}
                   onOpen={() => openTask(task)}
+                  onCancel={() => void cancelTask(task)}
+                  cancelling={task.id !== null && cancelling.has(task.id)}
                 />
               ))}
             </Section>
@@ -186,10 +231,14 @@ function TaskRow({
   task,
   now,
   onOpen,
+  onCancel,
+  cancelling,
 }: {
   task: TaskInfo
   now: number
   onOpen: () => void
+  onCancel: () => void
+  cancelling: boolean
 }) {
   const active = ACTIVE.has(task.status)
   const clickable = !task.external && Boolean(task.project_code)
@@ -201,6 +250,7 @@ function TaskRow({
     effectiveStatus === 'queued' && task.queue_position
       ? `第 ${task.queue_position} 位`
       : null
+  const canCancel = !task.external && task.id !== null && active
 
   const content = (
     <>
@@ -240,6 +290,11 @@ function TaskRow({
           {task.episode_code ? (
             <span className="font-mono text-[10px] text-muted-foreground">
               {task.episode_code}
+            </span>
+          ) : null}
+          {task.client_label ? (
+            <span className="rounded bg-muted px-1 font-mono text-[9px] text-muted-foreground">
+              {task.client_label}
             </span>
           ) : null}
           <span className="flex items-center gap-0.5 font-mono text-[10px] text-muted-foreground">
@@ -284,29 +339,44 @@ function TaskRow({
           ) : null}
         </span>
       </span>
-
-      {clickable ? (
-        <ArrowUpRight className="mt-1 size-3.5 shrink-0 text-muted-foreground" />
-      ) : null}
     </>
   )
 
-  if (!clickable) {
-    return (
-      <div className="flex items-start gap-2 rounded-lg px-1.5 py-1.5">
-        {content}
-      </div>
-    )
-  }
-
   return (
-    <button
-      type="button"
-      className="flex w-full cursor-pointer items-start gap-2 rounded-lg px-1.5 py-1.5 text-left transition-colors hover:bg-muted focus-visible:bg-muted focus-visible:outline-none"
-      onClick={onOpen}
-    >
-      {content}
-    </button>
+    <div className="flex items-start gap-1 rounded-lg transition-colors hover:bg-muted">
+      {clickable ? (
+        <button
+          type="button"
+          className="flex min-w-0 flex-1 cursor-pointer items-start gap-2 rounded-lg px-1.5 py-1.5 text-left focus-visible:bg-muted focus-visible:outline-none"
+          onClick={onOpen}
+        >
+          {content}
+        </button>
+      ) : (
+        <div className="flex min-w-0 flex-1 items-start gap-2 px-1.5 py-1.5">
+          {content}
+        </div>
+      )}
+
+      {canCancel ? (
+        <button
+          type="button"
+          aria-label={`取消任务 ${task.id}`}
+          title="取消任务"
+          disabled={cancelling}
+          className="mt-1 mr-1 cursor-pointer rounded p-1 text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive focus-visible:ring-2 focus-visible:ring-ring/60 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-40"
+          onClick={onCancel}
+        >
+          {cancelling ? (
+            <Loader2 className="size-3.5 animate-spin" />
+          ) : (
+            <Square className="size-3.5" />
+          )}
+        </button>
+      ) : clickable ? (
+        <ArrowUpRight className="mt-2 mr-1 size-3.5 shrink-0 text-muted-foreground" />
+      ) : null}
+    </div>
   )
 }
 

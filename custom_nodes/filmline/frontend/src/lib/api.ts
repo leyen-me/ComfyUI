@@ -190,6 +190,7 @@ export interface TaskInfo {
   kind: 'image' | 'video' | 'unknown'
   status: TaskStatus
   prompt_excerpt: string
+  client_label: string
   created_at: string | null
   started_at: string | null
   finished_at: string | null
@@ -317,6 +318,7 @@ export const api = {
               resolution?: string
               count: number
               refs?: number[]
+              client_label?: string
             }
           |
               {
@@ -335,6 +337,7 @@ export const api = {
                 ref_videos?: Array<{ asset_id: number; use_audio: boolean }>
                 /** 独立参考音频 */
                 ref_audios?: number[]
+                client_label?: string
               },
         episode?: string,
       ) => {
@@ -391,5 +394,8 @@ export const api = {
 
     get: (taskId: number, signal?: AbortSignal) =>
       request<TaskInfo>(`/tasks/${taskId}`, { signal }),
+
+    cancel: (taskId: number) =>
+      request<TaskInfo>(`/tasks/${taskId}/cancel`, { method: 'POST' }),
   },
 }

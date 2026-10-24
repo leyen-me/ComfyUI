@@ -7,10 +7,10 @@ project / kind / 参数 / 产物对应起来。
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from uuid import uuid4
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 
 from ..clock import to_iso, utcnow
 from ..db import session_scope
@@ -34,6 +34,7 @@ class TaskOut:
     kind: str
     status: str
     prompt_excerpt: str
+    client_label: str
     created_at: str
     started_at: str | None
     finished_at: str | None
@@ -76,6 +77,7 @@ def _to_out(
         kind=row.kind,
         status=row.status,
         prompt_excerpt=row.prompt_excerpt,
+        client_label=str((row.payload or {}).get("client_label") or ""),
         created_at=to_iso(row.created_at) or "",
         started_at=to_iso(row.started_at),
         finished_at=to_iso(row.finished_at),
@@ -190,15 +192,19 @@ class TaskService:
 
     def mark_running(
         self, task_id: int, *, prompt_id: str, started_at: datetime | None = None
-    ) -> None:
+    ) -> bool:
+        """只在任务仍为 queued 时进入 running；取消/终态不会被覆盖。"""
         with session_scope() as session:
             row = session.get(GenerationTask, task_id)
             if row is None:
                 raise NotFound("任务不存在")
+            if row.status != "queued":
+                return False
             row.prompt_id = prompt_id
             row.status = "running"
             row.started_at = row.started_at or started_at or utcnow()
             row.error = None
+            return True
 
     def mark_succeeded(
         self,
@@ -234,8 +240,39 @@ class TaskService:
             row = session.get(GenerationTask, task_id)
             if row is None:
                 return
+            if row.status in TERMINAL_STATUSES:
+                return
             row.status = "cancelled"
             row.finished_at = finished_at or utcnow()
+
+    def prune(self, *, keep_days: int = 30, keep_count: int = 200) -> int:
+        """清理终态任务：超过保留天数，或超出最近 N 条。进行中任务永不删除。"""
+        cutoff = utcnow() - timedelta(days=max(1, keep_days))
+        deleted = 0
+        with session_scope() as session:
+            old = session.execute(
+                delete(GenerationTask).where(
+                    GenerationTask.status.in_(TERMINAL_STATUSES),
+                    GenerationTask.finished_at.is_not(None),
+                    GenerationTask.finished_at < cutoff,
+                )
+            )
+            deleted += old.rowcount or 0
+
+            keep_ids = (
+                select(GenerationTask.id)
+                .where(GenerationTask.status.in_(TERMINAL_STATUSES))
+                .order_by(GenerationTask.finished_at.desc())
+                .limit(max(1, keep_count))
+            )
+            extra = session.execute(
+                delete(GenerationTask).where(
+                    GenerationTask.status.in_(TERMINAL_STATUSES),
+                    GenerationTask.id.not_in(keep_ids),
+                )
+            )
+            deleted += extra.rowcount or 0
+        return deleted
 
     def active_prompt_ids(self) -> set[str]:
         with session_scope() as session:

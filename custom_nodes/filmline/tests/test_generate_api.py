@@ -116,6 +116,7 @@ class GenerateApiTest(ApiTestCase):
                     "duration": 5,
                     "first_frame_id": first["id"],
                     "last_frame_id": last["id"],
+                    "client_label": "测试员",
                 },
             )
             body = await res.json()
@@ -123,6 +124,7 @@ class GenerateApiTest(ApiTestCase):
             task = await self._wait_task(body["data"]["task"]["id"])
 
         self.assertEqual(task["status"], "succeeded")
+        self.assertEqual(task["client_label"], "测试员")
         self.assertEqual(len(task["asset_ids"]), 1)
         asset = (
             await (
@@ -368,6 +370,57 @@ class GenerateApiTest(ApiTestCase):
         self.assertEqual(foreign["kind"], "video")
         self.assertEqual(foreign["project_name"], "ComfyUI 外部任务")
         self.assertGreaterEqual(body["data"]["active"], 1)
+
+    async def test_cancel_active_task(self) -> None:
+        project = await self._project()
+        ref = project["code"]
+        first = await self._image(ref, "one.png")
+        gate = asyncio.Event()
+
+        async def slow_collect(*args, **kwargs):
+            await gate.wait()
+            return (
+                [generation.Product(filename="clip.mp4", suffix=".mp4", data=b"fake")],
+                1.0,
+            )
+
+        try:
+            with patch(
+                "filmline.generation.submit", new=AsyncMock(return_value="prompt-cancel")
+            ), patch("filmline.generation.collect", new=slow_collect), patch(
+                "filmline.generation.cancel", new=AsyncMock(return_value=True)
+            ):
+                res = await self.client.post(
+                    f"/studio/api/projects/{ref}/generate",
+                    json={
+                        "kind": "video",
+                        "prompt": "x",
+                        "size": "16:9",
+                        "duration": 5,
+                        "first_frame_id": first["id"],
+                    },
+                )
+                body = await res.json()
+                self.assertEqual(res.status, 202, body)
+                task_id = body["data"]["task"]["id"]
+
+                deadline = asyncio.get_event_loop().time() + 3
+                while asyncio.get_event_loop().time() < deadline:
+                    res = await self.client.get(f"/studio/api/tasks/{task_id}")
+                    current = (await res.json())["data"]
+                    if current["status"] == "running":
+                        break
+                    await asyncio.sleep(0.02)
+                self.assertEqual(current["status"], "running")
+
+                res = await self.client.post(f"/studio/api/tasks/{task_id}/cancel")
+                cancelled = (await res.json())["data"]
+                self.assertEqual(res.status, 200)
+                self.assertEqual(cancelled["status"], "cancelled")
+                self.assertEqual(cancelled["error"], None)
+        finally:
+            gate.set()
+            await asyncio.sleep(0.05)
 
     async def test_reference_rejects_keyframe_fields(self) -> None:
         project = await self._project()
