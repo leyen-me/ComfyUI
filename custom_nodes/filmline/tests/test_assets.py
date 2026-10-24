@@ -107,3 +107,51 @@ class AssetApiTest(ApiTestCase):
     async def test_unknown_project_returns_404(self) -> None:
         res = await self.client.get("/studio/api/projects/PRJ-9999/assets")
         self.assertEqual(res.status, 404)
+
+    async def test_update_text_asset(self) -> None:
+        project = await self._project()
+        res = await self.client.post(
+            f"/studio/api/projects/{project['code']}/assets",
+            json={"name": "原名", "content": "旧内容"},
+        )
+        asset = (await res.json())["data"]
+
+        res = await self.client.patch(
+            f"/studio/api/assets/{asset['id']}",
+            json={"name": "新名", "text_content": "新内容"},
+        )
+        body = await res.json()
+        self.assertEqual(res.status, 200, body)
+        self.assertEqual(body["data"]["name"], "新名")
+        self.assertEqual(body["data"]["text_content"], "新内容")
+
+    async def test_rename_media_asset(self) -> None:
+        project = await self._project()
+        asset = (await (await self._upload(project["code"], "a.png", PNG_BYTES)).json())["data"]
+
+        res = await self.client.patch(f"/studio/api/assets/{asset['id']}", json={"name": "剧照"})
+        body = await res.json()
+        self.assertEqual(res.status, 200, body)
+        self.assertEqual(body["data"]["name"], "剧照")
+
+    async def test_cannot_edit_media_content(self) -> None:
+        project = await self._project()
+        asset = (await (await self._upload(project["code"], "a.png", PNG_BYTES)).json())["data"]
+
+        res = await self.client.patch(
+            f"/studio/api/assets/{asset['id']}", json={"text_content": "不该允许"}
+        )
+        self.assertEqual(res.status, 400)
+
+    async def test_update_requires_changes(self) -> None:
+        project = await self._project()
+        res = await self.client.post(
+            f"/studio/api/projects/{project['code']}/assets", json={"name": "甲"}
+        )
+        asset = (await res.json())["data"]
+        res = await self.client.patch(f"/studio/api/assets/{asset['id']}", json={})
+        self.assertEqual(res.status, 400)
+
+    async def test_update_unknown_asset(self) -> None:
+        res = await self.client.patch("/studio/api/assets/9999", json={"name": "甲"})
+        self.assertEqual(res.status, 404)

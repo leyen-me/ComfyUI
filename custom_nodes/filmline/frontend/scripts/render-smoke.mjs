@@ -120,7 +120,10 @@ globalThis.fetch = async (input, init = {}) => {
   } else if (path.endsWith('/assets/counts')) {
     data = { text: 1, image: 0, video: 0 }
   } else if (path.endsWith('/assets')) {
-    data = { items: [asset], total: 1 }
+    data = { items: [{ ...asset }], total: 1 }
+  } else if (/^\/studio\/api\/assets\/\d+$/.test(path)) {
+    if (method === 'PATCH') Object.assign(asset, JSON.parse(init.body))
+    data = { ...asset }
   } else if (/^\/studio\/api\/projects\/[^/]+$/.test(path)) {
     if (method === 'PATCH') Object.assign(project, JSON.parse(init.body))
     data = project
@@ -176,6 +179,33 @@ window.dispatchEvent(new window.PopStateEvent('popstate'))
 await wait(500)
 const detailText = rootText()
 
+// —— 资产编辑：菜单必须挂在 body 上（不被滚动容器裁剪），且能改文本 ——
+byLabel('第一幕 的操作')?.click()
+await wait()
+const menuInBody = Boolean(document.body.querySelector('[role="menu"]'))
+const menuInRoot = Boolean(document.getElementById('root')?.querySelector('[role="menu"]'))
+;[...document.querySelectorAll('[role="menuitem"]')]
+  .find((el) => el.textContent?.trim() === '编辑')
+  ?.click()
+await wait()
+
+const assetName = document.querySelector('#asset-name')
+const assetContent = document.querySelector('#asset-content')
+const prefilled =
+  assetName?.value === '第一幕' && assetContent?.value === '夜，外景，长安城。'
+
+if (assetName) {
+  const setValue = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set
+  setValue?.call(assetName, '第一幕（改）')
+  assetName.dispatchEvent(new window.Event('input', { bubbles: true }))
+  await wait()
+  document
+    .querySelector('#asset-form')
+    ?.dispatchEvent(new window.Event('submit', { bubbles: true, cancelable: true }))
+  await wait(500)
+}
+const afterAssetEdit = rootText()
+
 const checks = [
   ['列表页渲染品牌', listText.includes('Filmline')],
   ['列表页渲染项目', listText.includes('冒烟测试项目')],
@@ -186,6 +216,9 @@ const checks = [
   ['项目页有资产导航', ['文本', '图片', '视频'].every((label) => detailText.includes(label))],
   ['项目页有文本资产', detailText.includes('第一幕')],
   ['项目页有 chat 输入框', Boolean(document.querySelector('textarea[aria-label="消息输入"]'))],
+  ['资产菜单挂在 body 上（不被裁剪）', menuInBody && !menuInRoot],
+  ['编辑弹窗回填文本内容', prefilled],
+  ['资产改名立即更新', afterAssetEdit.includes('第一幕（改）')],
   ['无控制台错误', errors.length === 0],
 ]
 

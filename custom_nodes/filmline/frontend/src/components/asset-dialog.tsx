@@ -5,31 +5,38 @@ import { Button } from './ui/button'
 import { Dialog } from './ui/dialog'
 import { Input, Label, Textarea } from './ui/field'
 
-interface TextAssetDialogProps {
+interface AssetDialogProps {
   open: boolean
   projectRef: string
+  /** 传入表示编辑；不传则是新建文本资产 */
+  asset?: Asset | null
   onOpenChange: (open: boolean) => void
-  onCreated: (asset: Asset) => void
+  onSaved: (asset: Asset, created: boolean) => void
 }
 
-export function TextAssetDialog({
+export function AssetDialog({
   open,
   projectRef,
+  asset = null,
   onOpenChange,
-  onCreated,
-}: TextAssetDialogProps) {
+  onSaved,
+}: AssetDialogProps) {
   const [name, setName] = useState('')
   const [content, setContent] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
+  const isEdit = asset !== null
+  // 只有文本资产有可编辑的正文
+  const showContent = !asset || asset.kind === 'text'
+
   useEffect(() => {
     if (!open) return
-    setName('')
-    setContent('')
+    setName(asset?.name ?? '')
+    setContent(asset?.text_content ?? '')
     setError(null)
     setSubmitting(false)
-  }, [open])
+  }, [open, asset])
 
   async function handleSubmit(event: FormEvent) {
     event.preventDefault()
@@ -41,14 +48,22 @@ export function TextAssetDialog({
     setSubmitting(true)
     setError(null)
     try {
-      const asset = await api.projects.assets.createText(projectRef, {
-        name: name.trim(),
-        content,
-      })
-      onCreated(asset)
+      if (asset) {
+        const saved = await api.projects.assets.update(asset.id, {
+          name: name.trim(),
+          ...(showContent ? { text_content: content } : {}),
+        })
+        onSaved(saved, false)
+      } else {
+        const created = await api.projects.assets.createText(projectRef, {
+          name: name.trim(),
+          content,
+        })
+        onSaved(created, true)
+      }
       onOpenChange(false)
     } catch (cause) {
-      setError(cause instanceof ApiError ? cause.fullMessage : '创建失败')
+      setError(cause instanceof ApiError ? cause.fullMessage : '保存失败')
     } finally {
       setSubmitting(false)
     }
@@ -58,19 +73,19 @@ export function TextAssetDialog({
     <Dialog
       open={open}
       onOpenChange={onOpenChange}
-      title="新建文本"
+      title={isEdit ? '编辑资产' : '新建文本'}
       footer={
         <>
           <Button onClick={() => onOpenChange(false)} disabled={submitting}>
             取消
           </Button>
-          <Button type="submit" form="text-asset-form" variant="primary" disabled={submitting}>
-            {submitting ? '创建中…' : '创建'}
+          <Button type="submit" form="asset-form" variant="primary" disabled={submitting}>
+            {submitting ? '保存中…' : '保存'}
           </Button>
         </>
       }
     >
-      <form id="text-asset-form" className="space-y-4 pb-3" onSubmit={handleSubmit} noValidate>
+      <form id="asset-form" className="space-y-4 pb-3" onSubmit={handleSubmit} noValidate>
         <div>
           <Label htmlFor="asset-name">名称</Label>
           <Input
@@ -82,16 +97,20 @@ export function TextAssetDialog({
             onChange={(event) => setName(event.target.value)}
           />
         </div>
-        <div>
-          <Label htmlFor="asset-content">内容</Label>
-          <Textarea
-            id="asset-content"
-            value={content}
-            className="min-h-40"
-            maxLength={200_000}
-            onChange={(event) => setContent(event.target.value)}
-          />
-        </div>
+
+        {showContent ? (
+          <div>
+            <Label htmlFor="asset-content">内容</Label>
+            <Textarea
+              id="asset-content"
+              value={content}
+              className="min-h-40"
+              maxLength={200_000}
+              onChange={(event) => setContent(event.target.value)}
+            />
+          </div>
+        ) : null}
+
         <p className="min-h-5 text-xs text-destructive" role="alert" aria-live="polite">
           {error}
         </p>

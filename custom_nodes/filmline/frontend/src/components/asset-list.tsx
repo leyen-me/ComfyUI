@@ -6,21 +6,19 @@ import { SourceBadge } from './source-badge'
 interface AssetListProps {
   kind: AssetKind
   assets: Asset[]
+  onEdit: (asset: Asset) => void
   onDelete: (asset: Asset) => void
 }
 
-function deleteActions(asset: Asset, onDelete: (asset: Asset) => void) {
+function assetActions(asset: Asset, onEdit: (a: Asset) => void, onDelete: (a: Asset) => void) {
   return [
-    {
-      label: '删除',
-      destructive: true,
-      onSelect: () => onDelete(asset),
-    },
+    { label: '编辑', onSelect: () => onEdit(asset) },
+    { label: '删除', destructive: true, onSelect: () => onDelete(asset) },
   ]
 }
 
 /** 资产列宽度有限（约 1.4 倍导航宽度），因此统一单列纵向排列。 */
-export function AssetList({ kind, assets, onDelete }: AssetListProps) {
+export function AssetList({ kind, assets, onEdit, onDelete }: AssetListProps) {
   if (kind === 'text') {
     return (
       <div className="divide-y divide-border overflow-hidden rounded-xl border border-border bg-card">
@@ -40,7 +38,7 @@ export function AssetList({ kind, assets, onDelete }: AssetListProps) {
                 {formatTime(asset.created_at)}
               </div>
             </div>
-            <MoreMenu actions={deleteActions(asset, onDelete)} label={`${asset.name} 的操作`} />
+            <MoreMenu actions={assetActions(asset, onEdit, onDelete)} label={`${asset.name} 的操作`} />
           </article>
         ))}
       </div>
@@ -75,7 +73,7 @@ export function AssetList({ kind, assets, onDelete }: AssetListProps) {
               <SourceBadge source={asset.source} kind={asset.kind} />
             </div>
             <div className="absolute top-1.5 right-1.5 rounded-md bg-background/70 backdrop-blur-sm">
-              <MoreMenu actions={deleteActions(asset, onDelete)} label={`${asset.name} 的操作`} />
+              <MoreMenu actions={assetActions(asset, onEdit, onDelete)} label={`${asset.name} 的操作`} />
             </div>
           </div>
 

@@ -18,6 +18,7 @@ from .schemas import (
     AssetList,
     AssetOut,
     AssetSource,
+    AssetUpdate,
     TextAssetCreate,
 )
 
@@ -147,6 +148,20 @@ class AssetService:
     def get(self, asset_id: int) -> AssetOut:
         with self._scope() as session:
             return _to_out(self._find(session, asset_id))
+
+    def update(self, asset_id: int, payload: AssetUpdate) -> AssetOut:
+        changes = payload.model_dump(exclude_unset=True, exclude_none=True)
+        if not changes:
+            raise InvalidArgument("没有需要更新的字段")
+
+        with self._scope() as session:
+            row = self._find(session, asset_id)
+            if "text_content" in changes and row.kind != AssetKind.text.value:
+                raise InvalidArgument("只有文本资产可以修改内容")
+            for field, value in changes.items():
+                setattr(row, field, value)
+            session.flush()
+            return _to_out(row)
 
     def get_row_for_content(self, asset_id: int) -> tuple[str, str]:
         """返回（相对路径, mime），供文件下载使用。"""

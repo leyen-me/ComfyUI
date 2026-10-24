@@ -92,3 +92,12 @@ class TextAssetCreate(BaseModel):
     kind: Literal["text"] = "text"
     name: str = Field(min_length=1, max_length=200)
     content: str = Field(default="", max_length=200_000)
+
+
+class AssetUpdate(BaseModel):
+    """改名对所有资产可用；改内容仅限文本资产。"""
+
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    name: str | None = Field(default=None, min_length=1, max_length=200)
+    text_content: str | None = Field(default=None, max_length=200_000)

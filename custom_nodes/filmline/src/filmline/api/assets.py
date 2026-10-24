@@ -5,6 +5,7 @@
     POST   /studio/api/projects/{ref}/assets            新建文本资产
     POST   /studio/api/projects/{ref}/assets/upload     上传图片/视频（source=user|ai）
     GET    /studio/api/assets/{id}/content              文件内容
+    PATCH  /studio/api/assets/{id}                      改名 / 改文本内容
     DELETE /studio/api/assets/{id}                      软删除
 """
 
@@ -20,7 +21,7 @@ from aiohttp import web
 from .. import storage
 from ..domain.assets import AssetService
 from ..domain.projects import ProjectService
-from ..domain.schemas import AssetKind, AssetSource, TextAssetCreate
+from ..domain.schemas import AssetKind, AssetSource, AssetUpdate, TextAssetCreate
 from ..errors import InvalidArgument, NotFound
 from .http import handle_errors, ok, parse_int, read_object
 
@@ -181,6 +182,14 @@ def register_asset_routes(routes: web.RouteTableDef) -> None:
                 "Cache-Control": "private, max-age=3600",
             },
         )
+
+    @routes.patch("/studio/api/assets/{asset_id}")
+    @handle_errors
+    async def update_asset(request: web.Request) -> web.Response:
+        asset_id = _asset_id(request)
+        payload = AssetUpdate.model_validate(await read_object(request))
+        asset = await asyncio.to_thread(service.update, asset_id, payload)
+        return ok(asset.model_dump(mode="json"))
 
     @routes.delete("/studio/api/assets/{asset_id}")
     @handle_errors

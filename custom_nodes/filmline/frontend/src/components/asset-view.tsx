@@ -6,7 +6,7 @@ import { ApiError, api, type Asset, type AssetKind, type Project } from '@/lib/a
 import { ASSET_KINDS, assetKindMeta } from '@/lib/asset-kinds'
 import { useAssets } from '@/hooks/use-assets'
 import { AssetList } from './asset-list'
-import { TextAssetDialog } from './text-asset-dialog'
+import { AssetDialog } from './asset-dialog'
 import { Toast, type ToastMessage } from './toast'
 import { Button } from './ui/button'
 import { Dialog } from './ui/dialog'
@@ -28,7 +28,8 @@ export function AssetView({ project, onChanged }: AssetViewProps) {
   const meta = assetKindMeta(kind)
 
   const { data, loading, error, reload } = useAssets(project.code, kind)
-  const [textOpen, setTextOpen] = useState(false)
+  const [creating, setCreating] = useState(false)
+  const [editing, setEditing] = useState<Asset | null>(null)
   const [pendingDelete, setPendingDelete] = useState<Asset | null>(null)
   const [deleting, setDeleting] = useState(false)
   const [uploading, setUploading] = useState(false)
@@ -89,7 +90,7 @@ export function AssetView({ project, onChanged }: AssetViewProps) {
 
         <div className="ml-auto">
           {kind === 'text' ? (
-            <Button size="sm" variant="secondary" onClick={() => setTextOpen(true)}>
+            <Button size="sm" variant="secondary" onClick={() => setCreating(true)}>
               <Plus className="size-3.5" />
               新建
             </Button>
@@ -148,16 +149,27 @@ export function AssetView({ project, onChanged }: AssetViewProps) {
         ) : null}
 
         {assets.length > 0 ? (
-          <AssetList kind={kind} assets={assets} onDelete={setPendingDelete} />
+          <AssetList
+              kind={kind}
+              assets={assets}
+              onEdit={setEditing}
+              onDelete={setPendingDelete}
+            />
         ) : null}
       </div>
 
-      <TextAssetDialog
-        open={textOpen}
+      <AssetDialog
+        open={creating || editing !== null}
         projectRef={project.code}
-        onOpenChange={setTextOpen}
-        onCreated={(asset) => {
-          notify(`已创建「${asset.name}」`)
+        asset={editing}
+        onOpenChange={(open) => {
+          if (!open) {
+            setCreating(false)
+            setEditing(null)
+          }
+        }}
+        onSaved={(asset, created) => {
+          notify(created ? `已创建「${asset.name}」` : '已保存')
           reload()
           onChanged()
         }}

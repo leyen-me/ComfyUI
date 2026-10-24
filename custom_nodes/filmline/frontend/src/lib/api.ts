@@ -202,6 +202,12 @@ export const api = {
         return unwrap<Asset>(response)
       },
 
+      update: (assetId: number, patch: { name?: string; text_content?: string }) =>
+        request<Asset>(`/assets/${assetId}`, {
+          method: 'PATCH',
+          body: JSON.stringify(patch),
+        }),
+
       remove: (assetId: number) =>
         request<void>(`/assets/${assetId}`, { method: 'DELETE' }),
     },
