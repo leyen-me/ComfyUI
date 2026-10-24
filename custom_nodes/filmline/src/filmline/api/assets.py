@@ -18,7 +18,7 @@ from uuid import uuid4
 
 from aiohttp import web
 
-from .. import storage
+from .. import media, storage
 from ..domain.assets import AssetService
 from ..domain.episodes import EpisodeService
 from ..domain.projects import ProjectService
@@ -164,6 +164,27 @@ def register_asset_routes(routes: web.RouteTableDef) -> None:
             meta = _parse_meta(request.query.get("meta"))
             name = request.query.get("name") or original_name
 
+            if kind in (AssetKind.video, AssetKind.audio):
+                # 探测只用于补全元数据；失败不阻塞上传，引用时生成接口会再次严格校验
+                try:
+                    info = await asyncio.to_thread(media.probe, tmp_path)
+                except InvalidArgument:
+                    info = None
+                if info is not None:
+                    merged = dict(meta or {})
+                    merged.update(
+                        {
+                            "duration": info.duration,
+                            "fps": info.fps,
+                            "has_audio": info.has_audio,
+                            "width": info.width,
+                            "height": info.height,
+                            "sample_rate": info.sample_rate,
+                            "channels": info.channels,
+                        }
+                    )
+                    meta = merged
+
             relative, target = storage.allocate(project_id, scope, suffix)
             tmp_path.replace(target)
 
@@ -206,6 +227,19 @@ def register_asset_routes(routes: web.RouteTableDef) -> None:
                 "Cache-Control": "private, max-age=3600",
             },
         )
+
+    @routes.get("/studio/api/assets/{asset_id}/media-info")
+    @handle_errors
+    async def asset_media_info(request: web.Request) -> web.Response:
+        asset = await asyncio.to_thread(service.get, _asset_id(request))
+        if asset.kind not in (AssetKind.video.value, AssetKind.audio.value):
+            raise InvalidArgument("只有视频或音频资产可以探测媒体信息")
+        relative, _ = await asyncio.to_thread(service.get_row_for_content, asset.id)
+        path = storage.resolve(relative)
+        if not path.is_file():
+            raise NotFound("资产文件已丢失")
+        info = await asyncio.to_thread(media.probe, path)
+        return ok(info.as_dict())
 
     @routes.patch("/studio/api/assets/{asset_id}")
     @handle_errors

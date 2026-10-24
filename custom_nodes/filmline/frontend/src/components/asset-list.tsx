@@ -1,3 +1,4 @@
+import type { DragEvent } from 'react'
 import { Maximize2 } from 'lucide-react'
 
 import type { Asset, AssetKind } from '@/lib/api'
@@ -15,6 +16,28 @@ interface AssetListProps {
   onDelete: (asset: Asset) => void
   onCopyPrompt: (prompt: string) => void
   onReusePrompt: (asset: Asset) => void
+}
+
+function startAssetDrag(event: DragEvent<HTMLElement>, asset: Asset) {
+  if (asset.kind === 'text' || !asset.content_url) {
+    event.preventDefault()
+    return
+  }
+  const meta = (asset.meta ?? {}) as {
+    fps?: number
+    duration?: number
+    has_audio?: boolean
+  }
+  setAssetDrag(event.dataTransfer, {
+    assetId: asset.id,
+    src: asset.content_url,
+    name: asset.name,
+    kind: asset.kind,
+    source: asset.source,
+    fps: typeof meta.fps === 'number' ? meta.fps : undefined,
+    duration: typeof meta.duration === 'number' ? meta.duration : undefined,
+    hasAudio: typeof meta.has_audio === 'boolean' ? meta.has_audio : undefined,
+  })
 }
 
 function buildActions(
@@ -88,7 +111,13 @@ export function AssetList({
     return (
       <div className="flex flex-col gap-3">
         {assets.map((asset) => (
-          <article key={asset.id} className="rounded-xl border border-border bg-card p-3">
+          <article
+            key={asset.id}
+            draggable
+            title="可拖到右侧参考素材区"
+            onDragStart={(event) => startAssetDrag(event, asset)}
+            className="cursor-grab rounded-xl border border-border bg-card p-3 active:cursor-grabbing"
+          >
             <div className="flex items-start gap-2">
               <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-center gap-1.5">
@@ -106,6 +135,7 @@ export function AssetList({
             <audio
               controls
               preload="metadata"
+              draggable={false}
               src={asset.content_url ?? ''}
               className="mt-2 w-full"
             />
@@ -121,26 +151,8 @@ export function AssetList({
         <article
           key={asset.id}
           draggable
-          onDragStart={(event) => {
-            if (asset.kind !== 'image' && asset.kind !== 'video') {
-              event.preventDefault()
-              return
-            }
-            const src = asset.content_url
-            if (!src) {
-              event.preventDefault()
-              return
-            }
-            const meta = (asset.meta ?? {}) as { fps?: number }
-            setAssetDrag(event.dataTransfer, {
-              assetId: asset.id,
-              src,
-              name: asset.name,
-              kind: asset.kind,
-              source: asset.source,
-              fps: typeof meta.fps === 'number' ? meta.fps : undefined,
-            })
-          }}
+          title="可拖到右侧首帧/尾帧或参考素材区"
+          onDragStart={(event) => startAssetDrag(event, asset)}
           className="group cursor-grab overflow-hidden rounded-xl border border-border bg-card transition-colors hover:border-primary/40 active:cursor-grabbing"
         >
           <div className="group/vid relative aspect-video bg-muted">

@@ -166,6 +166,16 @@ export interface TextAssetInput {
   content?: string
 }
 
+export interface MediaInfo {
+  duration: number
+  fps: number | null
+  has_audio: boolean
+  width: number | null
+  height: number | null
+  sample_rate: number | null
+  channels: number | null
+}
+
 export const api = {
   health: (signal?: AbortSignal) => request<HealthInfo>('/health', { signal }),
 
@@ -206,6 +216,9 @@ export const api = {
 
       get: (assetId: number, signal?: AbortSignal) =>
         request<Asset>(`/assets/${assetId}`, { signal }),
+
+      mediaInfo: (assetId: number, signal?: AbortSignal) =>
+        request<MediaInfo>(`/assets/${assetId}/media-info`, { signal }),
 
       counts: (
         ref: string | number,
@@ -287,8 +300,12 @@ export const api = {
                 duration: number
                 first_frame_id?: number | null
                 last_frame_id?: number | null
-                /** 参考生成模式的图片资产 id（顺序即 <Picture N>）；首尾帧模式兼容旧客户端最多 1 张 */
+                /** 参考图 id（顺序即 <Picture N>）；首尾帧模式兼容旧客户端最多 1 张 */
                 refs?: number[]
+                /** 参考视频；use_audio 决定是否把原声作为 <Audio j> */
+                ref_videos?: Array<{ asset_id: number; use_audio: boolean }>
+                /** 独立参考音频 */
+                ref_audios?: number[]
               },
         episode?: string,
       ) => {

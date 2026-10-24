@@ -250,6 +250,77 @@ class ReferenceVideoWorkflowTest(unittest.TestCase):
         self.assertEqual(wf.meta["steps"], 8)
         self.assertEqual(wf.meta["fps"], 24)
 
+    def test_video_and_audio_refs(self) -> None:
+        wf = generation.video_reference_workflow(
+            prompt="让 <Video 1> 的运镜延续，音色参考 <Audio 1>",
+            size="16:9",
+            duration=5,
+            refs=["4/project/image.png"],
+            ref_videos=[
+                generation.VideoReference(path="4/project/v1.mp4", use_audio=True),
+                generation.VideoReference(path="4/project/v2.mp4", use_audio=False),
+            ],
+            ref_audios=["4/project/a1.wav"],
+            seed=5,
+        )
+        graph = wf.prompt
+
+        self.assertEqual(graph["7"]["inputs"]["ref_images"]["ref_image_0"], ["14", 0])
+        self.assertEqual(graph["15"]["class_type"], "FilmlineLoadVideo")
+        self.assertEqual(graph["15"]["inputs"]["path"], "4/project/v1.mp4")
+        self.assertEqual(graph["15"]["inputs"]["max_seconds"], 5.0)
+        self.assertEqual(graph["15"]["inputs"]["require_audio"], True)
+        self.assertEqual(graph["16"]["inputs"]["require_audio"], False)
+        self.assertEqual(graph["7"]["inputs"]["ref_videos"]["ref_video_0"], ["15", 0])
+        self.assertEqual(graph["7"]["inputs"]["ref_videos"]["ref_video_1"], ["16", 0])
+        self.assertEqual(
+            graph["7"]["inputs"]["ref_video_audios"]["ref_video_audio_0"], ["15", 1]
+        )
+        self.assertNotIn("ref_video_audio_1", graph["7"]["inputs"]["ref_video_audios"])
+        self.assertEqual(graph["17"]["class_type"], "FilmlineLoadAudio")
+        self.assertEqual(graph["7"]["inputs"]["ref_audios"]["ref_audio_0"], ["17", 0])
+        self.assertEqual(wf.meta["refs"], 1)
+        self.assertEqual(wf.meta["ref_videos"], 2)
+        self.assertEqual(wf.meta["ref_audios"], 1)
+
+    def test_reference_without_images(self) -> None:
+        wf = generation.video_reference_workflow(
+            prompt="x",
+            size="16:9",
+            duration=5,
+            ref_videos=[generation.VideoReference(path="v.mp4", use_audio=False)],
+        )
+        self.assertNotIn("ref_images", wf.prompt["7"]["inputs"])
+        self.assertEqual(wf.prompt["14"]["class_type"], "FilmlineLoadVideo")
+
+    def test_video_audio_limits(self) -> None:
+        with self.assertRaises(InvalidArgument):
+            generation.video_reference_workflow(
+                prompt="x",
+                size="16:9",
+                duration=5,
+                ref_videos=[
+                    generation.VideoReference(path=f"{index}.mp4")
+                    for index in range(generation.MAX_VIDEO_VIDEOS + 1)
+                ],
+            )
+        with self.assertRaises(InvalidArgument):
+            generation.video_reference_workflow(
+                prompt="x",
+                size="16:9",
+                duration=5,
+                ref_audios=[f"{index}.wav" for index in range(generation.MAX_VIDEO_AUDIOS + 1)],
+            )
+        with self.assertRaises(InvalidArgument):
+            generation.video_reference_workflow(
+                prompt="x",
+                size="16:9",
+                duration=5,
+                refs=[f"{index}.png" for index in range(9)],
+                ref_videos=[generation.VideoReference(path="v.mp4")] * 2,
+                ref_audios=["a.wav"] * 2,
+            )
+
     def test_ref_image_size_option(self) -> None:
         wf = generation.video_reference_workflow(
             prompt="x", size="9:16", duration=10, refs=["a.png"], ref_image_size="max"

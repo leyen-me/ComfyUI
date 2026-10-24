@@ -13,6 +13,10 @@ export interface AssetDragPayload {
   source?: AssetSource
   /** 视频帧率，用于逐帧选择；未知时按 24fps 处理 */
   fps?: number
+  /** 视频/音频时长（秒），来自资产 meta 或探测接口 */
+  duration?: number
+  /** 视频是否带音轨 */
+  hasAudio?: boolean
 }
 
 export function setAssetDrag(dataTransfer: DataTransfer, payload: AssetDragPayload): void {
@@ -45,6 +49,9 @@ export function readAssetDrag(dataTransfer: DataTransfer | null): AssetDragPaylo
       kind,
       source: value.source === 'ai' ? 'ai' : value.source === 'user' ? 'user' : undefined,
       fps: typeof value.fps === 'number' && value.fps > 0 ? value.fps : undefined,
+      duration:
+        typeof value.duration === 'number' && value.duration > 0 ? value.duration : undefined,
+      hasAudio: typeof value.hasAudio === 'boolean' ? value.hasAudio : undefined,
     }
   } catch {
     return null

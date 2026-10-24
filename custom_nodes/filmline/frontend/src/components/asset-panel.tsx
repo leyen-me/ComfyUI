@@ -124,6 +124,9 @@ export function AssetPanel({
               meta.last_frame_id ??
               (meta.video_mode === 'keyframes' ? meta.ref_ids?.[1] : undefined) ??
               undefined,
+            videoRefIds: meta.ref_video_ids ?? [],
+            videoUseAudio: meta.ref_video_use_audio ?? [],
+            audioRefIds: meta.ref_audio_ids ?? [],
           }
         : {}),
     })

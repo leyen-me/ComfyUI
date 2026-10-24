@@ -69,6 +69,7 @@ npm run test:logic   # 纯函数单测（页码计算）
 | POST | `/studio/api/projects/{ref}/assets/upload` | 上传图片/视频/音频，`?source=user\|ai&episode=EP01` |
 | PATCH | `/studio/api/assets/{id}` | 改名（全部）与改正文（仅文本） |
 | GET | `/studio/api/assets/{id}/content` | 资产文件内容 |
+| GET | `/studio/api/assets/{id}/media-info` | 视频/音频时长、帧率、音轨与采样信息 |
 | DELETE | `/studio/api/assets/{id}` | 软删除资产 |
 | GET | `/studio/api/health` | 版本、库路径、schema 版本、项目数 |
 
@@ -118,12 +119,16 @@ ComfyUI/user/filmline/
   把视频拖进槽位会打开选帧对话框，截取任意一帧保存为图片资产后作为首/尾帧，用于连续镜头。
   连贯镜头的常用做法：把上一段视频拖到首帧槽位，点「末帧」，用这一帧作为下一段的首帧。
   请求字段：`mode=keyframes`、`first_frame_id`、`last_frame_id`。
-- **参考生成**（已实现图片，`ref2va`）：参考图 ≤9，顺序决定提示词里的 `<Picture 1>`…`<Picture N>`；
-  参考图不会锁定第 0 帧。请求字段：`mode=reference`、`refs=[资产 id…]`，使用 8 步 turbo。
-  参考视频（≤3）与参考音频（≤3，合计 ≤12）仍待接入。
+- **参考生成**（已实现图片/视频/音频，`ref2va`）：图片 ≤9、视频 ≤3、独立音频 ≤3，所有文件合计 ≤12；
+  视频/音频每段 2–15 秒，视频总时长 ≤15 秒、音频总时长 ≤15 秒。顺序决定提示词里的
+  `<Picture i>`、`<Video k>`、`<Audio j>`；参考素材不会锁定第 0 帧。请求字段：
+  `mode=reference`、`refs=[图片 id]`、`ref_videos=[{asset_id, use_audio}]`、`ref_audios=[音频 id]`。
+  参考视频会重采样到 24fps、短边压到 512 并截断到输出时长；视频原声占用一个 `<Audio j>`，
+  独立音频排在所有原声之后。当前使用 8 步 turbo。
 
 生成结果 `meta` 会记录 `video_mode`、`first_frame_id` / `last_frame_id`（首尾帧）或
-`ref_ids`（参考图顺序），并保留 `ref_ids` 供前端还原；旧视频资产只有 `ref_ids` 时按首帧兼容。
+`ref_ids` / `ref_video_ids` / `ref_video_use_audio` / `ref_audio_ids`（参考素材），供前端还原；
+旧视频资产只有 `ref_ids` 时按首帧兼容。
 
 ## 目录
 

@@ -17,6 +17,10 @@ export interface ReusePromptDetail {
   videoMode?: 'keyframes' | 'reference'
   firstFrameId?: number
   lastFrameId?: number
+  /** 参考视频/音频 id 与视频原声开关 */
+  videoRefIds?: number[]
+  videoUseAudio?: boolean[]
+  audioRefIds?: number[]
 }
 
 export function emitAssetsChanged(): void {

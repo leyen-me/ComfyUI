@@ -21,6 +21,10 @@ export interface GenerationMeta {
   derived_from_asset_id?: number
   frame_time?: number
   origin?: string
+  /** 参考视频/音频记录 */
+  ref_video_ids?: number[]
+  ref_video_use_audio?: boolean[]
+  ref_audio_ids?: number[]
   model?: string
 }
 

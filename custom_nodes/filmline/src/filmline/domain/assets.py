@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import datetime
 
 from sqlalchemy import func, select
@@ -26,6 +27,14 @@ from .schemas import (
 
 MAX_LIST = 200
 MAX_NAME = 200
+
+
+@dataclass(frozen=True)
+class ResolvedAsset:
+    id: int
+    path: str
+    kind: str
+    name: str
 
 
 def content_url(asset: Asset) -> str | None:
@@ -171,19 +180,20 @@ class AssetService:
             session.flush()
             return _to_out(row)
 
-    def resolve_ref_paths(
+    def resolve_assets(
         self,
         project_id: int,
         asset_ids: list[int],
         *,
+        kinds: set[str],
         limit: int,
-        label: str = "参考图",
-    ) -> list[str]:
-        """把参考图 / 首尾帧 id 解析成存储路径，并校验归属与类型。"""
+        label: str,
+    ) -> list[ResolvedAsset]:
+        """按 id 顺序解析资产，并校验归属、类型与文件存在。"""
         if not asset_ids:
             return []
         if len(asset_ids) > limit:
-            raise InvalidArgument(f"{label}最多 {limit} 张")
+            raise InvalidArgument(f"{label}最多 {limit} 个")
         if len(set(asset_ids)) != len(asset_ids):
             raise InvalidArgument(f"{label}有重复")
 
@@ -201,17 +211,35 @@ class AssetService:
                 raise NotFound(f"{label}不存在")
 
             by_id = {row.id: row for row in rows}
-            paths: list[str] = []
+            resolved: list[ResolvedAsset] = []
             for asset_id in asset_ids:
                 row = by_id[asset_id]
                 if row.project_id != project_id:
                     raise InvalidArgument(f"{label}不属于当前项目")
-                if row.kind != AssetKind.image.value:
-                    raise InvalidArgument(f"{label}必须是图片资产")
+                if row.kind not in kinds:
+                    expected = " / ".join(sorted(kinds))
+                    raise InvalidArgument(f"{label}必须是 {expected} 资产")
                 if not row.file_path:
                     raise InvalidArgument(f"{label}缺少文件")
-                paths.append(row.file_path)
-            return paths
+                resolved.append(
+                    ResolvedAsset(id=row.id, path=row.file_path, kind=row.kind, name=row.name)
+                )
+            return resolved
+
+    def resolve_ref_paths(
+        self, project_id: int, asset_ids: list[int], *, limit: int, label: str = "参考图"
+    ) -> list[str]:
+        """兼容旧调用：只解析图片，返回路径。"""
+        return [
+            item.path
+            for item in self.resolve_assets(
+                project_id,
+                asset_ids,
+                kinds={AssetKind.image.value},
+                limit=limit,
+                label=label,
+            )
+        ]
 
     def get(self, asset_id: int) -> AssetOut:
         with self._scope() as session:

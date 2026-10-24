@@ -7,12 +7,20 @@ import type { AssetDragPayload } from '@/lib/asset-drag'
 import type { KeyframeSlot } from '@/lib/keyframes'
 import { buildPromptDoc, type RefAsset } from '@/lib/prompt'
 import {
+  EMPTY_REFERENCES,
+  MAX_REFERENCE_AUDIOS,
+  MAX_REFERENCE_FILES,
   MAX_REFERENCE_IMAGES,
+  MAX_REFERENCE_VIDEOS,
+  addAudio,
   addReference,
   addReferences,
+  addVideo,
   moveReference,
   reorderReference,
   removeReference,
+  totalReferences,
+  type ReferenceLists,
 } from '@/lib/references'
 import { emitAssetsChanged, REUSE_PROMPT, type ReusePromptDetail } from '@/lib/events'
 import { cn } from '@/lib/utils'
@@ -29,7 +37,10 @@ import { Button } from './ui/button'
 type Mode = 'image' | 'video'
 type VideoMode = 'keyframes' | 'reference'
 type DraftKey = 'image' | 'keyframes' | 'reference'
-type PickerState = { type: 'keyframe'; slot: KeyframeSlot } | { type: 'reference' } | null
+type PickerState =
+  | { type: 'keyframe'; slot: KeyframeSlot }
+  | { type: 'reference'; kind: 'image' | 'video' | 'audio' }
+  | null
 
 const COUNTS = [1, 2, 3, 4]
 const DURATIONS = [5, 10]
@@ -58,7 +69,9 @@ export function GenerationPanel({ project, episodeCode }: GenerationPanelProps) 
   const [videoMode, setVideoMode] = useState<VideoMode>('keyframes')
   const [value, setValue] = useState<PromptValue>(EMPTY_VALUE)
   const [keyframes, setKeyframes] = useState<Keyframes>(EMPTY_KEYFRAMES)
-  const [references, setReferences] = useState<AssetDragPayload[]>([])
+  const [referenceLists, setReferenceLists] = useState<ReferenceLists>(EMPTY_REFERENCES)
+  const referenceListsRef = useRef<ReferenceLists>(EMPTY_REFERENCES)
+  referenceListsRef.current = referenceLists
   const [picker, setPicker] = useState<PickerState>(null)
   const [videoFrame, setVideoFrame] = useState<{
     slot: KeyframeSlot
@@ -88,7 +101,8 @@ export function GenerationPanel({ project, episodeCode }: GenerationPanelProps) 
   const hasRefs = mode === 'image' && value.refs.length > 0
   const maxRefs = mode === 'image' ? MAX_IMAGE_REFS : 0
   const isReferenceMode = mode === 'video' && videoMode === 'reference'
-  const missingReference = isReferenceMode && references.length === 0
+  const referenceTotal = totalReferences(referenceLists)
+  const missingReference = isReferenceMode && referenceTotal === 0
   const keyframeHint =
     mode === 'video' && videoMode === 'keyframes'
       ? keyframes.first && keyframes.last
@@ -99,8 +113,26 @@ export function GenerationPanel({ project, episodeCode }: GenerationPanelProps) 
             ? '尾帧已锁定'
             : null
       : null
-  const referenceHint =
-    isReferenceMode && references.length > 0 ? `已引用 ${references.length} 张参考图` : null
+  const referenceHint = isReferenceMode && referenceTotal > 0 ? `已引用 ${referenceTotal} 个参考素材` : null
+  const pickerKind = picker?.type === 'reference' ? picker.kind : 'image'
+  const pickerLimit =
+    pickerKind === 'image'
+      ? MAX_REFERENCE_IMAGES
+      : pickerKind === 'video'
+        ? MAX_REFERENCE_VIDEOS
+        : MAX_REFERENCE_AUDIOS
+  const pickerItems =
+    pickerKind === 'image'
+      ? referenceLists.images
+      : pickerKind === 'video'
+        ? referenceLists.videos
+        : referenceLists.audios
+  const pickerMax = Math.max(
+    0,
+    Math.min(pickerLimit - pickerItems.length, MAX_REFERENCE_FILES - referenceTotal),
+  )
+  const pickerTitle =
+    pickerKind === 'image' ? '添加参考图片' : pickerKind === 'video' ? '添加参考视频' : '添加参考音频'
 
   useEffect(() => {
     return () => {
@@ -165,21 +197,88 @@ export function GenerationPanel({ project, episodeCode }: GenerationPanelProps) 
         if (detail.duration === 5 || detail.duration === 10) setDuration(detail.duration)
 
         if (targetVideoMode === 'reference') {
-          const refIds = detail.refIds ?? []
-          if (refIds.length === 0) {
-            setReferences([])
-            setError('这条视频没有可还原的参考图')
-          } else {
-            const loaded = await Promise.all(
-              refIds.map((assetId) => api.projects.assets.get(assetId).catch(() => null)),
-            )
-            const payloads = loaded
-              .map((asset) => toDragPayload(asset))
-              .filter((asset): asset is AssetDragPayload => Boolean(asset))
-            setReferences(payloads.slice(0, MAX_REFERENCE_IMAGES))
-            if (payloads.length !== refIds.length) {
-              setError('部分参考图资产已删除，已跳过')
-            }
+          const imageIds = detail.refIds ?? []
+          const videoIds = detail.videoRefIds ?? []
+          const audioIds = detail.audioRefIds ?? []
+          const useAudio = detail.videoUseAudio ?? []
+
+          const [imageAssets, videoAssets, audioAssets] = await Promise.all([
+            Promise.all(
+              imageIds.map((assetId) => api.projects.assets.get(assetId).catch(() => null)),
+            ),
+            Promise.all(
+              videoIds.map((assetId) => api.projects.assets.get(assetId).catch(() => null)),
+            ),
+            Promise.all(
+              audioIds.map((assetId) => api.projects.assets.get(assetId).catch(() => null)),
+            ),
+          ])
+
+          const images = imageAssets
+            .map((asset) => toDragPayload(asset))
+            .filter((asset): asset is AssetDragPayload => Boolean(asset) && asset?.kind === 'image')
+          const videos = await Promise.all(
+            videoAssets.map(async (asset, index) => {
+              const payload = toDragPayload(asset)
+              if (!payload || payload.kind !== 'video') return null
+              let duration = payload.duration
+              let hasAudio = payload.hasAudio
+              let fps = payload.fps
+              if (duration === undefined || hasAudio === undefined) {
+                try {
+                  const info = await api.projects.assets.mediaInfo(payload.assetId)
+                  duration = info.duration
+                  hasAudio = info.has_audio
+                  fps = info.fps ?? fps
+                } catch {
+                  /* 探测失败仍允许还原，生成时会再次校验 */
+                }
+              }
+              return {
+                ...payload,
+                duration,
+                hasAudio,
+                fps,
+                useAudio: Boolean(useAudio[index] ?? hasAudio) && hasAudio !== false,
+              }
+            }),
+          )
+          const audios = await Promise.all(
+            audioAssets.map(async (asset) => {
+              const payload = toDragPayload(asset)
+              if (!payload || payload.kind !== 'audio') return null
+              let duration = payload.duration
+              if (duration === undefined) {
+                try {
+                  const info = await api.projects.assets.mediaInfo(payload.assetId)
+                  duration = info.duration
+                } catch {
+                  /* 同上 */
+                }
+              }
+              return { ...payload, duration }
+            }),
+          )
+
+          const next: ReferenceLists = {
+            images: images.slice(0, MAX_REFERENCE_IMAGES),
+            videos: videos
+              .filter((item): item is NonNullable<typeof item> => Boolean(item))
+              .slice(0, MAX_REFERENCE_VIDEOS),
+            audios: audios
+              .filter((item): item is NonNullable<typeof item> => Boolean(item))
+              .slice(0, MAX_REFERENCE_AUDIOS),
+          }
+          referenceListsRef.current = next
+          setReferenceLists(next)
+          if (totalReferences(next) === 0) {
+            setError('这条视频没有可还原的参考素材')
+          } else if (
+            images.length !== imageIds.length ||
+            videos.some((item) => !item) ||
+            audios.some((item) => !item)
+          ) {
+            setError('部分参考素材资产已删除，已跳过')
           }
         } else {
           // 新数据用显式首尾帧字段；旧视频资产只有 ref_ids（最多 1 个），按首帧还原
@@ -268,20 +367,145 @@ export function GenerationPanel({ project, episodeCode }: GenerationPanelProps) 
     setVideoFrame(null)
   }
 
-  function addReferenceAsset(asset: AssetDragPayload) {
-    const result = addReference(references, asset)
-    setReferences(result.list)
-    setError(result.error ?? null)
+  function commitReferences(next: ReferenceLists) {
+    referenceListsRef.current = next
+    setReferenceLists(next)
   }
 
-  function addReferenceAssets(assets: Asset[]) {
+  async function enrichMedia(asset: AssetDragPayload) {
+    if (asset.kind === 'image') return asset
+    if (asset.duration !== undefined && asset.hasAudio !== undefined) return asset
+    try {
+      const info = await api.projects.assets.mediaInfo(asset.assetId)
+      return {
+        ...asset,
+        duration: info.duration,
+        hasAudio: info.has_audio,
+        fps: info.fps ?? asset.fps,
+      }
+    } catch {
+      return asset
+    }
+  }
+
+  async function addReferenceAsset(asset: AssetDragPayload) {
+    if (asset.kind === 'image') {
+      const result = addReference(
+        referenceListsRef.current.images,
+        asset,
+        totalReferences(referenceListsRef.current),
+      )
+      commitReferences({ ...referenceListsRef.current, images: result.list })
+      setError(result.error ?? null)
+      return
+    }
+
+    const enriched = await enrichMedia(asset)
+    const current = referenceListsRef.current
+    if (enriched.kind === 'video') {
+      const result = addVideo(current, enriched, {
+        duration: enriched.duration,
+        hasAudio: enriched.hasAudio,
+        fps: enriched.fps,
+      })
+      commitReferences({ ...current, videos: result.list })
+      setError(result.error ?? null)
+    } else {
+      const result = addAudio(current, enriched, { duration: enriched.duration })
+      commitReferences({ ...current, audios: result.list })
+      setError(result.error ?? null)
+    }
+  }
+
+  async function addReferenceAssets(assets: Asset[], kind: 'image' | 'video' | 'audio') {
     const payloads = assets
       .map((asset) => toDragPayload(asset))
       .filter((asset): asset is AssetDragPayload => Boolean(asset))
-    const result = addReferences(references, payloads)
-    setReferences(result.list)
-    setError(result.error ?? null)
+
+    if (kind === 'image') {
+      const result = addReferences(
+        referenceListsRef.current.images,
+        payloads,
+        totalReferences(referenceListsRef.current),
+      )
+      commitReferences({ ...referenceListsRef.current, images: result.list })
+      setError(result.error ?? null)
+      setPicker(null)
+      return
+    }
+
+    let next = referenceListsRef.current
+    let error: string | undefined
+    for (const payload of payloads) {
+      const enriched = await enrichMedia(payload)
+      if (kind === 'video') {
+        const result = addVideo(next, enriched, {
+          duration: enriched.duration,
+          hasAudio: enriched.hasAudio,
+          fps: enriched.fps,
+        })
+        next = { ...next, videos: result.list }
+        error = result.error
+        if (error) break
+      } else {
+        const result = addAudio(next, enriched, { duration: enriched.duration })
+        next = { ...next, audios: result.list }
+        error = result.error
+        if (error) break
+      }
+    }
+    commitReferences(next)
+    setError(error ?? null)
     setPicker(null)
+  }
+
+  function removeReferenceItem(kind: 'image' | 'video' | 'audio', index: number) {
+    const current = referenceListsRef.current
+    if (kind === 'image') {
+      commitReferences({ ...current, images: removeReference(current.images, index) })
+    } else if (kind === 'video') {
+      commitReferences({ ...current, videos: removeReference(current.videos, index) })
+    } else {
+      commitReferences({ ...current, audios: removeReference(current.audios, index) })
+    }
+  }
+
+  function moveReferenceItem(
+    kind: 'image' | 'video' | 'audio',
+    index: number,
+    delta: -1 | 1,
+  ) {
+    const current = referenceListsRef.current
+    if (kind === 'image') {
+      commitReferences({ ...current, images: moveReference(current.images, index, delta) })
+    } else if (kind === 'video') {
+      commitReferences({ ...current, videos: moveReference(current.videos, index, delta) })
+    } else {
+      commitReferences({ ...current, audios: moveReference(current.audios, index, delta) })
+    }
+  }
+
+  function reorderReferenceItem(
+    kind: 'image' | 'video' | 'audio',
+    from: number,
+    to: number,
+  ) {
+    const current = referenceListsRef.current
+    if (kind === 'image') {
+      commitReferences({ ...current, images: reorderReference(current.images, from, to) })
+    } else if (kind === 'video') {
+      commitReferences({ ...current, videos: reorderReference(current.videos, from, to) })
+    } else {
+      commitReferences({ ...current, audios: reorderReference(current.audios, from, to) })
+    }
+  }
+
+  function toggleVideoAudio(index: number) {
+    const current = referenceListsRef.current
+    const videos = current.videos.map((video, cursor) =>
+      cursor === index ? { ...video, useAudio: !video.useAudio } : video,
+    )
+    commitReferences({ ...current, videos })
   }
 
   function handlePicked(asset: Asset) {
@@ -299,9 +523,26 @@ export function GenerationPanel({ project, episodeCode }: GenerationPanelProps) 
     if (running) return
     const current = editorRef.current?.getValue() ?? value
     if (!current.text.trim()) return
-    if (isReferenceMode && references.length === 0) {
-      setError('参考生成至少需要 1 张图片')
+    if (isReferenceMode && referenceTotal === 0) {
+      setError('参考生成至少需要 1 个素材')
       return
+    }
+    if (isReferenceMode) {
+      const badDuration = [...referenceLists.videos, ...referenceLists.audios].some(
+        (item) => item.duration !== undefined && (item.duration < 1.95 || item.duration > 15.05),
+      )
+      const videoTotal = referenceLists.videos.reduce(
+        (sum, item) => sum + (item.duration ?? 0),
+        0,
+      )
+      const audioTotal = referenceLists.audios.reduce(
+        (sum, item) => sum + (item.duration ?? 0),
+        0,
+      )
+      if (badDuration || videoTotal > 15.05 || audioTotal > 15.05) {
+        setError('参考视频/音频每段需 2–15 秒，且视频、音频各自总时长不超过 15 秒')
+        return
+      }
     }
 
     setRunning(true)
@@ -341,7 +582,12 @@ export function GenerationPanel({ project, episodeCode }: GenerationPanelProps) 
                 prompt: current.text,
                 size: videoSize,
                 duration,
-                refs: references.map((item) => item.assetId),
+                refs: referenceLists.images.map((item) => item.assetId),
+                ref_videos: referenceLists.videos.map((item) => ({
+                  asset_id: item.assetId,
+                  use_audio: item.useAudio && item.hasAudio !== false,
+                })),
+                ref_audios: referenceLists.audios.map((item) => item.assetId),
               },
         episodeCode,
       )
@@ -394,7 +640,7 @@ export function GenerationPanel({ project, episodeCode }: GenerationPanelProps) 
                   </VideoModeTab>
                 </div>
                 <span className="ml-auto text-[10px] text-muted-foreground">
-                  {videoMode === 'keyframes' ? '留空即文生视频' : '参考图不锁定首帧'}
+                  {videoMode === 'keyframes' ? '留空即文生视频' : '参考素材不锁定首帧'}
                 </span>
               </div>
             ) : null}
@@ -419,18 +665,15 @@ export function GenerationPanel({ project, episodeCode }: GenerationPanelProps) 
 
             {isReferenceMode ? (
               <ReferenceTray
-                images={references}
+                lists={referenceLists}
                 disabled={running}
-                onAdd={() => setPicker({ type: 'reference' })}
+                onAdd={(kind) => setPicker({ type: 'reference', kind })}
                 onDropAsset={addReferenceAsset}
-                onRemove={(index) => setReferences((previous) => removeReference(previous, index))}
-                onMove={(index, delta) =>
-                  setReferences((previous) => moveReference(previous, index, delta))
-                }
-                onReorder={(from, to) =>
-                  setReferences((previous) => reorderReference(previous, from, to))
-                }
-                onInsertTag={(index) => editorRef.current?.insertText(`<Picture ${index + 1}>`)}
+                onRemove={removeReferenceItem}
+                onMove={moveReferenceItem}
+                onReorder={reorderReferenceItem}
+                onInsertTag={(tag) => editorRef.current?.insertText(tag)}
+                onToggleAudio={toggleVideoAudio}
               />
             ) : null}
 
@@ -441,7 +684,7 @@ export function GenerationPanel({ project, episodeCode }: GenerationPanelProps) 
               allowAssetDrop={mode === 'image'}
               assetDropHint={
                 videoMode === 'reference'
-                  ? '图片请拖到上方的参考素材区'
+                  ? '素材请拖到上方的参考素材区'
                   : '图片或视频请拖到上方的首帧或尾帧槽位'
               }
               placeholder={
@@ -449,7 +692,7 @@ export function GenerationPanel({ project, episodeCode }: GenerationPanelProps) 
                   ? '描述画面，可把左侧图片拖进来'
                   : videoMode === 'keyframes'
                     ? '描述镜头、运镜与声音（对白 / 音效 / 配乐）；首尾帧可选'
-                    : '描述画面与参考图用途；可插入 <Picture N>'
+                    : '描述画面与参考素材用途；可插入 <Picture N> / <Video N> / <Audio N>'
               }
               onChange={setValue}
               onSubmit={() => void handleSubmit()}
@@ -515,7 +758,7 @@ export function GenerationPanel({ project, episodeCode }: GenerationPanelProps) 
               ) : null}
               {missingReference ? (
                 <span className="text-[11px] text-amber-600 dark:text-amber-400">
-                  至少添加 1 张参考图
+                  至少添加 1 个参考素材
                 </span>
               ) : null}
 
@@ -569,16 +812,19 @@ export function GenerationPanel({ project, episodeCode }: GenerationPanelProps) 
 
       <AssetPickerDialog
         open={picker?.type === 'reference'}
-        title="添加参考图片"
+        title={pickerTitle}
         project={project}
         episodeCode={episodeCode}
+        kind={pickerKind}
         multiple
-        max={MAX_REFERENCE_IMAGES - references.length}
-        selectedIds={references.map((item) => item.assetId)}
+        max={pickerMax}
+        selectedIds={pickerItems.map((item) => item.assetId)}
         onOpenChange={(open) => {
           if (!open) setPicker(null)
         }}
-        onSelectMany={addReferenceAssets}
+        onSelectMany={(assets) => {
+          if (picker?.type === 'reference') void addReferenceAssets(assets, picker.kind)
+        }}
       />
 
       <VideoFrameDialog
@@ -598,7 +844,11 @@ export function GenerationPanel({ project, episodeCode }: GenerationPanelProps) 
 
 function toDragPayload(asset: Asset | null | undefined): AssetDragPayload | null {
   if (!asset?.content_url) return null
-  const meta = (asset.meta ?? {}) as { fps?: number }
+  const meta = (asset.meta ?? {}) as {
+    fps?: number
+    duration?: number
+    has_audio?: boolean
+  }
   return {
     assetId: asset.id,
     src: asset.content_url,
@@ -606,6 +856,8 @@ function toDragPayload(asset: Asset | null | undefined): AssetDragPayload | null
     kind: asset.kind === 'video' ? 'video' : asset.kind === 'audio' ? 'audio' : 'image',
     source: asset.source,
     fps: typeof meta.fps === 'number' && meta.fps > 0 ? meta.fps : undefined,
+    duration: typeof meta.duration === 'number' ? meta.duration : undefined,
+    hasAudio: typeof meta.has_audio === 'boolean' ? meta.has_audio : undefined,
   }
 }
 

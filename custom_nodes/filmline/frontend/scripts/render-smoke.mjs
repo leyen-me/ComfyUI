@@ -356,7 +356,7 @@ await wait(150)
   ?.click()
 await wait()
 const referenceTrayShown = Boolean(document.querySelector('[data-reference-tray]'))
-document.querySelector('[data-reference-add]')?.click()
+document.querySelector('button[aria-label="添加参考图片"]')?.click()
 await wait(300)
 const referenceDialog = document.querySelector('dialog[open]')
 const referencePickerOpened = (referenceDialog?.textContent ?? '').includes('添加参考图片')
@@ -368,13 +368,59 @@ await wait(100)
   .find((el) => el.textContent?.includes('添加 1 张'))
   ?.click()
 await wait(300)
-const referenceCard = document.querySelector('[data-reference-item="0"]')
+const referenceCard = document.querySelector('[data-reference-item="image-0"]')
 const referenceAdded = Boolean(referenceCard) && (referenceCard?.textContent ?? '').includes('图1')
 document.querySelector('button[aria-label="插入 Picture 1 引用"]')?.click()
 await wait(200)
 const referenceTagInserted = (
   document.querySelector('[aria-label="提示词"]')?.textContent ?? ''
 ).includes('<Picture 1>')
+
+function dropReference(payload) {
+  const dataTransfer = {
+    types: ['application/x-filmline-asset'],
+    getData: (type) =>
+      type === 'application/x-filmline-asset' ? JSON.stringify(payload) : '',
+    dropEffect: 'copy',
+    effectAllowed: 'copy',
+  }
+  const event = new window.Event('drop', { bubbles: true, cancelable: true })
+  Object.defineProperty(event, 'dataTransfer', { value: dataTransfer })
+  document.querySelector('[data-reference-drop]')?.dispatchEvent(event)
+}
+
+dropReference({
+  assetId: 11,
+  src: '/studio/api/assets/11/content',
+  name: 'project_video_00001_.mp4',
+  kind: 'video',
+  duration: 2.5,
+  hasAudio: true,
+})
+await wait(250)
+dropReference({
+  assetId: 12,
+  src: '/studio/api/assets/12/content',
+  name: 'voice.wav',
+  kind: 'audio',
+  duration: 2,
+  hasAudio: true,
+})
+await wait(250)
+const videoRefCard = document.querySelector('[data-reference-item="video-0"]')
+const audioRefCard = document.querySelector('[data-reference-item="audio-0"]')
+const videoRefAdded = Boolean(videoRefCard)
+const audioRefAdded = Boolean(audioRefCard)
+const soundtrackDefault = Boolean(videoRefCard?.querySelector('input[type="checkbox"]')?.checked)
+document.querySelector('button[aria-label="插入 Video 1 引用"]')?.click()
+await wait(100)
+document.querySelector('button[aria-label="插入 Audio 2 引用"]')?.click()
+await wait(100)
+const mediaTagsInserted = (
+  document.querySelector('[aria-label="提示词"]')?.textContent ?? ''
+).includes('<Video 1>') &&
+  (document.querySelector('[aria-label="提示词"]')?.textContent ?? '').includes('<Audio 2>')
+
 ;[...document.querySelectorAll('button')]
   .find((el) => el.textContent?.trim() === '首尾帧')
   ?.click()
@@ -384,7 +430,7 @@ const keyframeSlotsAgain = document.querySelectorAll('[data-keyframe-slot]').len
   .find((el) => el.textContent?.trim() === '参考生成')
   ?.click()
 await wait()
-const referencePersisted = Boolean(document.querySelector('[data-reference-item="0"]'))
+const referencePersisted = Boolean(document.querySelector('[data-reference-item="image-0"]'))
 
 // 视频面板里应当有 512 预览 / 768 原生 两档
 document.querySelector('button[aria-label="尺寸与分辨率"]')?.click()
@@ -533,6 +579,10 @@ const checks = [
   ['参考图选择器可多选', referencePickerOpened],
   ['选择参考图后显示图1', referenceAdded],
   ['参考图可插入 Picture 引用', referenceTagInserted],
+  ['参考视频可拖入托盘', videoRefAdded],
+  ['参考音频可拖入托盘', audioRefAdded],
+  ['视频原声默认占用音轨', soundtrackDefault],
+  ['视频/音频引用可插入提示词', mediaTagsInserted],
   ['切回首尾帧再切回参考模式保留素材', keyframeSlotsAgain === 2 && referencePersisted],
   ['切回图片模式隐藏首尾帧槽位', keyframeSlotsAfterImage === 0],
   ['切回图片模式隐藏参考托盘', !referenceTrayAfterImage],

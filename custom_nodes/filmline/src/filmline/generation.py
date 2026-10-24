@@ -59,8 +59,11 @@ VIDEO_REF_STEPS = 8
 
 # 官方说明：参考图最多 10 张（image_1…image_10），image_1 是编辑目标
 MAX_IMAGE_REFS = 10
-# H3 Ref2VA：参考图 ≤9（视频/音频参考后续接入）
+# H3 Ref2VA：参考图 ≤9、视频 ≤3、音频 ≤3，所有文件合计 ≤12
 MAX_VIDEO_REFS = 9
+MAX_VIDEO_VIDEOS = 3
+MAX_VIDEO_AUDIOS = 3
+MAX_VIDEO_FILES = 12
 
 # 官方参数：cfg 固定 1（不用负面提示词），euler/simple，步数 40-50；
 # 这里取 30 兼顾质量与速度
@@ -87,6 +90,12 @@ class Workflow:
     prompt: dict[str, Any]
     kind: str
     meta: dict[str, Any]
+
+
+@dataclass(frozen=True)
+class VideoReference:
+    path: str
+    use_audio: bool = False
 
 
 def _seed() -> int:
@@ -392,13 +401,15 @@ def video_reference_workflow(
     tier: str = "768",
     seed: int | None = None,
     refs: list[str] | None = None,
+    ref_videos: list[VideoReference] | None = None,
+    ref_audios: list[str] | None = None,
     ref_image_size: str = "match",
     prefix: str = "filmline/video",
 ) -> Workflow:
-    """Ref2VA：参考图保持身份/风格，不锁定第 0 帧。
+    """Ref2VA：参考图/视频/音频保持身份、风格、动作或音色，不锁定第 0 帧。
 
-    参考图顺序决定提示词里的 ``<Picture 1>`` … ``<Picture N>``，因此必须保持
-    调用方传入的顺序；视频/音频参考后续再接入。
+    参考顺序决定提示词里的 ``<Picture i>`` / ``<Video k>`` / ``<Audio j>``：
+    图片按传入顺序，视频按传入顺序，独立音频排在所有视频音轨之后。
     """
     if size not in VIDEO_TIERS["768"]:
         raise InvalidArgument(f"视频比例只支持: {', '.join(VIDEO_TIERS['768'])}")
@@ -412,16 +423,27 @@ def video_reference_workflow(
         raise InvalidArgument("ref_image_size 只支持 match / max")
 
     refs = refs or []
-    if not refs:
-        raise InvalidArgument("参考生成至少需要 1 张图片")
+    ref_videos = ref_videos or []
+    ref_audios = ref_audios or []
     if len(refs) > MAX_VIDEO_REFS:
         raise InvalidArgument(f"参考图最多 {MAX_VIDEO_REFS} 张")
+    if len(ref_videos) > MAX_VIDEO_VIDEOS:
+        raise InvalidArgument(f"参考视频最多 {MAX_VIDEO_VIDEOS} 段")
+    if len(ref_audios) > MAX_VIDEO_AUDIOS:
+        raise InvalidArgument(f"参考音频最多 {MAX_VIDEO_AUDIOS} 段")
+    if len(refs) + len(ref_videos) + len(ref_audios) > MAX_VIDEO_FILES:
+        raise InvalidArgument(f"参考素材合计最多 {MAX_VIDEO_FILES} 个")
+    if not refs and not ref_videos and not ref_audios:
+        raise InvalidArgument("参考生成至少需要 1 个素材")
 
     width, height = VIDEO_TIERS[tier][size]
     length = VIDEO_DURATIONS[duration]
     actual_seed = _seed() if seed is None else seed
 
     ref_images: dict[str, list[Any]] = {}
+    video_frames: dict[str, list[Any]] = {}
+    video_audios: dict[str, list[Any]] = {}
+    audio_refs: dict[str, list[Any]] = {}
     graph: dict[str, Any] = {
         "1": {
             "class_type": "UNETLoader",
@@ -452,7 +474,6 @@ def video_reference_workflow(
                 "height": height,
                 "length": length,
                 "ref_image_size": ref_image_size,
-                "ref_images": ref_images,
             },
         },
         "8": {
@@ -493,11 +514,47 @@ def video_reference_workflow(
         },
     }
 
-    # 参考图不做画布裁切：让 Ref2VA 自己按 ref_image_size 等比缩放，保留完整构图
+    # 参考素材不做画布裁切：让 Ref2VA 自己按 ref_image_size 等比缩放，保留完整构图
+    next_node = 14
     for index, path in enumerate(refs):
-        node_id = str(14 + index)
+        node_id = str(next_node)
+        next_node += 1
         graph[node_id] = {"class_type": "FilmlineLoadImage", "inputs": {"path": path}}
         ref_images[f"ref_image_{index}"] = [node_id, 0]
+
+    for index, video in enumerate(ref_videos):
+        node_id = str(next_node)
+        next_node += 1
+        graph[node_id] = {
+            "class_type": "FilmlineLoadVideo",
+            "inputs": {
+                "path": video.path,
+                "max_seconds": float(duration),
+                "short_edge": 512,
+                "require_audio": video.use_audio,
+            },
+        }
+        video_frames[f"ref_video_{index}"] = [node_id, 0]
+        if video.use_audio:
+            video_audios[f"ref_video_audio_{index}"] = [node_id, 1]
+
+    for index, path in enumerate(ref_audios):
+        node_id = str(next_node)
+        next_node += 1
+        graph[node_id] = {
+            "class_type": "FilmlineLoadAudio",
+            "inputs": {"path": path, "max_seconds": 15.0},
+        }
+        audio_refs[f"ref_audio_{index}"] = [node_id, 0]
+
+    if ref_images:
+        graph["7"]["inputs"]["ref_images"] = ref_images
+    if video_frames:
+        graph["7"]["inputs"]["ref_videos"] = video_frames
+    if video_audios:
+        graph["7"]["inputs"]["ref_video_audios"] = video_audios
+    if audio_refs:
+        graph["7"]["inputs"]["ref_audios"] = audio_refs
 
     return Workflow(
         prompt=graph,
@@ -517,6 +574,8 @@ def video_reference_workflow(
             "steps": VIDEO_REF_STEPS,
             "cfg": VIDEO_CFG,
             "refs": len(refs),
+            "ref_videos": len(ref_videos),
+            "ref_audios": len(ref_audios),
             "ref_image_size": ref_image_size,
         },
     )

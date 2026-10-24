@@ -97,7 +97,7 @@ export function PromptInput({
         const payload = readAssetDrag(event.dataTransfer)
         if (!payload) return true
         if (payload.kind !== 'image') {
-          rejectRef.current?.('这里只支持图片引用；视频请拖到首帧或尾帧槽位')
+          rejectRef.current?.('这里只支持图片引用；视频请拖到首/尾帧，音频请拖到参考素材区')
           return true
         }
         const coords = view.posAtCoords({ left: event.clientX, top: event.clientY })

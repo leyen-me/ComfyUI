@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Check, Loader2, RefreshCw, Search } from 'lucide-react'
+import { Check, FileAudio, Film, Loader2, RefreshCw, Search } from 'lucide-react'
 
-import { ApiError, api, type Asset, type Project } from '@/lib/api'
-import { assetDimensions } from '@/lib/asset-meta'
-import { formatTime } from '@/lib/format'
+import { ApiError, api, type Asset, type AssetKind, type Project } from '@/lib/api'
+import { assetDimensions, generationMeta } from '@/lib/asset-meta'
+import { formatSize, formatTime } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import { Button } from './ui/button'
 import { Dialog } from './ui/dialog'
@@ -15,6 +15,8 @@ interface AssetPickerDialogProps {
   project: Project
   /** 为空表示项目级资产 */
   episodeCode?: string
+  /** 资产类型，默认图片 */
+  kind?: Extract<AssetKind, 'image' | 'video' | 'audio'>
   onOpenChange: (open: boolean) => void
   /** 单选模式 */
   onSelect?: (asset: Asset) => void
@@ -27,12 +29,13 @@ interface AssetPickerDialogProps {
   onSelectMany?: (assets: Asset[]) => void
 }
 
-/** 图片资产选择器：拖拽之外的键盘/触屏入口，支持单选与多选。 */
+/** 资产选择器：拖拽之外的键盘/触屏入口，支持单选与多选。 */
 export function AssetPickerDialog({
   open,
   title,
   project,
   episodeCode,
+  kind = 'image',
   onOpenChange,
   onSelect,
   multiple = false,
@@ -54,20 +57,20 @@ export function AssetPickerDialog({
     setError(null)
 
     api.projects.assets
-      .list(project.code, { kind: 'image', episode: episodeCode, signal: controller.signal })
+      .list(project.code, { kind, episode: episodeCode, signal: controller.signal })
       .then((result) => {
         if (!controller.signal.aborted) setAssets(result.items)
       })
       .catch((cause: unknown) => {
         if (controller.signal.aborted) return
-        setError(cause instanceof ApiError ? cause.fullMessage : '加载图片失败')
+        setError(cause instanceof ApiError ? cause.fullMessage : `加载${kindLabel(kind)}失败`)
       })
       .finally(() => {
         if (!controller.signal.aborted) setLoading(false)
       })
 
     return () => controller.abort()
-  }, [open, project.code, episodeCode, reloadToken])
+  }, [open, project.code, episodeCode, kind, reloadToken])
 
   useEffect(() => {
     if (!open) return
@@ -124,8 +127,8 @@ export function AssetPickerDialog({
       title={title}
       description={
         multiple
-          ? '可多选；勾选顺序就是 <Picture N> 的编号顺序。'
-          : '只显示图片资产；生成结果和上传的图片都在这里。'
+          ? `可多选${kindLabel(kind)}；勾选顺序就是参考素材的编号顺序。`
+          : `只显示${kindLabel(kind)}资产；生成结果和上传的文件都在这里。`
       }
       className="w-[min(680px,94vw)]"
       footer={footer}
@@ -136,7 +139,7 @@ export function AssetPickerDialog({
           type="search"
           value={keyword}
           placeholder="按名称筛选"
-          aria-label="筛选图片"
+          aria-label={`筛选${kindLabel(kind)}`}
           className="pl-8"
           onChange={(event) => setKeyword(event.target.value)}
         />
@@ -162,7 +165,9 @@ export function AssetPickerDialog({
 
         {!loading && !error && filtered.length === 0 ? (
           <p className="py-12 text-center text-xs text-muted-foreground">
-            {assets.length === 0 ? '还没有图片资产，先上传一张。' : '没有匹配的图片。'}
+            {assets.length === 0
+              ? `还没有${kindLabel(kind)}资产，先上传一个。`
+              : `没有匹配的${kindLabel(kind)}。`}
           </p>
         ) : null}
 
@@ -184,14 +189,20 @@ export function AssetPickerDialog({
                   )}
                   onClick={() => (multiple ? toggle(asset) : onSelect?.(asset))}
                 >
-                  <span className="block aspect-video overflow-hidden bg-muted">
-                    <img
-                      src={asset.content_url ?? ''}
-                      alt={asset.name}
-                      loading="lazy"
-                      draggable={false}
-                      className="size-full object-cover transition-transform duration-200 group-hover:scale-[1.02]"
-                    />
+                  <span className="flex aspect-video items-center justify-center overflow-hidden bg-muted text-muted-foreground">
+                    {kind === 'image' ? (
+                      <img
+                        src={asset.content_url ?? ''}
+                        alt={asset.name}
+                        loading="lazy"
+                        draggable={false}
+                        className="size-full object-cover transition-transform duration-200 group-hover:scale-[1.02]"
+                      />
+                    ) : kind === 'video' ? (
+                      <Film className="size-6" />
+                    ) : (
+                      <FileAudio className="size-6" />
+                    )}
                   </span>
                   {isPicked || isExisting ? (
                     <span className="absolute top-1 right-1 flex size-5 items-center justify-center rounded-full bg-primary text-primary-foreground shadow">
@@ -208,7 +219,7 @@ export function AssetPickerDialog({
                       {asset.name}
                     </span>
                     <span className="mt-0.5 block font-mono text-[10px] text-muted-foreground">
-                      {assetDimensions(asset) ?? formatTime(asset.created_at)}
+                      {assetSubtitle(asset, kind)}
                     </span>
                   </span>
                 </button>
@@ -219,4 +230,21 @@ export function AssetPickerDialog({
       </div>
     </Dialog>
   )
+}
+
+function kindLabel(kind: 'image' | 'video' | 'audio'): string {
+  if (kind === 'video') return '视频'
+  if (kind === 'audio') return '音频'
+  return '图片'
+}
+
+function assetSubtitle(asset: Asset, kind: 'image' | 'video' | 'audio'): string {
+  const meta = generationMeta(asset)
+  if (kind === 'image') {
+    return assetDimensions(asset) ?? formatTime(asset.created_at)
+  }
+  const parts: string[] = []
+  if (typeof meta.duration === 'number') parts.push(`${meta.duration.toFixed(1)}s`)
+  if (asset.size_bytes) parts.push(formatSize(asset.size_bytes))
+  return parts.length ? parts.join(' · ') : formatTime(asset.created_at)
 }
