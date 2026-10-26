@@ -11,14 +11,21 @@ import {
 import { Select, type SelectOption } from './ui/select'
 
 interface DurationSelectProps {
-  /** 秒（整数） */
+  /** 秒（整数；自动模式下是回退值） */
   value: number
   disabled?: boolean
+  /** 按最长参考音频自动定时长；开启后手动时长不可编辑 */
+  auto?: boolean
   onChange: (seconds: number) => void
 }
 
 /** 视频时长：预设档位 + 自定义整数秒（MiniMax H3 训练区间 5–15 秒）。 */
-export function DurationSelect({ value, disabled = false, onChange }: DurationSelectProps) {
+export function DurationSelect({
+  value,
+  disabled = false,
+  auto = false,
+  onChange,
+}: DurationSelectProps) {
   const [open, setOpen] = useState(false)
   const [draft, setDraft] = useState(String(value))
   const [error, setError] = useState<string | null>(null)
@@ -54,11 +61,11 @@ export function DurationSelect({ value, disabled = false, onChange }: DurationSe
       aria-label="视频时长"
       value={String(value)}
       options={options}
-      disabled={disabled}
+      disabled={disabled || auto}
       width={224}
       onChange={(next) => onChange(Number(next))}
       onOpenChange={setOpen}
-      formatValue={() => `${value} 秒`}
+      formatValue={() => (auto ? '按音频自动' : `${value} 秒`)}
       footer={(close) => (
         <div className="mt-1.5 border-t border-border pt-2">
           <div className="flex items-center gap-1.5 px-1">

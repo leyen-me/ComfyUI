@@ -28,8 +28,18 @@ export function reuseDetailFor(asset: Asset): ReusePromptDetail | null {
           lastFrameId: meta.last_frame_id ?? undefined,
           videoRefIds: meta.ref_video_ids ?? [],
           videoUseAudio: meta.ref_video_use_audio ?? [],
+          videoTrims: meta.ref_video_trims ?? [],
           audioRefIds: meta.ref_audio_ids ?? [],
+          guideFrames: (meta.ref_guide_frames ?? []).map((item) => ({
+            assetId: item.asset_id,
+            atSeconds: item.at_seconds,
+          })),
+          refQuality: meta.ref_quality,
+          refScheduler: meta.ref_scheduler,
+          refImageSize: meta.ref_image_size,
+          autoDuration: meta.auto_duration,
+          seed: meta.seed,
         }
       : {}),
-}
+  }
 }

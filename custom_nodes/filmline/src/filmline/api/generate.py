@@ -52,12 +52,47 @@ def _asset_id_list(raw: object, field: str) -> list[int]:
     return raw
 
 
-def _video_ref_list(raw: object) -> list[tuple[int, bool]]:
+def _seed_value(raw: object) -> int | None:
+    if raw is None or raw == "":
+        return None
+    if isinstance(raw, bool) or not isinstance(raw, int):
+        raise InvalidArgument("seed 必须是整数")
+    if not 0 <= raw <= 2**31 - 1:
+        raise InvalidArgument("seed 必须在 0–2147483647 之间")
+    return raw
+
+
+def _guide_list(raw: object) -> list[dict]:
+    if raw is None:
+        return []
+    if not isinstance(raw, list):
+        raise InvalidArgument("ref_guides 必须是数组")
+    if len(raw) > generation.MAX_VIDEO_GUIDES:
+        raise InvalidArgument(f"帧锚定最多 {generation.MAX_VIDEO_GUIDES} 个")
+    result: list[dict] = []
+    for item in raw:
+        if not isinstance(item, dict):
+            raise InvalidArgument("ref_guides 每项必须是对象")
+        asset_id = _optional_asset_id(item.get("asset_id"), "ref_guides.asset_id")
+        if asset_id is None:
+            raise InvalidArgument("ref_guides.asset_id 不能为空")
+        seconds = item.get("at_seconds", 0)
+        if isinstance(seconds, bool) or not isinstance(seconds, (int, float)):
+            raise InvalidArgument("ref_guides.at_seconds 必须是数字")
+        if not 0 <= float(seconds) <= generation.VIDEO_MAX_SECONDS:
+            raise InvalidArgument(
+                f"ref_guides.at_seconds 必须在 0–{generation.VIDEO_MAX_SECONDS} 秒之间"
+            )
+        result.append({"asset_id": asset_id, "at_seconds": float(seconds)})
+    return result
+
+
+def _video_ref_list(raw: object) -> list[dict]:
     if raw is None:
         return []
     if not isinstance(raw, list):
         raise InvalidArgument("ref_videos 必须是数组")
-    result: list[tuple[int, bool]] = []
+    result: list[dict] = []
     for item in raw:
         if not isinstance(item, dict):
             raise InvalidArgument("ref_videos 每项必须是对象")
@@ -67,13 +102,25 @@ def _video_ref_list(raw: object) -> list[tuple[int, bool]]:
         use_audio = item.get("use_audio", False)
         if not isinstance(use_audio, bool):
             raise InvalidArgument("ref_videos.use_audio 必须是布尔值")
-        result.append((asset_id, use_audio))
+        trim = {}
+        for field in ("trim_start", "trim_end"):
+            value = item.get(field)
+            if value is None or value == "":
+                trim[field] = 0.0
+                continue
+            if isinstance(value, bool) or not isinstance(value, (int, float)):
+                raise InvalidArgument(f"ref_videos.{field} 必须是数字")
+            if not 0 <= float(value) <= 15.05:
+                raise InvalidArgument(f"ref_videos.{field} 必须在 0–15 秒之间")
+            trim[field] = float(value)
+        result.append({"asset_id": asset_id, "use_audio": use_audio, **trim})
     return result
 
 
-def _check_reference_duration(info: media.MediaInfo, label: str) -> None:
-    if info.duration < 1.95 or info.duration > 15.05:
-        raise InvalidArgument(f"{label}时长必须在 2–15 秒之间（当前 {info.duration:.1f} 秒）")
+def _check_audio_duration(info: media.MediaInfo, label: str) -> None:
+    """独立参考音频只要求非静音素材的最短长度，官方不设上限。"""
+    if info.duration < 1.95:
+        raise InvalidArgument(f"{label}至少需要 2 秒（当前 {info.duration:.1f} 秒）")
 
 
 @dataclass(frozen=True)
@@ -84,9 +131,31 @@ class _ReferenceMaterials:
     image_paths: list[str]
     video_ids: list[int]
     video_use_audio: list[bool]
+    video_trims: list[tuple[float, float]]
     video_refs: list[generation.VideoReference]
     audio_ids: list[int]
     audio_paths: list[str]
+    audio_durations: list[float]
+    guide_ids: list[int]
+    guide_specs: list[dict]
+    guides: list[generation.GuideFrame]
+
+
+def _resolve_video_interval(
+    info: media.MediaInfo, item: dict, name: str
+) -> tuple[float, float]:
+    """把用户裁剪区间收敛到素材实际时长内。"""
+    start = min(max(float(item["trim_start"]), 0.0), info.duration)
+    end = info.duration if item["trim_end"] <= 0 else min(
+        max(float(item["trim_end"]), 0.0), info.duration
+    )
+    if end <= start:
+        raise InvalidArgument(f"参考视频「{name}」裁剪区间无效：{start:.2f}s–{end:.2f}s")
+    if not 1.95 <= end - start <= 15.05:
+        raise InvalidArgument(
+            f"参考视频「{name}」每段裁剪后需为 2–15 秒（当前 {end - start:.2f} 秒）"
+        )
+    return start, end
 
 
 async def _resolve_reference_materials(
@@ -98,12 +167,18 @@ async def _resolve_reference_materials(
     image_ids = _asset_id_list(payload.get("refs"), "refs")
     video_items = _video_ref_list(payload.get("ref_videos"))
     audio_ids = _asset_id_list(payload.get("ref_audios"), "ref_audios")
-    video_ids = [asset_id for asset_id, _ in video_items]
-    video_use_audio = [use_audio for _, use_audio in video_items]
+    guide_items = _guide_list(payload.get("ref_guides"))
+    video_ids = [item["asset_id"] for item in video_items]
+    video_use_audio = [item["use_audio"] for item in video_items]
+    # 同一张图可以锚定多个时间点，按去重后的 id 解析资产
+    guide_ids = list(dict.fromkeys(item["asset_id"] for item in guide_items))
 
     all_ids = [*image_ids, *video_ids, *audio_ids]
     if not all_ids:
         raise InvalidArgument("参考生成至少需要 1 个素材")
+    if not image_ids and not video_ids:
+        # 官方 Ref2VA 的视觉条件来自图片/视频；只有独立音频时参考不生效
+        raise InvalidArgument("参考生成至少需要 1 张参考图或 1 段参考视频")
     if len(all_ids) > generation.MAX_VIDEO_FILES:
         raise InvalidArgument(f"参考素材合计最多 {generation.MAX_VIDEO_FILES} 个")
     if len(set(all_ids)) != len(all_ids):
@@ -133,35 +208,64 @@ async def _resolve_reference_materials(
         limit=generation.MAX_VIDEO_AUDIOS,
         label="参考音频",
     )
+    guide_assets = await asyncio.to_thread(
+        assets.resolve_assets,
+        project_id,
+        guide_ids,
+        kinds={"image"},
+        limit=generation.MAX_VIDEO_GUIDES,
+        label="帧锚定图片",
+    )
 
     video_refs: list[generation.VideoReference] = []
+    video_trims: list[tuple[float, float]] = []
     video_total = 0.0
-    for (_, use_audio), asset in zip(video_items, video_assets):
+    for item, asset in zip(video_items, video_assets):
         info = await asyncio.to_thread(media.probe, storage.resolve(asset.path))
-        _check_reference_duration(info, "参考视频")
-        if use_audio and not info.has_audio:
+        if item["use_audio"] and not info.has_audio:
             raise InvalidArgument(f"参考视频「{asset.name}」没有音轨")
-        video_total += info.duration
-        video_refs.append(generation.VideoReference(path=asset.path, use_audio=use_audio))
+        start, end = _resolve_video_interval(info, item, asset.name)
+        video_total += end - start
+        video_trims.append((start, end))
+        video_refs.append(
+            generation.VideoReference(
+                path=asset.path,
+                use_audio=item["use_audio"],
+                trim_start=start,
+                trim_end=end,
+            )
+        )
     if video_total > 15.05:
         raise InvalidArgument(f"参考视频总时长不能超过 15 秒（当前 {video_total:.1f} 秒）")
 
-    audio_total = 0.0
+    audio_durations: list[float] = []
     for asset in audio_assets:
         info = await asyncio.to_thread(media.probe, storage.resolve(asset.path))
-        _check_reference_duration(info, "参考音频")
-        audio_total += info.duration
-    if audio_total > 15.05:
-        raise InvalidArgument(f"参考音频总时长不能超过 15 秒（当前 {audio_total:.1f} 秒）")
+        _check_audio_duration(info, "参考音频")
+        audio_durations.append(info.duration)
+
+    guide_paths = {asset.id: asset.path for asset in guide_assets}
+    guides = [
+        generation.GuideFrame(
+            path=guide_paths[item["asset_id"]],
+            frame_index=round(item["at_seconds"] * generation.VIDEO_FPS),
+        )
+        for item in guide_items
+    ]
 
     return _ReferenceMaterials(
         image_ids=image_ids,
         image_paths=[asset.path for asset in image_assets],
         video_ids=video_ids,
         video_use_audio=video_use_audio,
+        video_trims=video_trims,
         video_refs=video_refs,
         audio_ids=audio_ids,
         audio_paths=[asset.path for asset in audio_assets],
+        audio_durations=audio_durations,
+        guide_ids=guide_ids,
+        guide_specs=guide_items,
+        guides=guides,
     )
 
 
@@ -227,6 +331,7 @@ def register_generate_routes(routes: web.RouteTableDef) -> None:
                 count=count,
                 tier=tier,
                 refs=ref_paths,
+                seed=_seed_value(payload.get("seed")),
                 prefix=f"filmline/{project.code}/{scope}",
             )
         else:
@@ -240,17 +345,23 @@ def register_generate_routes(routes: web.RouteTableDef) -> None:
             frame_ids: list[int] = []
             video_ids: list[int] = []
             video_use_audio: list[bool] = []
+            video_trims: list[tuple[float, float]] = []
             audio_ids: list[int] = []
+            auto_duration = payload.get("auto_duration", False)
+            if not isinstance(auto_duration, bool):
+                raise InvalidArgument("auto_duration 必须是布尔值")
+            seed = _seed_value(payload.get("seed"))
 
-            video_tier = str(payload.get("resolution") or "768").lower()
+            video_tier = str(payload.get("resolution") or generation.DEFAULT_VIDEO_TIER).lower()
             if video_tier not in generation.VIDEO_TIERS:
                 raise InvalidArgument(
                     f"视频分辨率只支持: {' / '.join(generation.VIDEO_TIERS)}"
                 )
             duration = payload.get("duration", 5)
-            if isinstance(duration, bool) or not isinstance(duration, int):
-                raise InvalidArgument("duration 必须是整数")
-            if not (
+            if isinstance(duration, bool) or not isinstance(duration, (int, float)):
+                raise InvalidArgument("duration 必须是数字")
+            duration = float(duration)
+            if not auto_duration and not (
                 generation.VIDEO_MIN_SECONDS <= duration <= generation.VIDEO_MAX_SECONDS
             ):
                 raise InvalidArgument(
@@ -261,6 +372,8 @@ def register_generate_routes(routes: web.RouteTableDef) -> None:
             if mode == "keyframes":
                 if payload.get("ref_videos") or payload.get("ref_audios"):
                     raise InvalidArgument("首尾帧模式不能使用参考视频或参考音频")
+                if auto_duration:
+                    raise InvalidArgument("只有参考生成支持按音频自动定时长")
                 # 旧客户端只发 refs（最多 1 张），按首帧解释
                 legacy_refs = payload.get("refs")
                 if legacy_refs is not None:
@@ -291,26 +404,65 @@ def register_generate_routes(routes: web.RouteTableDef) -> None:
                     tier=video_tier,
                     first_frame=paths_by_id.get(first_id) if first_id is not None else None,
                     last_frame=paths_by_id.get(last_id) if last_id is not None else None,
+                    seed=seed,
                     prefix=f"filmline/{project.code}/{scope}",
                 )
             else:
                 if first_id is not None or last_id is not None:
                     raise InvalidArgument("参考生成不能使用 first_frame_id / last_frame_id")
 
+                ref_image_size = str(payload.get("ref_image_size") or "match").lower()
+                if ref_image_size not in ("match", "max"):
+                    raise InvalidArgument("ref_image_size 只支持 match / max")
+                quality = str(payload.get("ref_quality") or generation.DEFAULT_REF_QUALITY)
+                if quality not in generation.REF_QUALITY_PRESETS:
+                    raise InvalidArgument(
+                        f"ref_quality 只支持: {' / '.join(generation.REF_QUALITY_PRESETS)}"
+                    )
+                scheduler = payload.get("ref_scheduler")
+                if scheduler is not None:
+                    scheduler = str(scheduler)
+                    if scheduler not in generation.REF_SCHEDULERS:
+                        raise InvalidArgument(
+                            f"ref_scheduler 只支持: {' / '.join(generation.REF_SCHEDULERS)}"
+                        )
+
                 materials = await _resolve_reference_materials(payload, project.id)
                 raw_refs = materials.image_ids
                 video_ids = materials.video_ids
                 video_use_audio = materials.video_use_audio
+                video_trims = materials.video_trims
                 audio_ids = materials.audio_ids
+
+                if auto_duration:
+                    candidates = list(materials.audio_durations)
+                    candidates.extend(
+                        end - start
+                        for (start, end), use_audio in zip(
+                            materials.video_trims, materials.video_use_audio
+                        )
+                        if use_audio
+                    )
+                    if not candidates:
+                        raise InvalidArgument("已启用按音频自动定时长，但当前没有可用参考音频")
+                    duration = min(
+                        generation.VIDEO_MAX_SECONDS,
+                        max(generation.VIDEO_MIN_SECONDS, max(candidates)),
+                    )
 
                 workflow = generation.video_reference_workflow(
                     prompt=prompt,
                     size=size,
                     duration=duration,
                     tier=video_tier,
+                    seed=seed,
                     refs=materials.image_paths,
                     ref_videos=materials.video_refs,
                     ref_audios=materials.audio_paths,
+                    ref_image_size=ref_image_size,
+                    quality=quality,
+                    scheduler=scheduler,
+                    guides=materials.guides,
                     prefix=f"filmline/{project.code}/{scope}",
                 )
 
@@ -326,7 +478,20 @@ def register_generate_routes(routes: web.RouteTableDef) -> None:
             else:
                 meta["ref_video_ids"] = video_ids
                 meta["ref_video_use_audio"] = video_use_audio
+                meta["ref_video_trims"] = [list(pair) for pair in video_trims]
                 meta["ref_audio_ids"] = audio_ids
+                meta["ref_guide_ids"] = materials.guide_ids
+                meta["ref_guide_frames"] = [
+                    {
+                        "asset_id": item["asset_id"],
+                        "at_seconds": item["at_seconds"],
+                        "frame_index": round(item["at_seconds"] * generation.VIDEO_FPS),
+                    }
+                    for item in materials.guide_specs
+                ]
+                meta["auto_duration"] = auto_duration
+                meta["ref_quality"] = quality
+                meta["ref_scheduler"] = scheduler or generation.VIDEO_REF_SCHEDULER
 
         task = await asyncio.to_thread(
             TaskService().create,

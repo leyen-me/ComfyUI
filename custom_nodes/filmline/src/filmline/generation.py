@@ -34,11 +34,15 @@ IMAGE_TIERS: dict[str, dict[str, tuple[int, int]]] = {
     "1k": {"16:9": (1376, 768), "9:16": (768, 1376), "1:1": (1024, 1024)},
     "2k": {"16:9": (2752, 1536), "9:16": (1536, 2752), "1:1": (2048, 2048)},
 }
-# 视频只有官方原生一档：短边 768，上限 768×1344（官方模型卡与 ComfyUI 模板说明）。
-# 官方未推荐更低分辨率档位，实测 512 与 768 的每步耗时一致，故不提供 512。
+# 视频分辨率档位，对齐官方 ResolutionSelector：
+# - 0.4 MP 草稿档（16:9 = 864×480）
+# - 768 原生档（短边 768，上限 768×1344）
+# 官方文档明确「离 1MP 越远质量越差」，因此只提供这两档，不做 2K 直出。
 VIDEO_TIERS: dict[str, dict[str, tuple[int, int]]] = {
-    "768": {"16:9": (1344, 768), "9:16": (768, 1344)},
+    "0.4": {"16:9": (864, 480), "9:16": (480, 864), "1:1": (640, 640)},
+    "768": {"16:9": (1344, 768), "9:16": (768, 1344), "1:1": (992, 992)},
 }
+DEFAULT_VIDEO_TIER = "768"
 # 24fps，帧数必须落在模型要求的 17k+5 网格上（向上对齐）。
 # 本地节点训练区间是 124–362 帧（≈5.2–15.1 秒），超出部分属于未验证区域。
 VIDEO_FPS = 24
@@ -48,18 +52,25 @@ VIDEO_MIN_FRAMES = 124
 VIDEO_MAX_FRAMES = 362
 
 
-def video_length(duration: int) -> int:
-    """秒数 → 对齐到 17k+5 网格的帧数（向上取整到网格）。"""
-    if isinstance(duration, bool) or not isinstance(duration, int):
-        raise InvalidArgument("视频时长必须是整数秒")
+def align_frames(frames: int) -> int:
+    """向上对齐到 H3 的 17k+5 帧网格（5、22、39 …）。"""
+    while frames % 17 != 5:
+        frames += 1
+    return frames
+
+
+def video_length(duration: float) -> int:
+    """秒数 → 对齐到 17k+5 网格的帧数（向上取整到网格）。
+
+    允许浮点秒（按参考音频自动定时长时会得到小数）；范围仍是训练区间。
+    """
+    if isinstance(duration, bool) or not isinstance(duration, (int, float)):
+        raise InvalidArgument("视频时长必须是数字")
     if not VIDEO_MIN_SECONDS <= duration <= VIDEO_MAX_SECONDS:
         raise InvalidArgument(
             f"视频时长只支持 {VIDEO_MIN_SECONDS}–{VIDEO_MAX_SECONDS} 秒"
         )
-    frames = duration * VIDEO_FPS
-    while frames % 17 != 5:
-        frames += 1
-    return frames
+    return align_frames(round(float(duration) * VIDEO_FPS))
 
 IMAGE_MODEL = "qwen-image-2.1-Q6_K.gguf"
 IMAGE_CLIP = "qwen3vl_8b_int8_convrot.safetensors"
@@ -71,10 +82,27 @@ VIDEO_VAE = "minimax_h3_video_vae_fp16.safetensors"
 VIDEO_AUDIO_VAE = "minimax_h3_audio_vae_fp32.safetensors"
 VIDEO_LORA = "minimax_h3_fl2v_turbo_4step_v1.0_768p_comfyui_bf16.safetensors"
 
-# Ref2VA 是另一套权重：参考图/视频/音频不会锁定首帧
-VIDEO_REF_MODEL = "minimax_h3_ref2va_pruned_fp8_scaled.safetensors"
+# Ref2VA 是另一套权重：参考图/视频/音频不会锁定首帧。
+# 官方模型卡：能用 int8_convrot 就优先用（本机 torch cu130 + Ada 满足条件），
+# fp8_scaled 只是退路。保留环境变量便于显存不足时回退。
+VIDEO_REF_MODEL = os.environ.get(
+    "FILMLINE_REF_UNET", "minimax_h3_ref2va_pruned_int8_convrot.safetensors"
+)
+REF_MODEL_INT8 = "minimax_h3_ref2va_pruned_int8_convrot.safetensors"
+REF_MODEL_FP8 = "minimax_h3_ref2va_pruned_fp8_scaled.safetensors"
 VIDEO_REF_LORA = "minimax_h3_ref2v_turbo_8step_v1.1_768p_comfyui_bf16.safetensors"
-VIDEO_REF_STEPS = 8
+# 参考 token 会参与每一步采样，step 太少时身份/口型/音色都锁不住。
+# 官方建议：想要紧参考就关掉 turbo 并往 25 步加；语音/音色至少 12 步。
+REF_QUALITY_PRESETS: dict[str, dict[str, object]] = {
+    "quality": {"steps": 20, "lora": None, "lora_strength": 0.0},
+    "fast": {"steps": 8, "lora": VIDEO_REF_LORA, "lora_strength": 0.7},
+}
+DEFAULT_REF_QUALITY = "quality"
+# 官方模板注：参考重的提示词 beta/normal 往往优于 simple；先保留可切换。
+REF_SCHEDULERS = ("simple", "beta", "normal")
+VIDEO_REF_SCHEDULER = os.environ.get("FILMLINE_REF_SCHEDULER", "simple")
+# 参考视频解码短边；显存吃紧时可降到 512（官方为 768）
+REF_VIDEO_SHORT_EDGE = int(os.environ.get("FILMLINE_REF_SHORT_EDGE", "768"))
 
 # 官方说明：参考图最多 10 张（image_1…image_10），image_1 是编辑目标
 MAX_IMAGE_REFS = 10
@@ -83,6 +111,8 @@ MAX_VIDEO_REFS = 9
 MAX_VIDEO_VIDEOS = 3
 MAX_VIDEO_AUDIOS = 3
 MAX_VIDEO_FILES = 12
+# 官方 Add Guide 可链式叠加；这里限制 4 个，避免参考 token/耗时失控
+MAX_VIDEO_GUIDES = 4
 
 # 官方参数：cfg 固定 1（不用负面提示词），euler/simple，步数 40-50；
 # 这里取 30 兼顾质量与速度
@@ -115,10 +145,41 @@ class Workflow:
 class VideoReference:
     path: str
     use_audio: bool = False
+    trim_start: float = 0.0
+    trim_end: float = 0.0
+
+
+@dataclass(frozen=True)
+class GuideFrame:
+    """把一张参考图锚定到输出时间轴的指定帧（官方 Add Guide）。"""
+
+    path: str
+    frame_index: int
 
 
 def _seed() -> int:
     return random.randint(0, 2**31 - 1)
+
+
+def resolve_ref_model() -> str:
+    """选择 Ref2VA UNet：优先官方 int8_convrot，文件缺失时回退 fp8。
+
+    显式设置 ``FILMLINE_REF_UNET`` 时完全尊重用户选择，不做回退。
+    """
+    override = os.environ.get("FILMLINE_REF_UNET")
+    if override:
+        return override
+    try:
+        import folder_paths  # ComfyUI 运行时模块；单测环境不存在
+
+        roots = folder_paths.get_folder_paths("diffusion_models")
+    except Exception:
+        return VIDEO_REF_MODEL
+    # 直接看文件，避免 folder_paths 的目录缓存还没刷新
+    if any(os.path.isfile(os.path.join(root, REF_MODEL_INT8)) for root in roots):
+        return REF_MODEL_INT8
+    _LOG.warning("未找到 %s，回退到 %s", REF_MODEL_INT8, REF_MODEL_FP8)
+    return REF_MODEL_FP8
 
 
 def image_dimensions(size: str, tier: str) -> tuple[int, int]:
@@ -128,6 +189,14 @@ def image_dimensions(size: str, tier: str) -> tuple[int, int]:
     if tier not in IMAGE_TIERS:
         raise InvalidArgument(f"分辨率只支持: {', '.join(IMAGE_TIERS)}")
     return IMAGE_TIERS[tier][size]
+
+
+def video_dimensions(size: str, tier: str) -> tuple[int, int]:
+    if tier not in VIDEO_TIERS:
+        raise InvalidArgument(f"视频分辨率只支持: {', '.join(VIDEO_TIERS)}")
+    if size not in VIDEO_TIERS[tier]:
+        raise InvalidArgument(f"视频比例只支持: {', '.join(VIDEO_TIERS[tier])}")
+    return VIDEO_TIERS[tier][size]
 
 
 def image_workflow(
@@ -271,10 +340,10 @@ def video_workflow(
     refs: list[str] | None = None,
     prefix: str = "filmline/video",
 ) -> Workflow:
-    if size not in VIDEO_TIERS["768"]:
-        raise InvalidArgument(f"视频比例只支持: {', '.join(VIDEO_TIERS['768'])}")
     if tier not in VIDEO_TIERS:
         raise InvalidArgument(f"视频分辨率只支持: {', '.join(VIDEO_TIERS)}")
+    if size not in VIDEO_TIERS[tier]:
+        raise InvalidArgument(f"视频比例只支持: {', '.join(VIDEO_TIERS[tier])}")
     length = video_length(duration)
     if not prompt.strip():
         raise InvalidArgument("提示词不能为空")
@@ -287,7 +356,7 @@ def video_workflow(
             raise InvalidArgument("视频首帧只支持 1 张")
         first_frame = refs[0]
 
-    width, height = VIDEO_TIERS[tier][size]
+    width, height = video_dimensions(size, tier)
     actual_seed = _seed() if seed is None else seed
 
     graph: dict[str, Any] = {
@@ -415,13 +484,16 @@ def video_reference_workflow(
     *,
     prompt: str,
     size: str,
-    duration: int,
-    tier: str = "768",
+    duration: float,
+    tier: str = DEFAULT_VIDEO_TIER,
     seed: int | None = None,
     refs: list[str] | None = None,
     ref_videos: list[VideoReference] | None = None,
     ref_audios: list[str] | None = None,
     ref_image_size: str = "match",
+    quality: str = DEFAULT_REF_QUALITY,
+    scheduler: str | None = None,
+    guides: list[GuideFrame] | None = None,
     prefix: str = "filmline/video",
 ) -> Workflow:
     """Ref2VA：参考图/视频/音频保持身份、风格、动作或音色。
@@ -430,20 +502,27 @@ def video_reference_workflow(
 
     参考顺序决定提示词里的 ``<Picture i>`` / ``<Video k>`` / ``<Audio j>``：
     图片按传入顺序，视频按传入顺序，独立音频排在所有视频音轨之后。
+
+    ``quality`` 决定采样档位：``quality`` 为官方基线（20 步、不挂 LoRA），
+    ``fast`` 为 8 步 + turbo LoRA 0.7。参考 token 会参与每一步采样，
+    step 过少时身份、口型与音色都锁不住，所以默认走质量档。
     """
-    if size not in VIDEO_TIERS["768"]:
-        raise InvalidArgument(f"视频比例只支持: {', '.join(VIDEO_TIERS['768'])}")
-    if tier not in VIDEO_TIERS:
-        raise InvalidArgument(f"视频分辨率只支持: {', '.join(VIDEO_TIERS)}")
+    width, height = video_dimensions(size, tier)
     length = video_length(duration)
     if not prompt.strip():
         raise InvalidArgument("提示词不能为空")
     if ref_image_size not in ("match", "max"):
         raise InvalidArgument("ref_image_size 只支持 match / max")
+    if quality not in REF_QUALITY_PRESETS:
+        raise InvalidArgument(f"参考画质只支持: {', '.join(REF_QUALITY_PRESETS)}")
+    actual_scheduler = scheduler or VIDEO_REF_SCHEDULER
+    if actual_scheduler not in REF_SCHEDULERS:
+        raise InvalidArgument(f"采样调度只支持: {', '.join(REF_SCHEDULERS)}")
 
     refs = refs or []
     ref_videos = ref_videos or []
     ref_audios = ref_audios or []
+    guides = guides or []
     if len(refs) > MAX_VIDEO_REFS:
         raise InvalidArgument(f"参考图最多 {MAX_VIDEO_REFS} 张")
     if len(ref_videos) > MAX_VIDEO_VIDEOS:
@@ -452,28 +531,28 @@ def video_reference_workflow(
         raise InvalidArgument(f"参考音频最多 {MAX_VIDEO_AUDIOS} 段")
     if len(refs) + len(ref_videos) + len(ref_audios) > MAX_VIDEO_FILES:
         raise InvalidArgument(f"参考素材合计最多 {MAX_VIDEO_FILES} 个")
-    if not refs and not ref_videos and not ref_audios:
-        raise InvalidArgument("参考生成至少需要 1 个素材")
+    if guides and len(guides) > MAX_VIDEO_GUIDES:
+        raise InvalidArgument(f"帧锚定最多 {MAX_VIDEO_GUIDES} 个")
+    # 官方 Ref2VA 的视觉锚点来自图片/视频；只有独立音频时参考基本不生效
+    if not refs and not ref_videos:
+        raise InvalidArgument("参考生成至少需要 1 张参考图或 1 段参考视频")
 
-    width, height = VIDEO_TIERS[tier][size]
+    preset = REF_QUALITY_PRESETS[quality]
+    steps = int(preset["steps"])
+    lora_name = preset["lora"]
+    lora_strength = float(preset["lora_strength"])
     actual_seed = _seed() if seed is None else seed
+    ref_model = resolve_ref_model()
 
     ref_images: dict[str, list[Any]] = {}
     video_frames: dict[str, list[Any]] = {}
     video_audios: dict[str, list[Any]] = {}
     audio_refs: dict[str, list[Any]] = {}
     graph: dict[str, Any] = {
+        # int8_convrot / fp8_scaled 都交给 ComfyUI 按 checkpoint 自行识别量化
         "1": {
             "class_type": "UNETLoader",
-            "inputs": {"unet_name": VIDEO_REF_MODEL, "weight_dtype": "fp8_e4m3fn"},
-        },
-        "2": {
-            "class_type": "LoraLoaderModelOnly",
-            "inputs": {"model": ["1", 0], "lora_name": VIDEO_REF_LORA, "strength_model": 1.0},
-        },
-        "3": {
-            "class_type": "MiniMaxH3SigmaShift",
-            "inputs": {"model": ["2", 0], "shift_video": 12.0, "shift_audio": 3.0},
+            "inputs": {"unet_name": ref_model, "weight_dtype": "default"},
         },
         "4": {
             "class_type": "CLIPLoader",
@@ -498,16 +577,15 @@ def video_reference_workflow(
             "class_type": "ConditioningZeroOut",
             "inputs": {"conditioning": ["7", 0]},
         },
-        # 参考 token 参与每一步采样；4 步 turbo 很难锁住参考，这里用 8 步档
         "9": {
             "class_type": "KSampler",
             "inputs": {
                 "model": ["3", 0],
                 "seed": actual_seed,
-                "steps": VIDEO_REF_STEPS,
+                "steps": steps,
                 "cfg": VIDEO_CFG,
                 "sampler_name": VIDEO_SAMPLER,
-                "scheduler": VIDEO_SCHEDULER,
+                "scheduler": actual_scheduler,
                 "positive": ["7", 0],
                 "negative": ["8", 0],
                 "latent_image": ["7", 1],
@@ -532,6 +610,23 @@ def video_reference_workflow(
         },
     }
 
+    model_source = ["1", 0]
+    if lora_name:
+        graph["2"] = {
+            "class_type": "LoraLoaderModelOnly",
+            "inputs": {
+                "model": ["1", 0],
+                "lora_name": lora_name,
+                "strength_model": lora_strength,
+            },
+        }
+        model_source = ["2", 0]
+    # 显式写入 shift，值与模型定义默认一致（12 / 3）；FastH3 等变体可另配
+    graph["3"] = {
+        "class_type": "MiniMaxH3SigmaShift",
+        "inputs": {"model": model_source, "shift_video": 12.0, "shift_audio": 3.0},
+    }
+
     # 参考素材不做画布裁切：让 Ref2VA 自己按 ref_image_size 等比缩放，保留完整构图
     next_node = 14
     for index, path in enumerate(refs):
@@ -547,9 +642,11 @@ def video_reference_workflow(
             "class_type": "FilmlineLoadVideo",
             "inputs": {
                 "path": video.path,
-                "max_seconds": float(duration),
-                "short_edge": 512,
+                # 官方节点会把参考视频缩到 768 短边；不要提前压到 512
+                "short_edge": REF_VIDEO_SHORT_EDGE,
                 "require_audio": video.use_audio,
+                "trim_start": float(video.trim_start),
+                "trim_end": float(video.trim_end),
             },
         }
         video_frames[f"ref_video_{index}"] = [node_id, 0]
@@ -561,9 +658,37 @@ def video_reference_workflow(
         next_node += 1
         graph[node_id] = {
             "class_type": "FilmlineLoadAudio",
-            "inputs": {"path": path, "max_seconds": 15.0},
+            # 0 表示不截断：官方不对独立音频设上限
+            "inputs": {"path": path, "max_seconds": 0.0},
         }
         audio_refs[f"ref_audio_{index}"] = [node_id, 0]
+
+    # Add Guide：把参考图钉到输出时间轴的具体帧，链在 Ref2VA 的 positive 之后
+    positive: list[Any] = ["7", 0]
+    for index, guide in enumerate(guides):
+        if not 0 <= guide.frame_index < length:
+            raise InvalidArgument(
+                f"第 {index + 1} 个帧锚定超出视频长度（0–{length - 1} 帧）"
+            )
+        loader_id = str(100 + index)
+        guide_id = str(110 + index)
+        graph[loader_id] = {
+            "class_type": "FilmlineLoadImage",
+            "inputs": {"path": guide.path},
+        }
+        graph[guide_id] = {
+            "class_type": "MiniMaxH3AddGuide",
+            "inputs": {
+                "positive": positive,
+                "vae": ["5", 0],
+                "latent": ["7", 1],
+                "image": [loader_id, 0],
+                "frame_idx": int(guide.frame_index),
+            },
+        }
+        positive = [guide_id, 0]
+    if guides:
+        graph["9"]["inputs"]["positive"] = positive
 
     if ref_images:
         graph["7"]["inputs"]["ref_images"] = ref_images
@@ -588,14 +713,23 @@ def video_reference_workflow(
             "fps": VIDEO_FPS,
             "has_audio": True,
             "seed": actual_seed,
-            "model": VIDEO_REF_MODEL,
-            "lora": VIDEO_REF_LORA,
-            "steps": VIDEO_REF_STEPS,
+            "model": ref_model,
+            "lora": lora_name,
+            "lora_strength": lora_strength,
+            "quality": quality,
+            "steps": steps,
+            "scheduler": actual_scheduler,
             "cfg": VIDEO_CFG,
             "refs": len(refs),
             "ref_videos": len(ref_videos),
             "ref_audios": len(ref_audios),
             "ref_image_size": ref_image_size,
+            "ref_video_trims": [
+                [video.trim_start, video.trim_end] for video in ref_videos
+            ],
+            "ref_guides": [
+                {"frame_index": guide.frame_index} for guide in guides
+            ],
         },
     )
 

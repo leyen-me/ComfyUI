@@ -371,14 +371,29 @@ export const api = {
                 size: string
                 resolution?: string
                 duration: number
+                /** 固定随机种子（0–2147483647） */
+                seed?: number
                 first_frame_id?: number | null
                 last_frame_id?: number | null
                 /** 参考图 id（顺序即 <Picture N>）；首尾帧模式兼容旧客户端最多 1 张 */
                 refs?: number[]
                 /** 参考视频；use_audio 决定是否把原声作为 <Audio j> */
-                ref_videos?: Array<{ asset_id: number; use_audio: boolean }>
+                ref_videos?: Array<{
+                  asset_id: number
+                  use_audio: boolean
+                  trim_start?: number
+                  trim_end?: number
+                }>
                 /** 独立参考音频 */
                 ref_audios?: number[]
+                /** 帧锚定：把图片钉到输出时间轴（官方 Add Guide） */
+                ref_guides?: Array<{ asset_id: number; at_seconds: number }>
+                /** 按最长参考音频自动定时长（仅参考生成） */
+                auto_duration?: boolean
+                /** 参考画质档：quality=20 步无 LoRA，fast=8 步 turbo */
+                ref_quality?: 'quality' | 'fast'
+                ref_scheduler?: 'simple' | 'beta' | 'normal'
+                ref_image_size?: 'match' | 'max'
                 client_label?: string
               },
         episode?: string,

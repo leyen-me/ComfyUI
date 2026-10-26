@@ -1,4 +1,4 @@
-import { useRef, useState, type DragEvent, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type DragEvent, type ReactNode } from 'react'
 import {
   ChevronLeft,
   ChevronRight,
@@ -6,6 +6,8 @@ import {
   Film,
   ImagePlus,
   Music,
+  Pin,
+  Scissors,
   TextQuote,
   X,
 } from 'lucide-react'
@@ -14,17 +16,23 @@ import { hasAssetDrag, readAssetDrag, type AssetDragPayload } from '@/lib/asset-
 import {
   MAX_REFERENCE_AUDIOS,
   MAX_REFERENCE_FILES,
+  MAX_REFERENCE_GUIDES,
   MAX_REFERENCE_IMAGES,
   MAX_REFERENCE_VIDEOS,
-  referenceDurationWarning,
+  audioDurationWarning,
   soundtrackOrdinal,
   standaloneAudioOrdinal,
   totalReferences,
+  totalVideoClipDuration,
+  videoClipDuration,
+  videoClipWarning,
   type ReferenceAudio,
+  type ReferenceGuide,
   type ReferenceLists,
   type ReferenceVideo,
 } from '@/lib/references'
 import { cn } from '@/lib/utils'
+import { Popover } from './ui/popover'
 
 const REF_INDEX_MIME = 'application/x-filmline-ref-index'
 type ReferenceKind = 'image' | 'video' | 'audio'
@@ -45,6 +53,12 @@ interface ReferenceTrayProps {
   onReorder: (kind: ReferenceKind, from: number, to: number) => void
   onInsertTag: (tag: string) => void
   onToggleAudio: (index: number) => void
+  onTrim: (index: number, start: number, end: number) => void
+  /** 参考生成才展示帧锚定 */
+  guides?: ReferenceGuide[]
+  onAddGuide?: () => void
+  onRemoveGuide?: (index: number) => void
+  onGuideSecondsChange?: (index: number, seconds: number) => void
 }
 
 /**
@@ -62,19 +76,21 @@ export function ReferenceTray({
   onReorder,
   onInsertTag,
   onToggleAudio,
+  onTrim,
+  guides = [],
+  onAddGuide,
+  onRemoveGuide,
+  onGuideSecondsChange,
 }: ReferenceTrayProps) {
   const [dragging, setDragging] = useState(false)
   const dragDepth = useRef(0)
   const total = totalReferences(lists)
   const atLimit = total >= MAX_REFERENCE_FILES
-  const videoTotal = lists.videos.reduce((sum, item) => sum + (item.duration ?? 0), 0)
-  const audioTotal = lists.audios.reduce((sum, item) => sum + (item.duration ?? 0), 0)
+  const videoTotal = totalVideoClipDuration(lists.videos)
   const durationWarning =
-    [...lists.videos, ...lists.audios].some((item) =>
-      referenceDurationWarning(item.duration),
-    ) ||
-    videoTotal > 15.05 ||
-    audioTotal > 15.05
+    lists.videos.some((item) => videoClipWarning(item)) ||
+    lists.audios.some((item) => audioDurationWarning(item.duration)) ||
+    videoTotal > 15.05
 
   function handleDragOver(event: DragEvent<HTMLDivElement>) {
     if (disabled) return
@@ -185,6 +201,7 @@ export function ReferenceTray({
               onRemove={onRemove}
               onMove={onMove}
               onReorder={onReorder}
+              onTrim={onTrim}
             />
           ))}
         </Section>
@@ -212,15 +229,37 @@ export function ReferenceTray({
             />
           ))}
         </Section>
+
+        {onAddGuide ? (
+          <Section
+            label="帧锚定"
+            count={guides.length}
+            limit={MAX_REFERENCE_GUIDES}
+            disabled={disabled || guides.length >= MAX_REFERENCE_GUIDES}
+            addLabel="添加帧锚定图片"
+            onAdd={onAddGuide}
+          >
+            {guides.map((guide, index) => (
+              <GuideCard
+                key={`${guide.assetId}-${index}`}
+                guide={guide}
+                index={index}
+                disabled={disabled}
+                onSecondsChange={(seconds) => onGuideSecondsChange?.(index, seconds)}
+                onRemove={() => onRemoveGuide?.(index)}
+              />
+            ))}
+          </Section>
+        ) : null}
       </div>
 
       <p className="mt-1.5 px-0.5 text-[10px] leading-relaxed text-muted-foreground">
         {hint ??
-          '参考素材不锁定首帧。视频原声会占用一个 <Audio j> 编号，独立音频排在所有原声之后。'}
+          '参考素材不锁定首帧。视频原声会占用一个 <Audio j> 编号，独立音频排在所有原声之后；帧锚定可把图片钉到指定时间点。'}
       </p>
       {durationWarning ? (
         <p className="mt-0.5 px-0.5 text-[10px] leading-relaxed text-amber-600 dark:text-amber-400">
-          有素材时长不在 2–15 秒，或视频/音频总时长超过 15 秒；生成时会被拒绝。
+          有参考视频裁剪后不在 2–15 秒、视频总时长超过 15 秒，或参考音频不足 2 秒；生成时会被拒绝。
         </p>
       ) : null}
     </div>
@@ -266,6 +305,8 @@ function Section({
             <ImagePlus className="size-3.5" />
           ) : label === '视频' ? (
             <Film className="size-3.5" />
+          ) : label === '帧锚定' ? (
+            <Pin className="size-3.5" />
           ) : (
             <Music className="size-3.5" />
           )}
@@ -421,6 +462,7 @@ function VideoCard({
   onRemove,
   onMove,
   onReorder,
+  onTrim,
 }: {
   asset: ReferenceVideo
   index: number
@@ -431,9 +473,41 @@ function VideoCard({
   onRemove: (kind: ReferenceKind, index: number) => void
   onMove: (kind: ReferenceKind, index: number, delta: -1 | 1) => void
   onReorder: (kind: ReferenceKind, from: number, to: number) => void
+  onTrim: (index: number, start: number, end: number) => void
 }) {
   const audioOrdinal = soundtrackOrdinal(videos, index)
-  const warning = referenceDurationWarning(asset.duration)
+  const clipSeconds = videoClipDuration(asset)
+  const warning = videoClipWarning(asset)
+  const [trimOpen, setTrimOpen] = useState(false)
+  const trimRef = useRef<HTMLButtonElement>(null)
+  const [startDraft, setStartDraft] = useState('0')
+  const [endDraft, setEndDraft] = useState('0')
+  const [trimError, setTrimError] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!trimOpen) return
+    setStartDraft(String(asset.trimStart ?? 0))
+    setEndDraft(String(asset.trimEnd ?? 0))
+    setTrimError(null)
+  }, [trimOpen, asset.trimStart, asset.trimEnd])
+
+  function applyTrim(close: () => void) {
+    const total = asset.duration ?? 0
+    let start = Number(startDraft)
+    let end = Number(endDraft)
+    if (!Number.isFinite(start) || start < 0) start = 0
+    if (!Number.isFinite(end) || end < 0) end = 0
+    if (total > 0) {
+      start = Math.min(start, total)
+      if (end > 0) end = Math.min(end, total)
+    }
+    if (end > 0 && end <= start) {
+      setTrimError('出点必须大于入点')
+      return
+    }
+    onTrim(index, start, end)
+    close()
+  }
 
   return (
     <CardShell
@@ -470,23 +544,40 @@ function VideoCard({
             )}
             title={warning ?? undefined}
           >
-            {asset.duration ? `${asset.duration.toFixed(1)}s` : '时长未知'}
+            {clipSeconds !== undefined
+              ? `${clipSeconds.toFixed(1)}s`
+              : asset.duration
+                ? `${asset.duration.toFixed(1)}s`
+                : '时长未知'}
           </span>
         </div>
       }
       extraAction={
-        audioOrdinal ? (
+        <div className="flex items-center">
           <button
+            ref={trimRef}
             type="button"
             disabled={disabled}
-            aria-label={`插入音轨 Audio ${audioOrdinal} 引用`}
-            title={`插入 <Audio ${audioOrdinal}>`}
+            aria-label={`裁剪参考视频${index + 1}`}
+            title="裁剪参考视频区间（2–15 秒）"
             className="cursor-pointer rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/60 focus-visible:outline-none disabled:opacity-30"
-            onClick={() => onInsertTag(`<Audio ${audioOrdinal}>`)}
+            onClick={() => setTrimOpen((value) => !value)}
           >
-            <Music className="size-3" />
+            <Scissors className="size-3" />
           </button>
-        ) : null
+          {audioOrdinal ? (
+            <button
+              type="button"
+              disabled={disabled}
+              aria-label={`插入音轨 Audio ${audioOrdinal} 引用`}
+              title={`插入 <Audio ${audioOrdinal}>`}
+              className="cursor-pointer rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/60 focus-visible:outline-none disabled:opacity-30"
+              onClick={() => onInsertTag(`<Audio ${audioOrdinal}>`)}
+            >
+              <Music className="size-3" />
+            </button>
+          ) : null}
+        </div>
       }
     >
       <Film className="absolute inset-0 m-auto size-5 text-muted-foreground/50" />
@@ -498,6 +589,79 @@ function VideoCard({
         draggable={false}
         className="relative size-full object-cover"
       />
+
+      <Popover
+        open={trimOpen}
+        onOpenChange={setTrimOpen}
+        anchorRef={trimRef}
+        width={208}
+      >
+        <div className="px-1 pb-1 text-[11px] text-muted-foreground">
+          裁剪区间（秒）
+          {asset.duration ? ` · 素材 ${asset.duration.toFixed(1)}s` : ''}
+        </div>
+        <div className="flex items-center gap-1.5">
+          <label className="flex-1 text-[10px] text-muted-foreground">
+            入点
+            <input
+              type="number"
+              inputMode="decimal"
+              min={0}
+              step={0.1}
+              value={startDraft}
+              aria-label="参考视频裁剪入点（秒）"
+              className="mt-0.5 h-6 w-full rounded border border-border bg-input px-1.5 text-xs text-foreground outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/25"
+              onChange={(event) => {
+                setStartDraft(event.target.value)
+                setTrimError(null)
+              }}
+            />
+          </label>
+          <label className="flex-1 text-[10px] text-muted-foreground">
+            出点
+            <input
+              type="number"
+              inputMode="decimal"
+              min={0}
+              step={0.1}
+              value={endDraft}
+              aria-label="参考视频裁剪出点（秒，0 表示到结尾）"
+              className="mt-0.5 h-6 w-full rounded border border-border bg-input px-1.5 text-xs text-foreground outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/25"
+              onChange={(event) => {
+                setEndDraft(event.target.value)
+                setTrimError(null)
+              }}
+            />
+          </label>
+        </div>
+        <p className="mt-1 px-0.5 text-[10px] text-muted-foreground">
+          出点填 0 表示到结尾；裁剪后需 2–15 秒。
+        </p>
+        {trimError ? (
+          <p className="mt-0.5 px-0.5 text-[10px] text-destructive">{trimError}</p>
+        ) : null}
+        <div className="mt-1.5 flex justify-end gap-1.5">
+          <button
+            type="button"
+            className="cursor-pointer rounded border border-border px-2 py-0.5 text-[11px] text-muted-foreground hover:bg-muted"
+            onClick={() => {
+              setStartDraft('0')
+              setEndDraft('0')
+              onTrim(index, 0, 0)
+              setTrimOpen(false)
+            }}
+          >
+            重置
+          </button>
+          <button
+            type="button"
+            className="cursor-pointer rounded bg-primary px-2 py-0.5 text-[11px] text-primary-foreground hover:opacity-90"
+            onClick={() => applyTrim(() => setTrimOpen(false))}
+          >
+            应用
+          </button>
+        </div>
+      </Popover>
     </CardShell>
   )
 }
@@ -523,7 +687,7 @@ function AudioCard({
   onMove: (kind: ReferenceKind, index: number, delta: -1 | 1) => void
   onReorder: (kind: ReferenceKind, from: number, to: number) => void
 }) {
-  const warning = referenceDurationWarning(asset.duration)
+  const warning = audioDurationWarning(asset.duration)
   return (
     <CardShell
       kind="audio"
@@ -553,5 +717,85 @@ function AudioCard({
         <FileAudio className="size-5" />
       </span>
     </CardShell>
+  )
+}
+
+function GuideCard({
+  guide,
+  index,
+  disabled,
+  onSecondsChange,
+  onRemove,
+}: {
+  guide: ReferenceGuide
+  index: number
+  disabled: boolean
+  onSecondsChange: (seconds: number) => void
+  onRemove: () => void
+}) {
+  const [draft, setDraft] = useState(String(guide.atSeconds))
+
+  useEffect(() => {
+    setDraft(String(guide.atSeconds))
+  }, [guide.atSeconds])
+
+  function apply() {
+    const next = Number(draft)
+    if (!Number.isFinite(next) || next < 0) {
+      setDraft(String(guide.atSeconds))
+      return
+    }
+    onSecondsChange(next)
+  }
+
+  return (
+    <div
+      data-reference-item={`guide-${index}`}
+      title={`${guide.name} · 锚定在 ${guide.atSeconds.toFixed(1)} 秒`}
+      className="group relative w-24 shrink-0 overflow-hidden rounded-lg border border-border bg-card"
+    >
+      <div className="relative aspect-video bg-muted">
+        <img
+          src={guide.src}
+          alt={guide.name}
+          draggable={false}
+          className="size-full object-cover"
+        />
+        <span className="absolute top-1 left-1 rounded bg-background/85 px-1 py-0.5 font-mono text-[9px] font-medium">
+          锚 {index + 1}
+        </span>
+        <button
+          type="button"
+          disabled={disabled}
+          aria-label={`移除第 ${index + 1} 个帧锚定`}
+          className="absolute top-0.5 right-0.5 cursor-pointer rounded bg-background/85 p-0.5 text-muted-foreground transition-colors hover:bg-background hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/70 focus-visible:outline-none disabled:opacity-40"
+          onClick={onRemove}
+        >
+          <X className="size-3" />
+        </button>
+      </div>
+      <div className="flex items-center gap-1 px-1 py-0.5">
+        <Pin className="size-2.5 shrink-0 text-muted-foreground" />
+        <input
+          type="number"
+          inputMode="decimal"
+          min={0}
+          step={0.1}
+          value={draft}
+          disabled={disabled}
+          aria-label={`第 ${index + 1} 个帧锚定的秒数`}
+          className="h-5 w-full rounded border border-border bg-input px-1 font-mono text-[9px] text-foreground outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/25 disabled:opacity-40"
+          onChange={(event) => setDraft(event.target.value)}
+          onBlur={apply}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter') {
+              event.preventDefault()
+              apply()
+            }
+          }}
+        />
+        <span className="text-[9px] text-muted-foreground">s</span>
+      </div>
+    </div>
   )
 }

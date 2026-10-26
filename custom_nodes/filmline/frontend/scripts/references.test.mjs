@@ -13,6 +13,7 @@ import {
   addReference,
   addReferences,
   addVideo,
+  audioDurationWarning,
   moveReference,
   referenceDurationWarning,
   removeReference,
@@ -20,6 +21,9 @@ import {
   soundtrackOrdinal,
   standaloneAudioOrdinal,
   totalReferences,
+  totalVideoClipDuration,
+  videoClipDuration,
+  videoClipWarning,
 } from '../src/lib/references.ts'
 
 const img = (id) => ({ assetId: id, src: `/assets/${id}`, name: `图${id}.png`, kind: 'image' })
@@ -111,6 +115,21 @@ assert.equal(standaloneAudioOrdinal(videos, [audio(10), audio(11)], 1), 4)
 assert.equal(referenceDurationWarning(5), null)
 assert.match(referenceDurationWarning(1), /2–15 秒/)
 assert.match(referenceDurationWarning(16), /2–15 秒/)
+// 独立音频无上限，只要求至少 2 秒
+assert.equal(audioDurationWarning(5), null)
+assert.equal(audioDurationWarning(30), null)
+assert.match(audioDurationWarning(1), /至少需要 2 秒/)
+
+// 参考视频裁剪区间：出点 0 表示到结尾
+const trimmed = { ...video(1), duration: 10, trimStart: 2, trimEnd: 8 }
+assert.deepEqual(videoClipDuration(trimmed), 6)
+assert.equal(videoClipWarning(trimmed), null)
+assert.deepEqual(videoClipDuration({ ...video(1), trimStart: 2, trimEnd: 0 }), 3)
+assert.match(videoClipWarning({ ...video(1), trimStart: 4.5, trimEnd: 5 }), /2–15 秒/)
+assert.equal(
+  totalVideoClipDuration([trimmed, { ...video(2), duration: 10, trimStart: 0, trimEnd: 4 }]),
+  10,
+)
 
 // 删除、移动、拖拽排序
 assert.deepEqual(removeReference([img(1), img(2), img(3)], 1), [img(1), img(3)])

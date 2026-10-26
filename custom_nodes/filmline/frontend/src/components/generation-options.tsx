@@ -13,6 +13,7 @@ export const IMAGE_RATIOS = [
 export const VIDEO_RATIOS = [
   { value: '16:9', label: '横屏 16:9' },
   { value: '9:16', label: '竖屏 9:16' },
+  { value: '1:1', label: '方形 1:1' },
 ] as const
 
 /** 与后端 generation.IMAGE_TIERS 保持一致（2K 为官方原生，不提供 4K） */
@@ -21,8 +22,11 @@ export const IMAGE_TIERS = [
   { value: '2k', label: '2K', hint: '原生' },
 ] as const
 
-/** 视频只有官方原生一档（短边 768），因此不展示分辨率组 */
-export const VIDEO_TIERS: readonly { value: string; label: string; hint: string }[] = []
+/** 与后端 generation.VIDEO_TIERS 保持一致：官方原生 768p + 0.4MP 草稿档 */
+export const VIDEO_TIERS = [
+  { value: '768', label: '768p', hint: '原生' },
+  { value: '0.4', label: '0.4MP', hint: '草稿' },
+] as const
 
 interface GenerationOptionsProps {
   mode: 'image' | 'video'

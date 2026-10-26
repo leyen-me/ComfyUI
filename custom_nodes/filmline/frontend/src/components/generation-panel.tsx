@@ -22,18 +22,23 @@ import {
   EMPTY_REFERENCES,
   MAX_REFERENCE_AUDIOS,
   MAX_REFERENCE_FILES,
+  MAX_REFERENCE_GUIDES,
   MAX_REFERENCE_IMAGES,
   MAX_REFERENCE_VIDEOS,
   addAudio,
   addReference,
   addReferences,
   addVideo,
+  audioDurationWarning,
   moveReference,
   reorderReference,
   removeReference,
   soundtrackOrdinal,
   standaloneAudioOrdinal,
   totalReferences,
+  totalVideoClipDuration,
+  videoClipWarning,
+  type ReferenceGuide,
   type ReferenceLists,
 } from '@/lib/references'
 import { emitAssetsChanged, REUSE_PROMPT, type ReusePromptDetail } from '@/lib/events'
@@ -51,6 +56,12 @@ import { PromptAssistant } from './prompt-assistant'
 import { PromptOptimizeDialog } from './prompt-optimize-dialog'
 import type { PromptValue } from './prompt-editor'
 import { ReferenceTray } from './reference-tray'
+import {
+  ReferenceSettings,
+  type RefImageSize,
+  type RefQuality,
+  type RefScheduler,
+} from './reference-settings'
 import { VideoFrameDialog } from './video-frame-dialog'
 import { Button } from './ui/button'
 import { Select } from './ui/select'
@@ -61,6 +72,7 @@ type DraftKey = 'image' | 'keyframes' | 'reference'
 type PickerState =
   | { type: 'keyframe'; slot: KeyframeSlot }
   | { type: 'reference'; kind: 'image' | 'video' | 'audio' }
+  | { type: 'guide' }
   | null
 
 const COUNTS = [1, 2, 3, 4]
@@ -92,6 +104,7 @@ export function GenerationPanel({ project, episodeCode }: GenerationPanelProps) 
   const [referenceLists, setReferenceLists] = useState<ReferenceLists>(EMPTY_REFERENCES)
   const referenceListsRef = useRef<ReferenceLists>(EMPTY_REFERENCES)
   referenceListsRef.current = referenceLists
+  const [guides, setGuides] = useState<ReferenceGuide[]>([])
   const [picker, setPicker] = useState<PickerState>(null)
   const [assistantOpen, setAssistantOpen] = useState(false)
   const assistantAnchorRef = useRef<HTMLButtonElement>(null)
@@ -107,8 +120,15 @@ export function GenerationPanel({ project, episodeCode }: GenerationPanelProps) 
   const [imageSize, setImageSize] = useState<string>('16:9')
   const [imageTier, setImageTier] = useState<string>('1k')
   const [videoSize, setVideoSize] = useState<string>('16:9')
+  const [videoTier, setVideoTier] = useState<string>('768')
   const [count, setCount] = useState(1)
   const [duration, setDuration] = useState(5)
+  const [autoDuration, setAutoDuration] = useState(false)
+  const [refQuality, setRefQuality] = useState<RefQuality>('quality')
+  const [refScheduler, setRefScheduler] = useState<RefScheduler>('simple')
+  const [refImageSize, setRefImageSize] = useState<RefImageSize>('match')
+  const [seedEnabled, setSeedEnabled] = useState(false)
+  const [seed, setSeed] = useState(() => Math.floor(Math.random() * 2147483647))
   const [running, setRunning] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [elapsed, setElapsed] = useState(0)
@@ -142,6 +162,10 @@ export function GenerationPanel({ project, episodeCode }: GenerationPanelProps) 
             : null
       : null
   const referenceHint = usesReferences && referenceTotal > 0 ? `已引用 ${referenceTotal} 个参考素材` : null
+  const referenceHasAudio =
+    referenceLists.audios.length > 0 ||
+    referenceLists.videos.some((video) => video.useAudio && video.hasAudio !== false)
+  const canAutoDuration = usesReferences && referenceHasAudio
   const pickerKind = picker?.type === 'reference' ? picker.kind : 'image'
   const pickerLimit =
     pickerKind === 'image'
@@ -155,12 +179,21 @@ export function GenerationPanel({ project, episodeCode }: GenerationPanelProps) 
       : pickerKind === 'video'
         ? referenceLists.videos
         : referenceLists.audios
-  const pickerMax = Math.max(
-    0,
-    Math.min(pickerLimit - pickerItems.length, MAX_REFERENCE_FILES - referenceTotal),
-  )
+  const pickerMax =
+    picker?.type === 'guide'
+      ? Math.max(0, MAX_REFERENCE_GUIDES - guides.length)
+      : Math.max(
+          0,
+          Math.min(pickerLimit - pickerItems.length, MAX_REFERENCE_FILES - referenceTotal),
+        )
   const pickerTitle =
-    pickerKind === 'image' ? '添加参考图片' : pickerKind === 'video' ? '添加参考视频' : '添加参考音频'
+    picker?.type === 'guide'
+      ? '添加帧锚定图片'
+      : pickerKind === 'image'
+        ? '添加参考图片'
+        : pickerKind === 'video'
+          ? '添加参考视频'
+          : '添加参考音频'
   const assistantMode = mode === 'image' ? 'image' : 'video'
   const assistantCounts = {
     images: referenceLists.images.length,
@@ -184,6 +217,11 @@ export function GenerationPanel({ project, episodeCode }: GenerationPanelProps) 
       if (timerRef.current) window.clearInterval(timerRef.current)
     }
   }, [])
+
+  // 没有可用参考音频时自动时长没有意义，避免提交后才报错
+  useEffect(() => {
+    if (!canAutoDuration && autoDuration) setAutoDuration(false)
+  }, [canAutoDuration, autoDuration])
 
   function replaceEditorDoc(doc: unknown) {
     if (doc) {
@@ -209,7 +247,7 @@ export function GenerationPanel({ project, episodeCode }: GenerationPanelProps) 
       draftsRef.current[next === 'image' ? 'image' : videoModeRef.current],
     )
 
-    if (next === 'video' && videoSize !== '16:9' && videoSize !== '9:16') {
+    if (next === 'video' && !['16:9', '9:16', '1:1'].includes(videoSize)) {
       setVideoSize('16:9')
     }
   }
@@ -238,7 +276,28 @@ export function GenerationPanel({ project, episodeCode }: GenerationPanelProps) 
           detail.videoMode === 'reference' ? 'reference' : 'keyframes'
         switchModeRef.current('video')
         switchVideoModeRef.current(targetVideoMode)
-        if (detail.size === '16:9' || detail.size === '9:16') setVideoSize(detail.size)
+        if (detail.size === '16:9' || detail.size === '9:16' || detail.size === '1:1') {
+          setVideoSize(detail.size)
+        }
+        if (detail.tier === '768' || detail.tier === '0.4') setVideoTier(detail.tier)
+        setAutoDuration(Boolean(detail.autoDuration))
+        if (
+          detail.refQuality === 'quality' ||
+          detail.refQuality === 'fast'
+        ) {
+          setRefQuality(detail.refQuality)
+        }
+        if (
+          detail.refScheduler === 'simple' ||
+          detail.refScheduler === 'beta' ||
+          detail.refScheduler === 'normal'
+        ) {
+          setRefScheduler(detail.refScheduler)
+        }
+        if (detail.refImageSize === 'match' || detail.refImageSize === 'max') {
+          setRefImageSize(detail.refImageSize)
+        }
+        if (typeof detail.seed === 'number') setSeed(detail.seed)
         if (typeof detail.duration === 'number' && isValidDuration(detail.duration)) {
           setDuration(detail.duration)
         }
@@ -248,8 +307,9 @@ export function GenerationPanel({ project, episodeCode }: GenerationPanelProps) 
           const videoIds = detail.videoRefIds ?? []
           const audioIds = detail.audioRefIds ?? []
           const useAudio = detail.videoUseAudio ?? []
+          const guideFrames = detail.guideFrames ?? []
 
-          const [imageAssets, videoAssets, audioAssets] = await Promise.all([
+          const [imageAssets, videoAssets, audioAssets, guideAssets] = await Promise.all([
             Promise.all(
               imageIds.map((assetId) => api.projects.assets.get(assetId).catch(() => null)),
             ),
@@ -258,6 +318,11 @@ export function GenerationPanel({ project, episodeCode }: GenerationPanelProps) 
             ),
             Promise.all(
               audioIds.map((assetId) => api.projects.assets.get(assetId).catch(() => null)),
+            ),
+            Promise.all(
+              guideFrames.map((item) =>
+                api.projects.assets.get(item.assetId).catch(() => null),
+              ),
             ),
           ])
 
@@ -281,12 +346,15 @@ export function GenerationPanel({ project, episodeCode }: GenerationPanelProps) 
                   /* 探测失败仍允许还原，生成时会再次校验 */
                 }
               }
+              const trim = detail.videoTrims?.[index]
               return {
                 ...payload,
                 duration,
                 hasAudio,
                 fps,
                 useAudio: Boolean(useAudio[index] ?? hasAudio) && hasAudio !== false,
+                trimStart: typeof trim?.[0] === 'number' ? trim[0] : 0,
+                trimEnd: typeof trim?.[1] === 'number' ? trim[1] : 0,
               }
             }),
           )
@@ -318,6 +386,19 @@ export function GenerationPanel({ project, episodeCode }: GenerationPanelProps) 
           }
           referenceListsRef.current = next
           setReferenceLists(next)
+          setGuides(
+            guideAssets
+              .map((asset, index) => {
+                const payload = toDragPayload(asset)
+                if (!payload || payload.kind !== 'image') return null
+                return {
+                  ...payload,
+                  atSeconds: guideFrames[index]?.atSeconds ?? 0,
+                }
+              })
+              .filter((item): item is ReferenceGuide => Boolean(item))
+              .slice(0, MAX_REFERENCE_GUIDES),
+          )
           if (totalReferences(next) === 0) {
             setError('这条视频没有可还原的参考素材')
           } else if (
@@ -558,14 +639,61 @@ export function GenerationPanel({ project, episodeCode }: GenerationPanelProps) 
     commitReferences({ ...current, videos })
   }
 
+  function trimVideo(index: number, start: number, end: number) {
+    const current = referenceListsRef.current
+    const videos = current.videos.map((video, cursor) =>
+      cursor === index ? { ...video, trimStart: start, trimEnd: end } : video,
+    )
+    commitReferences({ ...current, videos })
+  }
+
   function handlePicked(asset: Asset) {
-    if (picker?.type !== 'keyframe') return
+    if (!picker) return
     const payload = toDragPayload(asset)
     if (!payload) {
       setError('该图片缺少文件内容')
       return
     }
+    if (picker.type === 'guide') {
+      if (payload.kind !== 'image') {
+        setError('帧锚定只接受图片资产')
+        return
+      }
+      if (guides.length >= MAX_REFERENCE_GUIDES) {
+        setError(`帧锚定最多 ${MAX_REFERENCE_GUIDES} 个`)
+        return
+      }
+      setGuides((current) => [...current, { ...payload, atSeconds: 0 }])
+      setPicker(null)
+      return
+    }
+    if (picker.type !== 'keyframe') return
     setKeyframe(picker.slot, payload)
+    setPicker(null)
+  }
+
+  function removeGuide(index: number) {
+    setGuides((current) => current.filter((_, cursor) => cursor !== index))
+  }
+
+  function changeGuideSeconds(index: number, seconds: number) {
+    setGuides((current) =>
+      current.map((guide, cursor) =>
+        cursor === index ? { ...guide, atSeconds: seconds } : guide,
+      ),
+    )
+  }
+
+  function addGuides(assets: Asset[]) {
+    const added = assets
+      .map((asset) => toDragPayload(asset))
+      .filter((item): item is AssetDragPayload => Boolean(item) && item?.kind === 'image')
+      .map((item) => ({ ...item, atSeconds: 0 }))
+    if (!added.length) {
+      setError('帧锚定只接受图片资产')
+      return
+    }
+    setGuides((current) => [...current, ...added].slice(0, MAX_REFERENCE_GUIDES))
     setPicker(null)
   }
 
@@ -692,8 +820,10 @@ export function GenerationPanel({ project, episodeCode }: GenerationPanelProps) 
       kind: 'video' as const,
       prompt,
       size: videoSize,
+      resolution: videoTier,
       duration,
       client_label: clientLabel,
+      ...(seedEnabled ? { seed } : {}),
     }
     if (videoMode === 'keyframes') {
       return {
@@ -711,8 +841,18 @@ export function GenerationPanel({ project, episodeCode }: GenerationPanelProps) 
       ref_videos: referenceLists.videos.map((item) => ({
         asset_id: item.assetId,
         use_audio: item.useAudio && item.hasAudio !== false,
+        trim_start: item.trimStart ?? 0,
+        trim_end: item.trimEnd ?? 0,
       })),
       ref_audios: referenceLists.audios.map((item) => item.assetId),
+      ref_guides: guides.map((guide) => ({
+        asset_id: guide.assetId,
+        at_seconds: guide.atSeconds,
+      })),
+      auto_duration: autoDuration,
+      ref_quality: refQuality,
+      ref_scheduler: refScheduler,
+      ref_image_size: refImageSize,
     }
   }
 
@@ -725,19 +865,15 @@ export function GenerationPanel({ project, episodeCode }: GenerationPanelProps) 
       return
     }
     if (usesReferences) {
-      const badDuration = [...referenceLists.videos, ...referenceLists.audios].some(
-        (item) => item.duration !== undefined && (item.duration < 1.95 || item.duration > 15.05),
-      )
-      const videoTotal = referenceLists.videos.reduce(
-        (sum, item) => sum + (item.duration ?? 0),
-        0,
-      )
-      const audioTotal = referenceLists.audios.reduce(
-        (sum, item) => sum + (item.duration ?? 0),
-        0,
-      )
-      if (badDuration || videoTotal > 15.05 || audioTotal > 15.05) {
-        setError('参考视频/音频每段需 2–15 秒，且视频、音频各自总时长不超过 15 秒')
+      const badVideo = referenceLists.videos.some((item) => videoClipWarning(item))
+      const badAudio = referenceLists.audios.some((item) => audioDurationWarning(item.duration))
+      if (badVideo || badAudio || totalVideoClipDuration(referenceLists.videos) > 15.05) {
+        setError('参考视频每段裁剪后需 2–15 秒且总时长 ≤15 秒；参考音频每段至少 2 秒')
+        return
+      }
+      const guideLimit = autoDuration ? 15 : duration
+      if (guides.some((guide) => guide.atSeconds >= guideLimit)) {
+        setError(`帧锚定时间必须小于视频时长（${guideLimit} 秒）`)
         return
       }
     }
@@ -880,6 +1016,11 @@ export function GenerationPanel({ project, episodeCode }: GenerationPanelProps) 
                 onReorder={reorderReferenceItem}
                 onInsertTag={(tag) => editorRef.current?.insertText(tag)}
                 onToggleAudio={toggleVideoAudio}
+                onTrim={trimVideo}
+                guides={guides}
+                onAddGuide={() => setPicker({ type: 'guide' })}
+                onRemoveGuide={removeGuide}
+                onGuideSecondsChange={changeGuideSeconds}
               />
             ) : null}
 
@@ -929,11 +1070,13 @@ export function GenerationPanel({ project, episodeCode }: GenerationPanelProps) 
               <GenerationOptions
                 mode={mode}
                 size={mode === 'image' ? imageSize : videoSize}
-                tier={mode === 'image' ? imageTier : '768'}
+                tier={mode === 'image' ? imageTier : videoTier}
                 onSizeChange={(next) =>
                   mode === 'image' ? setImageSize(next) : setVideoSize(next)
                 }
-                onTierChange={setImageTier}
+                onTierChange={(next) =>
+                  mode === 'image' ? setImageTier(next) : setVideoTier(next)
+                }
               />
 
               {mode === 'image' ? (
@@ -949,11 +1092,32 @@ export function GenerationPanel({ project, episodeCode }: GenerationPanelProps) 
                   onChange={(next) => setCount(Number(next))}
                 />
               ) : (
-                <DurationSelect
-                  value={duration}
-                  disabled={running}
-                  onChange={setDuration}
-                />
+                <>
+                  <DurationSelect
+                    value={duration}
+                    disabled={running}
+                    auto={autoDuration}
+                    onChange={setDuration}
+                  />
+                  {usesReferences ? (
+                    <ReferenceSettings
+                      disabled={running}
+                      quality={refQuality}
+                      scheduler={refScheduler}
+                      imageSize={refImageSize}
+                      autoDuration={autoDuration}
+                      canAutoDuration={canAutoDuration}
+                      seedEnabled={seedEnabled}
+                      seed={seed}
+                      onQualityChange={setRefQuality}
+                      onSchedulerChange={setRefScheduler}
+                      onImageSizeChange={setRefImageSize}
+                      onAutoDurationChange={setAutoDuration}
+                      onSeedEnabledChange={setSeedEnabled}
+                      onSeedChange={setSeed}
+                    />
+                  ) : null}
+                </>
               )}
 
               {mode === 'image' && hasRefs ? (
@@ -1081,6 +1245,20 @@ export function GenerationPanel({ project, episodeCode }: GenerationPanelProps) 
         onSelectMany={(assets) => {
           if (picker?.type === 'reference') void addReferenceAssets(assets, picker.kind)
         }}
+      />
+
+      <AssetPickerDialog
+        open={picker?.type === 'guide'}
+        title="添加帧锚定图片"
+        project={project}
+        episodeCode={episodeCode}
+        kind="image"
+        multiple
+        max={pickerMax}
+        onOpenChange={(open) => {
+          if (!open) setPicker(null)
+        }}
+        onSelectMany={(assets) => addGuides(assets)}
       />
 
       <VideoFrameDialog

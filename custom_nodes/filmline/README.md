@@ -104,17 +104,23 @@ ComfyUI/user/filmline/
 |---|---|
 | `FILMLINE_DATA_DIR` | 数据根目录（未来放缩略图、导出文件） |
 | `FILMLINE_DB_PATH` | 直接指定数据库文件 |
+| `FILMLINE_REF_UNET` | Ref2VA UNet 文件名（默认 int8_convrot；显存不足可回退 fp8） |
+| `FILMLINE_REF_SHORT_EDGE` | 参考视频解码短边（默认 768；显存不足可设 512） |
+| `FILMLINE_REF_SCHEDULER` | 参考生成默认调度器（simple / beta / normal） |
+| `FILMLINE_COMFY_URL` | 本机 ComfyUI 地址 |
 
 ## 视频生成参数（对齐官方）
 
 | 项 | 取值 | 依据 |
 |---|---|---|
-| 分辨率 | 短边 768（1344×768 / 768×1344） | 官方原生画布，上限 768×1344；不提供低档（实测不省时间） |
-| 时长 | 5–15 秒（预设 5/8/10/12/15，自定义整数秒） | 模型训练区间 124–362 帧（≈5.2–15.1 秒）；24fps，帧数向上对齐 17k+5 |
-| 采样 | `res_multistep` + `simple`，4 步 | 官方模板 SamplerCustomAdvanced |
+| 分辨率 | `768` 原生档（1344×768 / 768×1344 / 992×992）+ `0.4` 草稿档（864×480 / 480×864 / 640×640） | 对齐官方 ResolutionSelector；768 为原生 0.98MP |
+| 时长 | 5–15 秒（预设 5/8/10/12/15，自定义整数秒；接口接受浮点） | 模型训练区间 124–362 帧（≈5.2–15.1 秒）；24fps，帧数向上对齐 17k+5 |
+| 采样 | `res_multistep` + `simple`，4 步（首尾帧） | 官方模板 SamplerCustomAdvanced |
 | cfg | 1.0（等价 BasicGuider） | 权重为 CFG 蒸馏 |
 | LoRA | `minimax_h3_fl2v_turbo_4step_v1.0_768p` | 与本地已有权重匹配 |
 | 提示词 | 建议包含镜头、运镜与声音（对白/音效/配乐） | 该模型联合生成音视频 |
+
+> Ref2VA 的采样参数单独一套，见下方「参考生成」。默认走官方基线：20 步、不挂 turbo LoRA。
 
 ### 视频生成方式
 
@@ -126,15 +132,35 @@ ComfyUI/user/filmline/
   连贯镜头的常用做法：把上一段视频拖到首帧槽位，点「末帧」，用这一帧作为下一段的首帧。
   请求字段：`mode=keyframes`、`first_frame_id`、`last_frame_id`。
 - **参考生成**（`ref2va`）：图片 ≤9、视频 ≤3、独立音频 ≤3，所有文件合计 ≤12；
-  视频/音频每段 2–15 秒，视频总时长 ≤15 秒、音频总时长 ≤15 秒。顺序决定提示词里的
+  参考视频每段裁剪后 2–15 秒、总时长 ≤15 秒；参考音频每段 ≥2 秒、不设上限。顺序决定提示词里的
   `<Picture i>`、`<Video k>`、`<Audio j>`；参考素材不会锁定第 0 帧。请求字段：
-  `mode=reference`、`refs=[图片 id]`、`ref_videos=[{asset_id, use_audio}]`、`ref_audios=[音频 id]`。
-  参考视频会重采样到 24fps、短边压到 512 并截断到输出时长；视频原声占用一个 `<Audio j>`，
-  独立音频排在所有原声之后。当前使用 8 步 turbo。
+  `mode=reference`、`refs=[图片 id]`、`ref_videos=[{asset_id, use_audio, trim_start, trim_end}]`、
+  `ref_audios=[音频 id]`、`ref_guides=[{asset_id, at_seconds}]`。
+  参考视频会裁剪到所选区间、重采样到 24fps、短边压到 768（官方 Ref2VA 画布），
+  帧数按 17k+5 向下对齐；视频原声占用一个 `<Audio j>`，独立音频排在所有原声之后。
+
+#### 参考生成的画质与时长
+
+| 项 | 取值 | 说明 |
+|---|---|---|
+| 画质档 | `quality`（默认，20 步、不挂 LoRA）/ `fast`（8 步 + turbo LoRA 0.7） | 参考 token 参与每一步采样，步数过低会身份/口型漂移 |
+| UNet | `minimax_h3_ref2va_pruned_int8_convrot` | 官方模型卡：能用 int8_convrot 就优先用；可用 `FILMLINE_REF_UNET` 回退 fp8 |
+| 调度器 | `simple`（默认）/ `beta` / `normal` | 官方模板注：参考重的提示词 beta/normal 往往更好 |
+| 参考图尺寸 | `match`（默认，缩到生成像素面积）/ `max`（2048 短边，身份更准但更慢） | 对应官方 `ref_image_size` |
+| 自动时长 | `auto_duration=true` | 取最长的一段有效参考音频（含视频原声）作为输出时长，5–15 秒内收敛 |
+| 固定种子 | `seed`（0–2147483647） | 面板「参考设置」可勾选，便于 A/B 复现 |
+| 帧锚定 | `ref_guides`，最多 4 个 | 官方 `MiniMaxH3AddGuide`：把参考图钉到输出时间轴的具体秒数，可链式叠加 |
+| 参考视频裁剪 | `trim_start` / `trim_end`（出点 0 = 到结尾） | 参考视频卡片上的剪刀按钮，裁剪后需 2–15 秒 |
+
+音频进入采样前会校验：采样率 ≤384kHz、无 NaN/无穷值、非静音；单声道复制为双声道，
+多声道保留前两轨。静音音频会直接失败，而不是静默失去参考效果。
+「只有独立音频、没有图片/视频」会被拒绝——缺少视觉锚点时 Ref2VA 基本不生效。
 
 生成结果 `meta` 会记录 `video_mode`（`keyframes` / `reference`）、
 `first_frame_id` / `last_frame_id`（首尾帧）、`ref_ids` / `ref_video_ids` /
-`ref_video_use_audio` / `ref_audio_ids`（参考生成），供前端还原；旧视频资产只有 `ref_ids`
+`ref_video_use_audio` / `ref_video_trims` / `ref_audio_ids` / `ref_guide_ids` /
+`ref_guide_frames` / `ref_quality` / `ref_scheduler` / `ref_image_size` /
+`auto_duration`（参考生成），供前端还原；旧视频资产只有 `ref_ids`
 时按首帧兼容。`keyframes` 模式的 `ref_ids` 存首尾帧 id，`reference` 模式的 `ref_ids`
 只存参考图 id。
 
@@ -250,6 +276,9 @@ custom_nodes/filmline/
     `reference` 走 ref2va，参考素材通过 `<Picture N>` / `<Video k>` / `<Audio j>` 的 token 顺序
     做语义条件，不锁定时间轴。实验表明参考素材对首帧构图没有稳定贡献，因此不再提供
     「首帧+参考」组合模式；确需固定起幅时用首尾帧模式。
+14. **帧锚定（Add Guide）**：参考生成可额外挂最多 4 张图片锚定到输出时间轴的指定秒数，
+    走官方 `MiniMaxH3AddGuide` 链在 positive 上。它解决「参考素材不锁时间轴」的问题，
+    与首尾帧模式互补；当前只支持单张图片锚定，不支持整段视频/音频锚定。
 
 ## 测试
 

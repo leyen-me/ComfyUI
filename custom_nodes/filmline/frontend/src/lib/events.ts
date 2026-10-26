@@ -20,7 +20,16 @@ export interface ReusePromptDetail {
   /** 参考视频/音频 id 与视频原声开关 */
   videoRefIds?: number[]
   videoUseAudio?: boolean[]
+  /** 每段参考视频的裁剪区间（与 videoRefIds 同序） */
+  videoTrims?: Array<[number, number]>
   audioRefIds?: number[]
+  /** 帧锚定：图片 id + 锚定秒数 */
+  guideFrames?: Array<{ assetId: number; atSeconds: number }>
+  refQuality?: 'quality' | 'fast'
+  refScheduler?: 'simple' | 'beta' | 'normal'
+  refImageSize?: 'match' | 'max'
+  autoDuration?: boolean
+  seed?: number
 }
 
 export function emitAssetsChanged(): void {

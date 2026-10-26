@@ -350,6 +350,163 @@ class GenerateApiTest(ApiTestCase):
         self.assertEqual(res.status, 400, body)
         self.assertIn("没有音轨", body["error"]["message"])
 
+    async def test_reference_rejects_audio_only(self) -> None:
+        project = await self._project()
+        ref = project["code"]
+        audio = await self._media(ref, self._make_audio("only.wav"), "audio/wav")
+        res = await self.client.post(
+            f"/studio/api/projects/{ref}/generate",
+            json={
+                "kind": "video",
+                "mode": "reference",
+                "prompt": "x",
+                "duration": 5,
+                "ref_audios": [audio["id"]],
+            },
+        )
+        body = await res.json()
+        self.assertEqual(res.status, 400, body)
+        self.assertIn("至少需要 1 张参考图", body["error"]["message"])
+
+    async def test_reference_allows_long_audio_and_options(self) -> None:
+        project = await self._project()
+        ref = project["code"]
+        image = await self._image(ref, "face.png")
+        audio = await self._media(ref, self._make_audio("long.wav", 16.0), "audio/wav")
+
+        with patch(
+            "filmline.generation.submit", new=AsyncMock(return_value="prompt-ref-long")
+        ), patch("filmline.generation.collect", new=self._fake_run("video", 2.0)):
+            res = await self.client.post(
+                f"/studio/api/projects/{ref}/generate",
+                json={
+                    "kind": "video",
+                    "mode": "reference",
+                    "prompt": "<Audio 1> 的音色，<Picture 1> 的人物",
+                    "size": "16:9",
+                    "resolution": "0.4",
+                    "duration": 5,
+                    "refs": [image["id"]],
+                    "ref_audios": [audio["id"]],
+                    "ref_quality": "fast",
+                    "ref_scheduler": "beta",
+                    "ref_image_size": "max",
+                    "seed": 123,
+                },
+            )
+            body = await res.json()
+            self.assertEqual(res.status, 202, body)
+            task = await self._wait_task(body["data"]["task"]["id"])
+
+        self.assertEqual(task["status"], "succeeded")
+        asset = (
+            await (await self.client.get(f"/studio/api/assets/{task['asset_ids'][0]}")).json()
+        )["data"]
+        meta = asset["meta"]
+        self.assertEqual(meta["ref_quality"], "fast")
+        self.assertEqual(meta["ref_scheduler"], "beta")
+        self.assertEqual(meta["ref_image_size"], "max")
+        self.assertEqual(meta["seed"], 123)
+        self.assertEqual(meta["tier"], "0.4")
+        self.assertEqual((meta["width"], meta["height"]), (864, 480))
+        self.assertEqual(meta["ref_audio_ids"], [audio["id"]])
+
+    async def test_reference_trim_and_auto_duration(self) -> None:
+        project = await self._project()
+        ref = project["code"]
+        video = await self._media(ref, self._make_video("long.mp4", 12.0, True), "video/mp4")
+
+        with patch(
+            "filmline.generation.submit", new=AsyncMock(return_value="prompt-ref-trim")
+        ), patch("filmline.generation.collect", new=self._fake_run("video", 2.0)):
+            res = await self.client.post(
+                f"/studio/api/projects/{ref}/generate",
+                json={
+                    "kind": "video",
+                    "mode": "reference",
+                    "prompt": "<Video 1> 的运镜",
+                    "duration": 5,
+                    "auto_duration": True,
+                    "ref_videos": [
+                        {
+                            "asset_id": video["id"],
+                            "use_audio": True,
+                            "trim_start": 2.0,
+                            "trim_end": 8.0,
+                        }
+                    ],
+                },
+            )
+            body = await res.json()
+            self.assertEqual(res.status, 202, body)
+            task = await self._wait_task(body["data"]["task"]["id"])
+
+        self.assertEqual(task["status"], "succeeded")
+        asset = (
+            await (await self.client.get(f"/studio/api/assets/{task['asset_ids'][0]}")).json()
+        )["data"]
+        meta = asset["meta"]
+        self.assertAlmostEqual(meta["duration"], 6.0, delta=0.1)
+        self.assertEqual(meta["ref_video_trims"], [[2.0, 8.0]])
+        self.assertTrue(meta["auto_duration"])
+        self.assertEqual(
+            meta["frames"], generation.align_frames(round(6.0 * generation.VIDEO_FPS))
+        )
+
+    async def test_reference_auto_duration_requires_audio(self) -> None:
+        project = await self._project()
+        ref = project["code"]
+        image = await self._image(ref, "noaudio.png")
+        res = await self.client.post(
+            f"/studio/api/projects/{ref}/generate",
+            json={
+                "kind": "video",
+                "mode": "reference",
+                "prompt": "x",
+                "duration": 5,
+                "auto_duration": True,
+                "refs": [image["id"]],
+            },
+        )
+        body = await res.json()
+        self.assertEqual(res.status, 400, body)
+        self.assertIn("没有可用参考音频", body["error"]["message"])
+
+    async def test_reference_guide_frames(self) -> None:
+        project = await self._project()
+        ref = project["code"]
+        image = await self._image(ref, "anchor.png")
+        guide = await self._image(ref, "guide.png")
+
+        with patch(
+            "filmline.generation.submit", new=AsyncMock(return_value="prompt-ref-guide")
+        ), patch("filmline.generation.collect", new=self._fake_run("video", 2.0)):
+            res = await self.client.post(
+                f"/studio/api/projects/{ref}/generate",
+                json={
+                    "kind": "video",
+                    "mode": "reference",
+                    "prompt": "<Picture 1> 的人物",
+                    "duration": 5,
+                    "refs": [image["id"]],
+                    "ref_guides": [{"asset_id": guide["id"], "at_seconds": 1.0}],
+                },
+            )
+            body = await res.json()
+            self.assertEqual(res.status, 202, body)
+            task = await self._wait_task(body["data"]["task"]["id"])
+
+        self.assertEqual(task["status"], "succeeded")
+        asset = (
+            await (await self.client.get(f"/studio/api/assets/{task['asset_ids'][0]}")).json()
+        )["data"]
+        meta = asset["meta"]
+        self.assertEqual(meta["ref_guide_ids"], [guide["id"]])
+        self.assertEqual(
+            meta["ref_guide_frames"],
+            [{"asset_id": guide["id"], "at_seconds": 1.0, "frame_index": 24}],
+        )
+
     async def test_task_list_merges_external_queue(self) -> None:
         project = await self._project()
         ref = project["code"]

@@ -5,16 +5,27 @@ export const MAX_REFERENCE_IMAGES = 9
 export const MAX_REFERENCE_VIDEOS = 3
 export const MAX_REFERENCE_AUDIOS = 3
 export const MAX_REFERENCE_FILES = 12
+/** 官方 Add Guide 可链式叠加；与后端 generation.MAX_VIDEO_GUIDES 一致 */
+export const MAX_REFERENCE_GUIDES = 4
 
 export interface ReferenceVideo extends AssetDragPayload {
   /** 是否把视频原声作为 <Audio j> 参考 */
   useAudio: boolean
   duration?: number
   hasAudio?: boolean
+  /** 裁剪入点（秒）；0 表示从开头开始 */
+  trimStart?: number
+  /** 裁剪出点（秒）；0 表示到结尾 */
+  trimEnd?: number
 }
 
 export interface ReferenceAudio extends AssetDragPayload {
   duration?: number
+}
+
+/** 帧锚定：把一张参考图钉到输出时间轴的指定秒数（官方 Add Guide）。 */
+export interface ReferenceGuide extends AssetDragPayload {
+  atSeconds: number
 }
 
 export interface ReferenceLists {
@@ -131,6 +142,8 @@ export function addVideo(
         duration: info?.duration ?? asset.duration,
         hasAudio,
         useAudio: hasAudio,
+        trimStart: 0,
+        trimEnd: 0,
       },
     ],
   }
@@ -207,4 +220,44 @@ export function referenceDurationWarning(duration?: number): string | null {
     return `时长 ${duration.toFixed(1)} 秒，需在 2–15 秒之间`
   }
   return null
+}
+
+/** 独立参考音频：官方不设上限，只要求至少 2 秒。 */
+export function audioDurationWarning(duration?: number): string | null {
+  if (duration === undefined) return null
+  if (duration < 1.95) {
+    return `时长 ${duration.toFixed(1)} 秒，至少需要 2 秒`
+  }
+  return null
+}
+
+/** 视频裁剪区间（秒）；未知时长时返回 null。 */
+export function videoClipRange(video: ReferenceVideo): [number, number] | null {
+  const total = video.duration
+  if (total === undefined || total <= 0) return null
+  const start = Math.min(Math.max(video.trimStart ?? 0, 0), total)
+  const rawEnd = video.trimEnd ?? 0
+  const end = rawEnd > 0 ? Math.min(Math.max(rawEnd, 0), total) : total
+  return [start, end]
+}
+
+/** 裁剪后的有效时长；未知时返回 undefined。 */
+export function videoClipDuration(video: ReferenceVideo): number | undefined {
+  const range = videoClipRange(video)
+  return range ? Math.max(0, range[1] - range[0]) : undefined
+}
+
+/** 参考视频每段裁剪后需 2–15 秒。 */
+export function videoClipWarning(video: ReferenceVideo): string | null {
+  const clip = videoClipDuration(video)
+  if (clip === undefined) return null
+  if (clip < 1.95 || clip > 15.05) {
+    return `裁剪后 ${clip.toFixed(1)} 秒，需在 2–15 秒之间`
+  }
+  return null
+}
+
+/** 参考视频总时长（按裁剪后计算，未知时长为 0）。 */
+export function totalVideoClipDuration(videos: ReferenceVideo[]): number {
+  return videos.reduce((sum, video) => sum + (videoClipDuration(video) ?? 0), 0)
 }

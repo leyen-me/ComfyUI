@@ -81,6 +81,14 @@ class VideoWorkflowTest(unittest.TestCase):
             (1344, 768),
         )
         self.assertEqual(native.meta["tier"], "768")
+        # 官方草稿档 0.4 MP
+        draft = generation.video_workflow(
+            prompt="x", size="16:9", duration=5, tier="0.4", seed=1
+        )
+        self.assertEqual(
+            (draft.prompt["7"]["inputs"]["width"], draft.prompt["7"]["inputs"]["height"]),
+            (864, 480),
+        )
         # 首帧与画布同尺寸
         withref = generation.video_workflow(
             prompt="x", size="9:16", duration=5, first_frame="a.png"
@@ -162,7 +170,7 @@ class VideoWorkflowTest(unittest.TestCase):
 
     def test_rejects_bad_input(self) -> None:
         with self.assertRaises(InvalidArgument):
-            generation.video_workflow(prompt="x", size="1:1", duration=5)
+            generation.video_workflow(prompt="x", size="4:3", duration=5)
 
     def test_rejects_duration_out_of_range(self) -> None:
         for seconds in (4, 16, 0, -5, 30):
@@ -254,9 +262,10 @@ class ReferenceVideoWorkflowTest(unittest.TestCase):
         graph = wf.prompt
 
         self.assertEqual(wf.kind, "video")
-        self.assertEqual(graph["1"]["inputs"]["unet_name"], generation.VIDEO_REF_MODEL)
-        self.assertEqual(graph["2"]["inputs"]["lora_name"], generation.VIDEO_REF_LORA)
-        self.assertEqual(graph["9"]["inputs"]["steps"], 8)
+        self.assertEqual(graph["1"]["inputs"]["unet_name"], generation.resolve_ref_model())
+        self.assertNotIn("2", graph)  # 质量档不挂 LoRA
+        self.assertEqual(graph["3"]["inputs"]["model"], ["1", 0])
+        self.assertEqual(graph["9"]["inputs"]["steps"], 20)
         self.assertEqual(graph["9"]["inputs"]["sampler_name"], "res_multistep")
         self.assertEqual(graph["9"]["inputs"]["scheduler"], "simple")
         self.assertEqual(graph["9"]["inputs"]["cfg"], 1.0)
@@ -272,7 +281,9 @@ class ReferenceVideoWorkflowTest(unittest.TestCase):
         # 参考图不经过首尾帧的裁切节点，直接交给 Ref2VA 等比缩放
         self.assertNotIn("16", graph)
         self.assertEqual(wf.meta["refs"], 2)
-        self.assertEqual(wf.meta["steps"], 8)
+        self.assertEqual(wf.meta["steps"], 20)
+        self.assertEqual(wf.meta["quality"], "quality")
+        self.assertIsNone(wf.meta["lora"])
         self.assertEqual(wf.meta["fps"], 24)
         self.assertTrue(wf.meta["has_audio"])
 
@@ -294,7 +305,9 @@ class ReferenceVideoWorkflowTest(unittest.TestCase):
         self.assertEqual(graph["7"]["inputs"]["ref_images"]["ref_image_0"], ["14", 0])
         self.assertEqual(graph["15"]["class_type"], "FilmlineLoadVideo")
         self.assertEqual(graph["15"]["inputs"]["path"], "4/project/v1.mp4")
-        self.assertEqual(graph["15"]["inputs"]["max_seconds"], 5.0)
+        self.assertEqual(graph["15"]["inputs"]["short_edge"], generation.REF_VIDEO_SHORT_EDGE)
+        self.assertEqual(graph["15"]["inputs"]["trim_start"], 0.0)
+        self.assertEqual(graph["15"]["inputs"]["trim_end"], 0.0)
         self.assertEqual(graph["15"]["inputs"]["require_audio"], True)
         self.assertEqual(graph["16"]["inputs"]["require_audio"], False)
         self.assertEqual(graph["7"]["inputs"]["ref_videos"]["ref_video_0"], ["15", 0])
@@ -304,6 +317,7 @@ class ReferenceVideoWorkflowTest(unittest.TestCase):
         )
         self.assertNotIn("ref_video_audio_1", graph["7"]["inputs"]["ref_video_audios"])
         self.assertEqual(graph["17"]["class_type"], "FilmlineLoadAudio")
+        self.assertEqual(graph["17"]["inputs"]["max_seconds"], 0.0)
         self.assertEqual(graph["7"]["inputs"]["ref_audios"]["ref_audio_0"], ["17", 0])
         self.assertEqual(wf.meta["refs"], 1)
         self.assertEqual(wf.meta["ref_videos"], 2)
@@ -354,6 +368,106 @@ class ReferenceVideoWorkflowTest(unittest.TestCase):
         self.assertEqual(wf.prompt["7"]["inputs"]["ref_image_size"], "max")
         self.assertEqual(wf.prompt["7"]["inputs"]["height"], 1344)
         self.assertEqual(wf.prompt["7"]["inputs"]["length"], 243)
+
+    def test_fast_quality_uses_turbo_lora(self) -> None:
+        wf = generation.video_reference_workflow(
+            prompt="x", size="16:9", duration=5, refs=["a.png"], quality="fast", seed=3
+        )
+        graph = wf.prompt
+        self.assertEqual(graph["2"]["class_type"], "LoraLoaderModelOnly")
+        self.assertEqual(graph["2"]["inputs"]["lora_name"], generation.VIDEO_REF_LORA)
+        self.assertEqual(graph["2"]["inputs"]["strength_model"], 0.7)
+        self.assertEqual(graph["3"]["inputs"]["model"], ["2", 0])
+        self.assertEqual(graph["9"]["inputs"]["steps"], 8)
+        self.assertEqual(wf.meta["quality"], "fast")
+
+    def test_scheduler_override_and_validation(self) -> None:
+        wf = generation.video_reference_workflow(
+            prompt="x", size="16:9", duration=5, refs=["a.png"], scheduler="beta"
+        )
+        self.assertEqual(wf.prompt["9"]["inputs"]["scheduler"], "beta")
+        with self.assertRaises(InvalidArgument):
+            generation.video_reference_workflow(
+                prompt="x", size="16:9", duration=5, refs=["a.png"], scheduler="dpm"
+            )
+        with self.assertRaises(InvalidArgument):
+            generation.video_reference_workflow(
+                prompt="x", size="16:9", duration=5, refs=["a.png"], quality="ultra"
+            )
+
+    def test_trim_passthrough_and_draft_tier(self) -> None:
+        wf = generation.video_reference_workflow(
+            prompt="x",
+            size="16:9",
+            duration=5,
+            tier="0.4",
+            ref_videos=[
+                generation.VideoReference(path="v.mp4", trim_start=1.5, trim_end=6.5)
+            ],
+        )
+        graph = wf.prompt
+        self.assertEqual(graph["7"]["inputs"]["width"], 864)
+        self.assertEqual(graph["7"]["inputs"]["height"], 480)
+        self.assertEqual(graph["14"]["inputs"]["trim_start"], 1.5)
+        self.assertEqual(graph["14"]["inputs"]["trim_end"], 6.5)
+        self.assertEqual(wf.meta["ref_video_trims"], [[1.5, 6.5]])
+
+    def test_guide_frames_chain_positive(self) -> None:
+        wf = generation.video_reference_workflow(
+            prompt="x",
+            size="16:9",
+            duration=5,
+            refs=["a.png"],
+            guides=[
+                generation.GuideFrame(path="g1.png", frame_index=24),
+                generation.GuideFrame(path="g2.png", frame_index=60),
+            ],
+        )
+        graph = wf.prompt
+        self.assertEqual(graph["100"]["class_type"], "FilmlineLoadImage")
+        self.assertEqual(graph["101"]["inputs"]["path"], "g2.png")
+        self.assertEqual(graph["110"]["class_type"], "MiniMaxH3AddGuide")
+        self.assertEqual(graph["110"]["inputs"]["positive"], ["7", 0])
+        self.assertEqual(graph["110"]["inputs"]["vae"], ["5", 0])
+        self.assertEqual(graph["110"]["inputs"]["latent"], ["7", 1])
+        self.assertEqual(graph["110"]["inputs"]["frame_idx"], 24)
+        self.assertEqual(graph["111"]["inputs"]["positive"], ["110", 0])
+        self.assertEqual(graph["111"]["inputs"]["frame_idx"], 60)
+        self.assertEqual(graph["9"]["inputs"]["positive"], ["111", 0])
+        self.assertEqual(wf.meta["ref_guides"], [{"frame_index": 24}, {"frame_index": 60}])
+        with self.assertRaises(InvalidArgument):
+            generation.video_reference_workflow(
+                prompt="x",
+                size="16:9",
+                duration=5,
+                refs=["a.png"],
+                guides=[generation.GuideFrame(path="g.png", frame_index=124)],
+            )
+        with self.assertRaises(InvalidArgument):
+            generation.video_reference_workflow(
+                prompt="x",
+                size="16:9",
+                duration=5,
+                refs=["a.png"],
+                guides=[
+                    generation.GuideFrame(path=f"g{i}.png", frame_index=1)
+                    for i in range(generation.MAX_VIDEO_GUIDES + 1)
+                ],
+            )
+
+    def test_rejects_audio_only_reference(self) -> None:
+        with self.assertRaises(InvalidArgument):
+            generation.video_reference_workflow(
+                prompt="x", size="16:9", duration=5, ref_audios=["a.wav"]
+            )
+
+    def test_float_duration_rounds_up_to_grid(self) -> None:
+        wf = generation.video_reference_workflow(
+            prompt="x", size="16:9", duration=9.6, refs=["a.png"]
+        )
+        self.assertEqual(wf.prompt["7"]["inputs"]["length"], generation.align_frames(round(9.6 * 24)))
+        self.assertEqual(wf.prompt["7"]["inputs"]["length"] % 17, 5)
+        self.assertEqual(wf.meta["duration"], 9.6)
 
     def test_rejects_bad_refs(self) -> None:
         with self.assertRaises(InvalidArgument):

@@ -24,7 +24,16 @@ export interface GenerationMeta {
   /** 参考视频/音频记录 */
   ref_video_ids?: number[]
   ref_video_use_audio?: boolean[]
+  ref_video_trims?: Array<[number, number]>
   ref_audio_ids?: number[]
+  ref_guide_ids?: number[]
+  ref_guide_frames?: Array<{ asset_id: number; at_seconds: number; frame_index: number }>
+  ref_image_size?: 'match' | 'max'
+  ref_quality?: 'quality' | 'fast'
+  ref_scheduler?: 'simple' | 'beta' | 'normal'
+  auto_duration?: boolean
+  lora_strength?: number
+  scheduler?: string
   model?: string
 }
 
