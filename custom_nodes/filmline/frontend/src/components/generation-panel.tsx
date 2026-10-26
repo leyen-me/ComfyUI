@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Image as ImageIcon, ListTree, Loader2, Sparkles, Video } from 'lucide-react'
+import { Image as ImageIcon, Loader2, Sparkles, Video, Wand2 } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 
 import {
@@ -40,6 +40,7 @@ import { emitAssetsChanged, REUSE_PROMPT, type ReusePromptDetail } from '@/lib/e
 import { cn } from '@/lib/utils'
 import { formatClock } from '@/lib/format'
 import { GenerationStage } from './generation-stage'
+import { Popover } from './ui/popover'
 import { AssetPickerDialog } from './asset-picker-dialog'
 import { DurationSelect } from './duration-select'
 import { GenerationOptions } from './generation-options'
@@ -92,6 +93,7 @@ export function GenerationPanel({ project, episodeCode }: GenerationPanelProps) 
   referenceListsRef.current = referenceLists
   const [picker, setPicker] = useState<PickerState>(null)
   const [assistantOpen, setAssistantOpen] = useState(false)
+  const assistantAnchorRef = useRef<HTMLButtonElement>(null)
   const [optimizing, setOptimizing] = useState(false)
   const [optimizeError, setOptimizeError] = useState<string | null>(null)
   const [optimizeOpen, setOptimizeOpen] = useState(false)
@@ -951,23 +953,8 @@ export function GenerationPanel({ project, episodeCode }: GenerationPanelProps) 
               />
             ) : null}
 
-            <div className="flex items-center justify-end px-1 pb-1">
-              <button
-                type="button"
-                aria-pressed={assistantOpen}
-                className="flex cursor-pointer items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/60 focus-visible:outline-none"
-                onClick={() => setAssistantOpen((value) => !value)}
-              >
-                <ListTree className="size-3" />
-                {assistantOpen ? '收起助手' : '提示词助手'}
-                {!assistantOpen && assistantWarnings.length > 0 ? (
-                  <span className="size-1.5 rounded-full bg-amber-500" title="提示词有格式建议" />
-                ) : null}
-              </button>
-            </div>
-
-            <div className="flex flex-col gap-2 lg:flex-row lg:items-stretch">
-              <div className="min-w-0 flex-1">
+            <div>
+              <div className="min-w-0">
                 <PromptInput
                   ref={editorRef}
                   disabled={running}
@@ -993,23 +980,6 @@ export function GenerationPanel({ project, episodeCode }: GenerationPanelProps) 
                 />
               </div>
 
-              {assistantOpen ? (
-                <PromptAssistant
-                  mode={assistantMode}
-                  videoMode={videoMode}
-                  keyframes={assistantKeyframes}
-                  counts={assistantCounts}
-                  prompt={value.text}
-                  disabled={running}
-                  canOptimize={mode === 'video'}
-                  optimizing={optimizing}
-                  optimizeError={optimizeError}
-                  onOptimize={() => void handleOptimize()}
-                  onInsert={(text) => editorRef.current?.insertText(text)}
-                  onInsertTemplate={(text) => editorRef.current?.insertTemplate(text)}
-                  onClose={() => setAssistantOpen(false)}
-                />
-              ) : null}
             </div>
 
             <div className="flex flex-wrap items-center gap-1.5 px-1 pt-1">
@@ -1081,6 +1051,51 @@ export function GenerationPanel({ project, episodeCode }: GenerationPanelProps) 
               ) : null}
 
               <div className="ml-auto flex items-center gap-2">
+                <button
+                  ref={assistantAnchorRef}
+                  type="button"
+                  aria-expanded={assistantOpen}
+                  aria-haspopup="dialog"
+                  title="提示词助手：模板、标签、格式检查与 AI 优化"
+                  className={cn(
+                    'relative flex h-8 cursor-pointer items-center gap-1.5 rounded-full px-3 text-xs transition-colors focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none',
+                    assistantOpen
+                      ? 'bg-muted text-foreground'
+                      : 'text-muted-foreground hover:bg-muted hover:text-foreground',
+                  )}
+                  onClick={() => setAssistantOpen((value) => !value)}
+                >
+                  <Wand2 className="size-3.5" />
+                  助手
+                  {assistantWarnings.length > 0 ? (
+                    <span
+                      className="absolute top-1.5 right-1.5 size-1.5 rounded-full bg-amber-500"
+                      aria-label="提示词有格式建议"
+                    />
+                  ) : null}
+                </button>
+                <Popover
+                  open={assistantOpen}
+                  onOpenChange={setAssistantOpen}
+                  anchorRef={assistantAnchorRef}
+                  width={440}
+                  align="end"
+                >
+                  <PromptAssistant
+                    mode={assistantMode}
+                    videoMode={videoMode}
+                    keyframes={assistantKeyframes}
+                    counts={assistantCounts}
+                    prompt={value.text}
+                    disabled={running}
+                    canOptimize={mode === 'video'}
+                    optimizing={optimizing}
+                    optimizeError={optimizeError}
+                    onOptimize={() => void handleOptimize()}
+                    onInsert={(text) => editorRef.current?.insertText(text)}
+                    onInsertTemplate={(text) => editorRef.current?.insertTemplate(text)}
+                  />
+                </Popover>
                 {running ? (
                   <span className="font-mono text-[11px] tabular-nums text-muted-foreground">
                     {formatClock(elapsed)}

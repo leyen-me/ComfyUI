@@ -339,23 +339,25 @@ const panel = {
   hasCount: Boolean(document.querySelector('[role="combobox"][aria-label="生成数量"]')),
 }
 
-// 提示词助手：默认收起，展开后应出现结构片段与快速插入
+// 提示词助手：默认收起，展开后以浮层出现段落搭建与标签
 ;[...document.querySelectorAll('button')]
-  .find((el) => el.textContent?.trim() === '提示词助手')
+  .find((el) => el.textContent?.trim() === '助手')
   ?.click()
 await wait(200)
 const assistantText =
-  document.querySelector('[aria-label="提示词结构助手"]')?.textContent ?? ''
+  document.querySelector('section[aria-label="提示词助手"]')?.textContent ?? ''
 const assistantShown =
-  assistantText.includes('结构片段') && assistantText.includes('快速插入')
+  assistantText.includes('按段落搭建') && assistantText.includes('标签')
 ;[...document.querySelectorAll('button')]
-  .find((el) => el.textContent?.trim() === '插入完整模板')
+  .find((el) => el.textContent?.includes('完整模板'))
   ?.click()
 await wait(200)
 const assistantTemplateInserted = (
   document.querySelector('[aria-label="提示词"]')?.textContent ?? ''
 ).includes('主体：')
-document.querySelector('button[aria-label="收起提示词助手"]')?.click()
+;[...document.querySelectorAll('button[aria-expanded="true"]')]
+  .find((el) => el.textContent?.trim() === '助手')
+  ?.click()
 await wait(150)
 
 // 打开尺寸面板：应同时有「比例」「分辨率」两组，且不含 4K
@@ -459,15 +461,15 @@ await wait(150)
 
 // AI 优化：视频模式展开助手、插入模板、优化、预览并应用
 ;[...document.querySelectorAll('button')]
-  .find((el) => el.textContent?.trim() === '提示词助手')
+  .find((el) => el.textContent?.trim() === '助手')
   ?.click()
 await wait(200)
 ;[...document.querySelectorAll('button')]
-  .find((el) => el.textContent?.trim() === '插入完整模板')
+  .find((el) => el.textContent?.includes('完整模板'))
   ?.click()
 await wait(200)
 ;[...document.querySelectorAll('button')]
-  .find((el) => el.textContent?.includes('AI 优化提示词'))
+  .find((el) => el.textContent?.includes('AI 优化') && el.closest('section[aria-label="提示词助手"]'))
   ?.click()
 await wait(300)
 const optimizeDialog = document.querySelector('dialog[open]')
@@ -479,7 +481,9 @@ await wait(250)
 const optimizeApplied = (
   document.querySelector('[aria-label="提示词"]')?.textContent ?? ''
 ).includes('AI优化结果')
-document.querySelector('button[aria-label="收起提示词助手"]')?.click()
+;[...document.querySelectorAll('button[aria-expanded="true"]')]
+  .find((el) => el.textContent?.trim() === '助手')
+  ?.click()
 await wait(150)
 
 // 参考生成：托盘 + 多选选择器 + 模式切换保留状态
@@ -686,7 +690,7 @@ window.dispatchEvent(new window.PopStateEvent('popstate'))
 await wait(400)
 const imageTabText = rootText()
 
-document.querySelector('button[aria-label="放大 project_00001_.png"]')?.click()
+document.querySelector('button[aria-label="查看 project_00001_.png"]')?.click()
 await wait(200)
 const previewDialog = document.querySelector('dialog[open]')
 const previewText = previewDialog?.textContent ?? ''
@@ -716,7 +720,7 @@ const chipRestored =
   document.querySelectorAll('[data-image-chip]').length === 1 &&
   (promptField?.textContent ?? '').includes('让他')
 
-// —— 视频卡片：下半部分点开预览（缩略图被播放器占用）——
+// —— 视频卡片：列表只放静音缩略，点开才是带控制条的详情 ——
 window.history.pushState({}, '', '/studio/projects/PRJ-0001/assets/video')
 window.dispatchEvent(new window.PopStateEvent('popstate'))
 await wait(400)
@@ -724,6 +728,9 @@ document.querySelector('button[aria-label="预览 project_video_00001_.mp4"]')?.
 await wait(250)
 const videoDialog = document.querySelector('dialog[open]')
 const videoPreviewOpened = Boolean(videoDialog?.querySelector('video'))
+const videoListNoControls =
+  document.querySelectorAll('article video').length > 0 &&
+  document.querySelectorAll('article video[controls]').length === 0
 videoDialog?.querySelectorAll('button').forEach((el) => {
   if (el.textContent?.trim() === '关闭') el.click()
 })
@@ -794,10 +801,10 @@ const checks = [
   ['切回首尾帧再切回参考模式保留素材', keyframeSlotsAgain === 2 && referencePersisted],
   ['切回图片模式隐藏首尾帧槽位', keyframeSlotsAfterImage === 0],
   ['切回图片模式隐藏参考托盘', !referenceTrayAfterImage],
-  ['项目资产页仅「资产」高亮', activeNavOnProject.length === 1 && activeNavOnProject[0] === '资产'],
+  ['项目资产页仅「资产」高亮', activeNavOnProject.length === 1 && activeNavOnProject[0] === '项目资产'],
   ['分集页仅当前集高亮', activeNavOnEpisode.length === 1 && activeNavOnEpisode[0].includes('EP01')],
   ['分集创建后出现在导航', afterEpisodeCreate.includes('EP01')],
-  ['分集页显示集标题', episodeText.includes('EP01 · 第 1 集')],
+  ['分集页显示集标题', episodeText.includes('EP01 · 本集素材') && episodeText.includes('第 1 集')],
   ['项目内不出现删除项目', projectMenuItems.includes('编辑') && !projectMenuItems.includes('删除')],
   ['资产菜单挂在 body 上（不被裁剪）', menuInBody && !menuInRoot],
   ['编辑弹窗回填文本内容', prefilled],
@@ -810,6 +817,7 @@ const checks = [
   ['复用后「图1」还原为图片块', chipRestored],
   ['复制失败时兜底弹窗可手动复制', fallbackShown],
   ['视频卡片下半部分可打开预览', videoPreviewOpened],
+  ['视频列表为无控制条的缩略预览', videoListNoControls],
   ['右上角任务队列显示进行中/完成', taskQueueVisible],
   ['任务队列可取消进行中任务', cancelUpdated],
   ['任务队列内部滚动不关闭面板', queueSurvivesInnerScroll],

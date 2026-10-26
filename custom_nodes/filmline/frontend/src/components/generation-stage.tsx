@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { Image as ImageIcon, Loader2, Play, Sparkles, Video } from 'lucide-react'
+import { Image as ImageIcon, Loader2, Sparkles, Video } from 'lucide-react'
 
 import { api, type Asset } from '@/lib/api'
 import { assetPrompt } from '@/lib/asset-meta'
@@ -10,6 +10,7 @@ import { reuseDetailFor } from '@/lib/reuse'
 import { cn } from '@/lib/utils'
 import { startAssetDrag } from './asset-list'
 import { AssetPreview } from './asset-preview'
+import { VideoThumb } from './video-thumb'
 
 /** 舞台上最多展示的近期产物，够回看即可，完整列表在左侧资产面板。 */
 const RECENT_LIMIT = 24
@@ -154,26 +155,10 @@ function StageTile({ asset, onOpen }: { asset: Asset; onOpen: () => void }) {
         className="group relative block w-full cursor-zoom-in overflow-hidden rounded-xl border border-border bg-muted text-left transition-[border-color,box-shadow] hover:border-foreground/20 hover:shadow-[var(--shadow-soft)] focus-visible:ring-2 focus-visible:ring-ring/60 focus-visible:outline-none"
       >
         {isVideo ? (
-          <video
-            src={`${src}#t=0.1`}
-            preload="metadata"
-            muted
-            playsInline
-            className="block aspect-video w-full bg-black object-cover"
-            onMouseEnter={(event) => void event.currentTarget.play().catch(() => undefined)}
-            onMouseLeave={(event) => {
-              event.currentTarget.pause()
-              event.currentTarget.currentTime = 0.1
-            }}
-          />
+          <VideoThumb src={src} className="aspect-video w-full" />
         ) : (
           <img src={src} alt={asset.name} loading="lazy" draggable={false} className="block aspect-video w-full object-cover" />
         )}
-        {isVideo ? (
-          <span className="pointer-events-none absolute right-2 bottom-2 flex size-6 items-center justify-center rounded-full bg-black/55 text-white backdrop-blur-sm transition-opacity group-hover:opacity-0">
-            <Play className="size-3 fill-current" />
-          </span>
-        ) : null}
         <figcaption className="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/75 via-black/30 to-transparent px-2.5 pt-8 pb-2 text-white opacity-0 transition-opacity group-hover:opacity-100">
           <span className="line-clamp-2 text-[11px] leading-snug">{prompt ?? asset.name}</span>
           <span className="mt-1 flex items-center gap-1 text-[10px] text-white/70">

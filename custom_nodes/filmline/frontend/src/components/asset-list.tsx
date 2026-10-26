@@ -5,9 +5,9 @@ import type { Asset, AssetKind } from '@/lib/api'
 import { assetDimensions, assetPrompt } from '@/lib/asset-meta'
 import { setAssetDrag } from '@/lib/asset-drag'
 import { formatRelative, formatSize, formatTime } from '@/lib/format'
-import { cn } from '@/lib/utils'
 import { MoreMenu, type MenuAction } from './ui/more-menu'
 import { SourceBadge } from './source-badge'
+import { VideoThumb } from './video-thumb'
 
 interface AssetListProps {
   kind: AssetKind
@@ -177,7 +177,7 @@ export function AssetList({
   }
 
   return (
-    <div className={kind === 'image' ? 'grid grid-cols-2 gap-2.5' : 'flex flex-col gap-3'}>
+    <div className="grid grid-cols-2 gap-2.5">
       {assets.map((asset) => (
         <article
           key={asset.id}
@@ -186,44 +186,25 @@ export function AssetList({
           onDragStart={(event) => startAssetDrag(event, asset)}
           className="group cursor-grab overflow-hidden rounded-xl border border-border bg-card transition-[border-color,box-shadow] hover:border-foreground/20 hover:shadow-[var(--shadow-soft)] active:cursor-grabbing"
         >
-          <div className={cn('group/vid relative bg-muted', 'aspect-video')}>
-            {kind === 'image' ? (
-              <button
-                type="button"
-                className="group/img size-full cursor-zoom-in focus-visible:ring-2 focus-visible:ring-ring/60 focus-visible:outline-none"
-                aria-label={`放大 ${asset.name}`}
-                onClick={() => onPreview(asset)}
-              >
+          <div className="relative aspect-video bg-muted">
+            <button
+              type="button"
+              className="block size-full cursor-zoom-in overflow-hidden focus-visible:ring-2 focus-visible:ring-ring/60 focus-visible:outline-none focus-visible:ring-inset"
+              aria-label={`查看 ${asset.name}`}
+              onClick={() => onPreview(asset)}
+            >
+              {kind === 'image' ? (
                 <img
                   src={asset.content_url ?? ''}
                   alt={asset.name}
                   loading="lazy"
                   draggable={false}
-                  className="size-full object-cover transition-transform duration-200 group-hover/img:scale-[1.02]"
+                  className="size-full object-cover transition-transform duration-300 group-hover:scale-[1.03]"
                 />
-                <span className="pointer-events-none absolute inset-0 flex items-center justify-center bg-black/0 opacity-0 transition-all group-hover/img:bg-black/25 group-hover/img:opacity-100">
-                  <span className="flex items-center gap-1 rounded-full bg-background/90 px-2 py-1 text-[11px] font-medium text-foreground shadow">
-                    <Maximize2 className="size-3" />
-                    放大
-                  </span>
-                </span>
-              </button>
-            ) : (
-              <>
-                <video
-                  src={asset.content_url ?? ''}
-                  controls
-                  preload="metadata"
-                  draggable={false}
-                  className="size-full bg-black object-contain"
-                />
-                <span className="pointer-events-none absolute inset-x-0 top-1/2 flex -translate-y-1/2 justify-center opacity-0 transition-opacity group-hover/vid:opacity-100">
-                  <span className="rounded-full bg-background/85 px-2 py-1 text-[11px] text-muted-foreground shadow">
-                    可拖到右侧首帧/尾帧；点信息栏预览
-                  </span>
-                </span>
-              </>
-            )}
+              ) : (
+                <VideoThumb src={asset.content_url ?? ''} className="size-full" />
+              )}
+            </button>
 
             <div className="absolute top-1.5 left-1.5">
               <SourceBadge source={asset.source} kind={asset.kind} />
@@ -233,8 +214,7 @@ export function AssetList({
             </div>
           </div>
 
-          {/* 下半部分整体可点：视频的缩略图被播放器占用，这里是统一的预览入口 */}
-          <button
+                    <button
             type="button"
             aria-label={`预览 ${asset.name}`}
             className="flex w-full items-start gap-2 px-3 py-2 text-left transition-colors hover:bg-muted focus-visible:bg-muted focus-visible:outline-none"
@@ -246,9 +226,9 @@ export function AssetList({
               </span>
               <span className="mt-1 flex items-center justify-between gap-2 font-mono text-[11px] text-muted-foreground">
                 <span title={formatTime(asset.created_at)}>
-                  {kind === 'image' ? formatRelative(asset.created_at) : formatTime(asset.created_at)}
+                  {formatRelative(asset.created_at)}
                 </span>
-                {kind === 'image' ? null : <span>{formatSize(asset.size_bytes)}</span>}
+                <span>{formatSize(asset.size_bytes)}</span>
               </span>
               <AssetDimensions asset={asset} />
             </span>
