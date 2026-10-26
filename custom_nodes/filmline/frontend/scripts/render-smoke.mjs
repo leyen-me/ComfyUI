@@ -387,7 +387,7 @@ const durationTrigger = () =>
 const videoMode = {
   hasDuration: Boolean(durationTrigger()),
   noCount: !document.querySelector('[role="combobox"][aria-label="生成数量"]'),
-  noTier: !videoTrigger.includes('·'),
+  hasTier: videoTrigger.includes('·') && videoTrigger.includes('768p'),
 }
 
 // 时长：默认 5 秒 → 选预设 8 秒 → 自定义 13 秒
@@ -567,6 +567,23 @@ const mediaTagsInserted = (
 ).includes('<Video 1>') &&
   (document.querySelector('[aria-label="提示词"]')?.textContent ?? '').includes('<Audio 2>')
 
+// 参考视频裁剪：应打开独立 dialog，而不是卡片内气泡
+document.querySelector('button[aria-label="裁剪参考视频1"]')?.click()
+await wait(200)
+const trimDialog =
+  [...document.querySelectorAll('dialog[open]')].find((el) =>
+    el.textContent?.includes('裁剪参考视频'),
+  ) ?? null
+const trimDialogOpened =
+  (trimDialog?.textContent ?? '').includes('裁剪参考视频') &&
+  Boolean(trimDialog?.querySelector('[aria-label="裁剪区间入点"]')) &&
+  Boolean(trimDialog?.querySelector('[aria-label="裁剪区间出点"]')) &&
+  (trimDialog?.querySelectorAll('input[type="range"]').length ?? 0) === 2
+;[...(trimDialog?.querySelectorAll('button') ?? [])]
+  .find((el) => el.textContent?.trim() === '取消')
+  ?.click()
+await wait(150)
+
 // 文本资产拖进提示词输入框：直接变成文字（视频模式下图片块被禁用，文本仍应可插入）
 function dropTextAsset(text) {
   const dataTransfer = {
@@ -609,7 +626,7 @@ const keyframeSlotsAgain = document.querySelectorAll('[data-keyframe-slot]').len
 await wait()
 const referencePersisted = Boolean(document.querySelector('[data-reference-item="image-0"]'))
 
-// 视频面板里应当有 512 预览 / 768 原生 两档
+// 视频面板里应当有 768 原生 / 0.4MP 草稿两档
 document.querySelector('button[aria-label="尺寸与分辨率"]')?.click()
 await wait(250)
 const videoPanel = [...document.querySelectorAll('[role="dialog"]')].find((el) =>
@@ -793,7 +810,7 @@ const checks = [
   ['时长可选预设 8 秒', durationPreset],
   ['时长面板显示帧数与实际时长', durationHintShown],
   ['时长可自定义 13 秒', durationCustom],
-  ['视频不展示分辨率档位', videoMode.noTier && !videoOptionsText.includes('分辨率')],
+  ['视频有分辨率档位', videoMode.hasTier && videoOptionsText.includes('分辨率')],
   ['视频有首尾帧两个槽位', keyframeSlots.length === 2 && hasVideoModeTabs],
   ['首帧槽位可打开资产选择器', pickerOpened],
   ['选择图片后首帧槽位显示缩略图', firstFramePicked],
@@ -808,6 +825,7 @@ const checks = [
   ['参考音频可拖入托盘', audioRefAdded],
   ['视频原声默认占用音轨', soundtrackDefault],
   ['视频/音频引用可插入提示词', mediaTagsInserted],
+  ['参考视频裁剪打开独立对话框', trimDialogOpened],
   ['文本资产拖入输入框变成文字', textAssetDropped],
   ['切回首尾帧再切回参考模式保留素材', keyframeSlotsAgain === 2 && referencePersisted],
   ['切回图片模式隐藏首尾帧槽位', keyframeSlotsAfterImage === 0],

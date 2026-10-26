@@ -32,7 +32,6 @@ import {
   type ReferenceVideo,
 } from '@/lib/references'
 import { cn } from '@/lib/utils'
-import { Popover } from './ui/popover'
 
 const REF_INDEX_MIME = 'application/x-filmline-ref-index'
 type ReferenceKind = 'image' | 'video' | 'audio'
@@ -53,7 +52,7 @@ interface ReferenceTrayProps {
   onReorder: (kind: ReferenceKind, from: number, to: number) => void
   onInsertTag: (tag: string) => void
   onToggleAudio: (index: number) => void
-  onTrim: (index: number, start: number, end: number) => void
+  onEditTrim: (index: number, video: ReferenceVideo) => void
   /** 参考生成才展示帧锚定 */
   guides?: ReferenceGuide[]
   onAddGuide?: () => void
@@ -76,7 +75,7 @@ export function ReferenceTray({
   onReorder,
   onInsertTag,
   onToggleAudio,
-  onTrim,
+  onEditTrim,
   guides = [],
   onAddGuide,
   onRemoveGuide,
@@ -201,7 +200,7 @@ export function ReferenceTray({
               onRemove={onRemove}
               onMove={onMove}
               onReorder={onReorder}
-              onTrim={onTrim}
+              onEditTrim={onEditTrim}
             />
           ))}
         </Section>
@@ -462,7 +461,7 @@ function VideoCard({
   onRemove,
   onMove,
   onReorder,
-  onTrim,
+  onEditTrim,
 }: {
   asset: ReferenceVideo
   index: number
@@ -473,41 +472,11 @@ function VideoCard({
   onRemove: (kind: ReferenceKind, index: number) => void
   onMove: (kind: ReferenceKind, index: number, delta: -1 | 1) => void
   onReorder: (kind: ReferenceKind, from: number, to: number) => void
-  onTrim: (index: number, start: number, end: number) => void
+  onEditTrim: (index: number, video: ReferenceVideo) => void
 }) {
   const audioOrdinal = soundtrackOrdinal(videos, index)
   const clipSeconds = videoClipDuration(asset)
   const warning = videoClipWarning(asset)
-  const [trimOpen, setTrimOpen] = useState(false)
-  const trimRef = useRef<HTMLButtonElement>(null)
-  const [startDraft, setStartDraft] = useState('0')
-  const [endDraft, setEndDraft] = useState('0')
-  const [trimError, setTrimError] = useState<string | null>(null)
-
-  useEffect(() => {
-    if (!trimOpen) return
-    setStartDraft(String(asset.trimStart ?? 0))
-    setEndDraft(String(asset.trimEnd ?? 0))
-    setTrimError(null)
-  }, [trimOpen, asset.trimStart, asset.trimEnd])
-
-  function applyTrim(close: () => void) {
-    const total = asset.duration ?? 0
-    let start = Number(startDraft)
-    let end = Number(endDraft)
-    if (!Number.isFinite(start) || start < 0) start = 0
-    if (!Number.isFinite(end) || end < 0) end = 0
-    if (total > 0) {
-      start = Math.min(start, total)
-      if (end > 0) end = Math.min(end, total)
-    }
-    if (end > 0 && end <= start) {
-      setTrimError('出点必须大于入点')
-      return
-    }
-    onTrim(index, start, end)
-    close()
-  }
 
   return (
     <CardShell
@@ -555,13 +524,12 @@ function VideoCard({
       extraAction={
         <div className="flex items-center">
           <button
-            ref={trimRef}
             type="button"
             disabled={disabled}
             aria-label={`裁剪参考视频${index + 1}`}
             title="裁剪参考视频区间（2–15 秒）"
             className="cursor-pointer rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/60 focus-visible:outline-none disabled:opacity-30"
-            onClick={() => setTrimOpen((value) => !value)}
+            onClick={() => onEditTrim(index, asset)}
           >
             <Scissors className="size-3" />
           </button>
@@ -589,79 +557,6 @@ function VideoCard({
         draggable={false}
         className="relative size-full object-cover"
       />
-
-      <Popover
-        open={trimOpen}
-        onOpenChange={setTrimOpen}
-        anchorRef={trimRef}
-        width={208}
-      >
-        <div className="px-1 pb-1 text-[11px] text-muted-foreground">
-          裁剪区间（秒）
-          {asset.duration ? ` · 素材 ${asset.duration.toFixed(1)}s` : ''}
-        </div>
-        <div className="flex items-center gap-1.5">
-          <label className="flex-1 text-[10px] text-muted-foreground">
-            入点
-            <input
-              type="number"
-              inputMode="decimal"
-              min={0}
-              step={0.1}
-              value={startDraft}
-              aria-label="参考视频裁剪入点（秒）"
-              className="mt-0.5 h-6 w-full rounded border border-border bg-input px-1.5 text-xs text-foreground outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/25"
-              onChange={(event) => {
-                setStartDraft(event.target.value)
-                setTrimError(null)
-              }}
-            />
-          </label>
-          <label className="flex-1 text-[10px] text-muted-foreground">
-            出点
-            <input
-              type="number"
-              inputMode="decimal"
-              min={0}
-              step={0.1}
-              value={endDraft}
-              aria-label="参考视频裁剪出点（秒，0 表示到结尾）"
-              className="mt-0.5 h-6 w-full rounded border border-border bg-input px-1.5 text-xs text-foreground outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/25"
-              onChange={(event) => {
-                setEndDraft(event.target.value)
-                setTrimError(null)
-              }}
-            />
-          </label>
-        </div>
-        <p className="mt-1 px-0.5 text-[10px] text-muted-foreground">
-          出点填 0 表示到结尾；裁剪后需 2–15 秒。
-        </p>
-        {trimError ? (
-          <p className="mt-0.5 px-0.5 text-[10px] text-destructive">{trimError}</p>
-        ) : null}
-        <div className="mt-1.5 flex justify-end gap-1.5">
-          <button
-            type="button"
-            className="cursor-pointer rounded border border-border px-2 py-0.5 text-[11px] text-muted-foreground hover:bg-muted"
-            onClick={() => {
-              setStartDraft('0')
-              setEndDraft('0')
-              onTrim(index, 0, 0)
-              setTrimOpen(false)
-            }}
-          >
-            重置
-          </button>
-          <button
-            type="button"
-            className="cursor-pointer rounded bg-primary px-2 py-0.5 text-[11px] text-primary-foreground hover:opacity-90"
-            onClick={() => applyTrim(() => setTrimOpen(false))}
-          >
-            应用
-          </button>
-        </div>
-      </Popover>
     </CardShell>
   )
 }

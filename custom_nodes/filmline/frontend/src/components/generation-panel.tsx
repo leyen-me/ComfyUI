@@ -40,6 +40,7 @@ import {
   videoClipWarning,
   type ReferenceGuide,
   type ReferenceLists,
+  type ReferenceVideo,
 } from '@/lib/references'
 import { emitAssetsChanged, REUSE_PROMPT, type ReusePromptDetail } from '@/lib/events'
 import { cn } from '@/lib/utils'
@@ -63,6 +64,7 @@ import {
   type RefScheduler,
 } from './reference-settings'
 import { VideoFrameDialog } from './video-frame-dialog'
+import { VideoTrimDialog } from './video-trim-dialog'
 import { Button } from './ui/button'
 import { Select } from './ui/select'
 
@@ -105,6 +107,10 @@ export function GenerationPanel({ project, episodeCode }: GenerationPanelProps) 
   const referenceListsRef = useRef<ReferenceLists>(EMPTY_REFERENCES)
   referenceListsRef.current = referenceLists
   const [guides, setGuides] = useState<ReferenceGuide[]>([])
+  const [trimTarget, setTrimTarget] = useState<{
+    index: number
+    video: ReferenceVideo
+  } | null>(null)
   const [picker, setPicker] = useState<PickerState>(null)
   const [assistantOpen, setAssistantOpen] = useState(false)
   const assistantAnchorRef = useRef<HTMLButtonElement>(null)
@@ -1016,7 +1022,7 @@ export function GenerationPanel({ project, episodeCode }: GenerationPanelProps) 
                 onReorder={reorderReferenceItem}
                 onInsertTag={(tag) => editorRef.current?.insertText(tag)}
                 onToggleAudio={toggleVideoAudio}
-                onTrim={trimVideo}
+                onEditTrim={(index, video) => setTrimTarget({ index, video })}
                 guides={guides}
                 onAddGuide={() => setPicker({ type: 'guide' })}
                 onRemoveGuide={removeGuide}
@@ -1271,6 +1277,19 @@ export function GenerationPanel({ project, episodeCode }: GenerationPanelProps) 
           if (!open) setVideoFrame(null)
         }}
         onExtracted={handleFrameExtracted}
+      />
+
+      <VideoTrimDialog
+        open={trimTarget !== null}
+        video={trimTarget?.video ?? null}
+        onOpenChange={(open) => {
+          if (!open) setTrimTarget(null)
+        }}
+        onApply={(start, end) => {
+          if (!trimTarget) return
+          trimVideo(trimTarget.index, start, end)
+          setTrimTarget(null)
+        }}
       />
 
       <PromptOptimizeDialog
