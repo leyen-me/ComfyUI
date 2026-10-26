@@ -118,19 +118,13 @@ ComfyUI/user/filmline/
 
 ### 视频生成方式
 
-视频面板下分三种条件输入方式，前两种对应 H3 的两套权重，第三种走 ref2va 权重并额外叠加引导帧：
+视频面板下分两种条件输入方式，分别对应 H3 的两套权重：
 
 - **首尾帧**（`fl2va`）：上方两个独立槽位，可拖入或点击选择图片；两个都留空为文生视频，
   只填一个即首帧或尾帧生视频。图片会按输出比例居中裁切，比例不一致时槽位下方会提示。
   把视频拖进槽位会打开选帧对话框，截取任意一帧保存为图片资产后作为首/尾帧，用于连续镜头。
   连贯镜头的常用做法：把上一段视频拖到首帧槽位，点「末帧」，用这一帧作为下一段的首帧。
   请求字段：`mode=keyframes`、`first_frame_id`、`last_frame_id`。
-- **首帧+参考**（`hybrid`，ref2va + AddGuide）：同时给出参考素材和首/尾帧。
-  参考素材负责身份（人物、道具、场景），引导帧把构图、光位与起幅**硬锚定**到目标时间轴
-  （首帧锚 0.00 秒，尾帧锚最后一帧），因此首帧可以是一张不含主角的空镜。
-  引导帧不占用 `<Picture N>` 编号——它们按时间轴定位，提示词里写“0 秒从这张引导图开始”
-  即可；`<Picture N>` 只给参考素材。至少需要 1 张引导帧和 1 个参考素材，最多 2 张引导帧。
-  请求字段：`mode=hybrid`、`first_frame_id`、`last_frame_id`、`refs`、`ref_videos`、`ref_audios`。
 - **参考生成**（`ref2va`）：图片 ≤9、视频 ≤3、独立音频 ≤3，所有文件合计 ≤12；
   视频/音频每段 2–15 秒，视频总时长 ≤15 秒、音频总时长 ≤15 秒。顺序决定提示词里的
   `<Picture i>`、`<Video k>`、`<Audio j>`；参考素材不会锁定第 0 帧。请求字段：
@@ -138,10 +132,10 @@ ComfyUI/user/filmline/
   参考视频会重采样到 24fps、短边压到 512 并截断到输出时长；视频原声占用一个 `<Audio j>`，
   独立音频排在所有原声之后。当前使用 8 步 turbo。
 
-生成结果 `meta` 会记录 `video_mode`（`keyframes` / `hybrid` / `reference`）、
-`first_frame_id` / `last_frame_id`（前两种）、`ref_ids` / `ref_video_ids` /
-`ref_video_use_audio` / `ref_audio_ids`（后两种），供前端还原；旧视频资产只有 `ref_ids`
-时按首帧兼容。`keyframes` 模式的 `ref_ids` 存首尾帧 id，`hybrid` 模式的 `ref_ids`
+生成结果 `meta` 会记录 `video_mode`（`keyframes` / `reference`）、
+`first_frame_id` / `last_frame_id`（首尾帧）、`ref_ids` / `ref_video_ids` /
+`ref_video_use_audio` / `ref_audio_ids`（参考生成），供前端还原；旧视频资产只有 `ref_ids`
+时按首帧兼容。`keyframes` 模式的 `ref_ids` 存首尾帧 id，`reference` 模式的 `ref_ids`
 只存参考图 id。
 
 时长在面板下方选择：预设 5/8/10/12/15 秒，也可以输入 5–15 之间的整数秒。提交前会按
@@ -158,7 +152,7 @@ ComfyUI/user/filmline/
 ### 提示词结构助手
 
 - 生成面板提示词上方可展开「提示词助手」，在宽屏上位于消息框右侧。
-- 按当前模式给出结构片段：图片模式是主体/构图/环境/风格/约束；首尾帧是首帧对齐、画面、动作、对白、环境声、配乐、禁止项；参考生成是官方六段式；首帧+参考是「引导帧对齐 + 官方六段式」，并明确引导帧不占用 `<Picture N>` 编号。
+- 按当前模式给出结构片段：图片模式是主体/构图/环境/风格/约束；首尾帧是首帧对齐、画面、动作、对白、环境声、配乐、禁止项；参考生成是官方六段式。
 - 提供 `<d>[Chinese] ...</d>`、`(S1)`、`<Picture N>` / `<Video N>` / `<Audio N>`、无字幕、运镜、环境声等快速插入。
 - 内置确定性 Lint：裸引号对白、缺少说话人、缺少“无字幕”、参考托盘有素材但提示词没标签、误用 `图1` / `<imageN>`、超长等。
 - 结构插入和 Lint 都是确定性的，不会自动改写或提交；AI 优化需显式点击并预览确认。
@@ -252,10 +246,10 @@ custom_nodes/filmline/
 10. **不阻塞事件循环**：业务调用统一走 `asyncio.to_thread`，Session 短生命周期。
 11. **错误不外泄**：未预期异常只写日志，对外返回通用 500。
 12. **前端异步**：列表请求带 `AbortController`，过期响应不覆盖新状态；搜索防抖 250ms。
-13. **引导帧与参考素材分工**：`hybrid` 走 ref2va 权重，用 `MiniMaxH3AddGuide` 把首/尾帧
-    锚定在像素帧 0 / -1，参考素材仍走 `<Picture N>` / `<Video k>` / `<Audio j>` 的 token 顺序。
-    引导帧按时间轴而不是标签定位，所以提示词里不写 `<Picture N>`；两者同时存在时
-    `PackedLayout` 会在 text 之后依次排 keyframe 与 reference 两段条件。
+13. **两套视频权重各司其职**：`keyframes` 走 fl2va，用首/尾帧锁构图与起落点；
+    `reference` 走 ref2va，参考素材通过 `<Picture N>` / `<Video k>` / `<Audio j>` 的 token 顺序
+    做语义条件，不锁定时间轴。实验表明参考素材对首帧构图没有稳定贡献，因此不再提供
+    「首帧+参考」组合模式；确需固定起幅时用首尾帧模式。
 
 ## 测试
 

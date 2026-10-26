@@ -512,6 +512,16 @@ const referenceTagInserted = (
   document.querySelector('[aria-label="提示词"]')?.textContent ?? ''
 ).includes('<Picture 1>')
 
+// 参考视频选择器：不能只显示文字，缩略视频要能看到首帧
+document.querySelector('button[aria-label="添加参考视频"]')?.click()
+await wait(300)
+const videoPickerDialog = document.querySelector('dialog[open]')
+const videoPickerThumbShown = Boolean(videoPickerDialog?.querySelector('video'))
+;[...(videoPickerDialog?.querySelectorAll('button') ?? [])]
+  .find((el) => el.textContent?.trim() === '取消')
+  ?.click()
+await wait(150)
+
 function dropReference(payload) {
   const dataTransfer = {
     types: ['application/x-filmline-asset'],
@@ -793,6 +803,7 @@ const checks = [
   ['参考图选择器可多选', referencePickerOpened],
   ['选择参考图后显示图1', referenceAdded],
   ['参考图可插入 Picture 引用', referenceTagInserted],
+  ['参考视频选择器显示视频缩略图', videoPickerThumbShown],
   ['参考视频可拖入托盘', videoRefAdded],
   ['参考音频可拖入托盘', audioRefAdded],
   ['视频原声默认占用音轨', soundtrackDefault],

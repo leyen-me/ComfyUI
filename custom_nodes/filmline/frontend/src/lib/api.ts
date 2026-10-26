@@ -222,7 +222,7 @@ export interface PromptOptimizeImage {
 
 export interface PromptOptimizeInput {
   mode: 'video'
-  video_mode: 'keyframes' | 'reference' | 'hybrid'
+  video_mode: 'keyframes' | 'reference'
   prompt: string
   project_ref?: string
   keyframes: { first: boolean; last: boolean }
@@ -366,7 +366,7 @@ export const api = {
               {
                 kind: 'video'
                 /** 首尾帧 / 首帧+参考 / 参考生成 */
-                mode?: 'keyframes' | 'reference' | 'hybrid'
+                mode?: 'keyframes' | 'reference'
                 prompt: string
                 size: string
                 resolution?: string

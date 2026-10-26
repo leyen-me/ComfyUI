@@ -56,8 +56,8 @@ import { Button } from './ui/button'
 import { Select } from './ui/select'
 
 type Mode = 'image' | 'video'
-type VideoMode = 'keyframes' | 'reference' | 'hybrid'
-type DraftKey = 'image' | 'keyframes' | 'reference' | 'hybrid'
+type VideoMode = 'keyframes' | 'reference'
+type DraftKey = 'image' | 'keyframes' | 'reference'
 type PickerState =
   | { type: 'keyframe'; slot: KeyframeSlot }
   | { type: 'reference'; kind: 'image' | 'video' | 'audio' }
@@ -120,7 +120,6 @@ export function GenerationPanel({ project, episodeCode }: GenerationPanelProps) 
     image: null,
     keyframes: null,
     reference: null,
-    hybrid: null,
   })
   const modeRef = useRef<Mode>(mode)
   modeRef.current = mode
@@ -129,14 +128,11 @@ export function GenerationPanel({ project, episodeCode }: GenerationPanelProps) 
 
   const hasRefs = mode === 'image' && value.refs.length > 0
   const maxRefs = mode === 'image' ? MAX_IMAGE_REFS : 0
-  const isReferenceMode = mode === 'video' && videoMode === 'reference'
-  const isHybridMode = mode === 'video' && videoMode === 'hybrid'
-  const usesReferences = isReferenceMode || isHybridMode
+  const usesReferences = mode === 'video' && videoMode === 'reference'
   const referenceTotal = totalReferences(referenceLists)
   const missingReference = usesReferences && referenceTotal === 0
-  const missingFrame = isHybridMode && !keyframes.first && !keyframes.last
   const keyframeHint =
-    mode === 'video' && videoMode !== 'reference'
+    mode === 'video' && videoMode === 'keyframes'
       ? keyframes.first && keyframes.last
         ? '首尾帧已锁定'
         : keyframes.first
@@ -239,11 +235,7 @@ export function GenerationPanel({ project, episodeCode }: GenerationPanelProps) 
 
       if (detail.kind === 'video') {
         const targetVideoMode: VideoMode =
-          detail.videoMode === 'hybrid'
-            ? 'hybrid'
-            : detail.videoMode === 'reference'
-              ? 'reference'
-              : 'keyframes'
+          detail.videoMode === 'reference' ? 'reference' : 'keyframes'
         switchModeRef.current('video')
         switchVideoModeRef.current(targetVideoMode)
         if (detail.size === '16:9' || detail.size === '9:16') setVideoSize(detail.size)
@@ -336,12 +328,10 @@ export function GenerationPanel({ project, episodeCode }: GenerationPanelProps) 
             setError('部分参考素材资产已删除，已跳过')
           }
         }
-        if (targetVideoMode !== 'reference') {
+        if (targetVideoMode === 'keyframes') {
           // 新数据用显式首尾帧字段；旧视频资产只有 ref_ids（最多 1 个），按首帧还原。
-          // hybrid 的 ref_ids 是参考图，不能当首帧用，所以只有 keyframes 才回退。
-          const legacy = targetVideoMode === 'keyframes'
-          const firstId = detail.firstFrameId ?? (legacy ? detail.refIds?.[0] : undefined)
-          const lastId = detail.lastFrameId ?? (legacy ? detail.refIds?.[1] : undefined)
+          const firstId = detail.firstFrameId ?? detail.refIds?.[0]
+          const lastId = detail.lastFrameId
           const [firstAsset, lastAsset] = await Promise.all(
             [firstId, lastId].map((id) =>
               id ? api.projects.assets.get(id).catch(() => null) : Promise.resolve(null),
@@ -618,37 +608,11 @@ export function GenerationPanel({ project, episodeCode }: GenerationPanelProps) 
       return images
     }
 
-    const images: PromptOptimizeImage[] = []
-    if (videoMode === 'hybrid') {
-      // 引导帧是时间轴锚点，不是 <Picture N>，用位置描述避免和参考素材编号混淆
-      if (keyframes.first) {
-        images.push({
-          asset_id: keyframes.first.assetId,
-          label: 'guide anchored at 0.00s',
-          role: 'first_frame',
-        })
-      }
-      if (keyframes.last) {
-        images.push({
-          asset_id: keyframes.last.assetId,
-          label: 'guide anchored at the final frame',
-          role: 'last_frame',
-        })
-      }
-    }
-
-    const anchored = new Set(images.map((item) => item.asset_id))
-    for (const [index, item] of referenceLists.images.entries()) {
-      if (images.length >= 4) break
-      // 同一张图既做引导帧又做参考时只发一次，避免后端判定重复
-      if (anchored.has(item.assetId)) continue
-      images.push({
-        asset_id: item.assetId,
-        label: `<Picture ${index + 1}>`,
-        role: 'reference',
-      })
-    }
-    return images
+    return referenceLists.images.slice(0, 4).map((item, index) => ({
+      asset_id: item.assetId,
+      label: `<Picture ${index + 1}>`,
+      role: 'reference',
+    }))
   }
 
   async function handleOptimize() {
@@ -740,7 +704,9 @@ export function GenerationPanel({ project, episodeCode }: GenerationPanelProps) 
       }
     }
 
-    const references = {
+    return {
+      ...base,
+      mode: 'reference' as const,
       refs: referenceLists.images.map((item) => item.assetId),
       ref_videos: referenceLists.videos.map((item) => ({
         asset_id: item.assetId,
@@ -748,16 +714,6 @@ export function GenerationPanel({ project, episodeCode }: GenerationPanelProps) 
       })),
       ref_audios: referenceLists.audios.map((item) => item.assetId),
     }
-    if (videoMode === 'hybrid') {
-      return {
-        ...base,
-        mode: 'hybrid' as const,
-        ...references,
-        first_frame_id: keyframes.first?.assetId ?? null,
-        last_frame_id: keyframes.last?.assetId ?? null,
-      }
-    }
-    return { ...base, mode: 'reference' as const, ...references }
   }
 
   async function handleSubmit() {
@@ -765,15 +721,7 @@ export function GenerationPanel({ project, episodeCode }: GenerationPanelProps) 
     const current = editorRef.current?.getValue() ?? value
     if (!current.text.trim()) return
     if (usesReferences && referenceTotal === 0) {
-      setError(
-        isHybridMode
-          ? '首帧+参考至少需要 1 个参考素材（人物、道具或场景）'
-          : '参考生成至少需要 1 个素材',
-      )
-      return
-    }
-    if (missingFrame) {
-      setError('首帧+参考至少需要 1 张首帧或尾帧')
+      setError('参考生成至少需要 1 个素材')
       return
     }
     if (usesReferences) {
@@ -889,13 +837,6 @@ export function GenerationPanel({ project, episodeCode }: GenerationPanelProps) 
                     首尾帧
                   </VideoModeTab>
                   <VideoModeTab
-                    active={videoMode === 'hybrid'}
-                    onClick={() => switchVideoMode('hybrid')}
-                    title="参考素材锁人物与道具，首尾帧锁构图"
-                  >
-                    首帧+参考
-                  </VideoModeTab>
-                  <VideoModeTab
                     active={videoMode === 'reference'}
                     onClick={() => switchVideoMode('reference')}
                   >
@@ -905,24 +846,17 @@ export function GenerationPanel({ project, episodeCode }: GenerationPanelProps) 
                 <span className="ml-auto text-[10px] text-muted-foreground">
                   {videoMode === 'keyframes'
                     ? '留空即文生视频'
-                    : videoMode === 'hybrid'
-                      ? '人物靠参考锁，构图靠首帧锁'
-                      : '参考素材不锁定首帧'}
+                    : '参考素材不锁定首帧'}
                 </span>
               </div>
             ) : null}
 
-            {mode === 'video' && videoMode !== 'reference' ? (
+            {mode === 'video' && videoMode === 'keyframes' ? (
               <KeyframeSlots
                 first={keyframes.first}
                 last={keyframes.last}
                 size={videoSize}
                 disabled={running}
-                hint={
-                  videoMode === 'hybrid'
-                    ? '首帧锁定起幅（空间、光位、构图），尾帧锁定落点；人物和道具靠下方参考素材保持。两个都留空不能提交。'
-                    : undefined
-                }
                 onPick={(slot) => setPicker({ type: 'keyframe', slot })}
                 onClear={(slot) =>
                   setKeyframes((previous) => ({ ...previous, [slot]: null }))
@@ -939,11 +873,6 @@ export function GenerationPanel({ project, episodeCode }: GenerationPanelProps) 
               <ReferenceTray
                 lists={referenceLists}
                 disabled={running}
-                hint={
-                  videoMode === 'hybrid'
-                    ? '参考素材锁人物、道具和场景；引导帧不占用 <Picture N> 编号，按 0.00 秒和最后一帧描述。'
-                    : undefined
-                }
                 onAdd={(kind) => setPicker({ type: 'reference', kind })}
                 onDropAsset={addReferenceAsset}
                 onRemove={removeReferenceItem}
@@ -962,8 +891,8 @@ export function GenerationPanel({ project, episodeCode }: GenerationPanelProps) 
                   maxRefs={maxRefs}
                   allowAssetDrop={mode === 'image'}
                   assetDropHint={
-                    videoMode === 'reference' || videoMode === 'hybrid'
-                      ? '素材请拖到上方的参考素材区或首尾帧槽位'
+                    videoMode === 'reference'
+                      ? '素材请拖到上方的参考素材区'
                       : '图片或视频请拖到上方的首帧或尾帧槽位'
                   }
                   placeholder={
@@ -971,9 +900,7 @@ export function GenerationPanel({ project, episodeCode }: GenerationPanelProps) 
                       ? '描述画面，可把左侧图片拖进来'
                       : videoMode === 'keyframes'
                         ? '描述镜头、运镜与声音（对白 / 音效 / 配乐）；首尾帧可选'
-                        : videoMode === 'hybrid'
-                          ? '描述从起幅到落点的动作、运镜与声音；参考素材用 <Picture N> 引用'
-                          : '描述画面与参考素材用途；可插入 <Picture N> / <Video N> / <Audio N>'
+                        : '描述画面与参考素材用途；可插入 <Picture N> / <Video N> / <Audio N>'
                   }
                   onChange={setValue}
                   onSubmit={() => void handleSubmit()}
@@ -1045,11 +972,6 @@ export function GenerationPanel({ project, episodeCode }: GenerationPanelProps) 
                   至少添加 1 个参考素材
                 </span>
               ) : null}
-              {missingFrame ? (
-                <span className="text-[11px] text-amber-600 dark:text-amber-400">
-                  至少添加 1 张首帧或尾帧
-                </span>
-              ) : null}
 
               <div className="ml-auto flex items-center gap-2">
                 <button
@@ -1107,7 +1029,7 @@ export function GenerationPanel({ project, episodeCode }: GenerationPanelProps) 
                   size="sm"
                   variant="primary"
                   className="h-8 rounded-full px-4"
-                  disabled={running || !value.text.trim() || missingReference || missingFrame}
+                  disabled={running || !value.text.trim() || missingReference}
                 >
                   {running ? (
                     <>

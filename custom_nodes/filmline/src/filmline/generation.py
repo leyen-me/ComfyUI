@@ -421,21 +421,15 @@ def video_reference_workflow(
     refs: list[str] | None = None,
     ref_videos: list[VideoReference] | None = None,
     ref_audios: list[str] | None = None,
-    first_frame: str | None = None,
-    last_frame: str | None = None,
     ref_image_size: str = "match",
     prefix: str = "filmline/video",
 ) -> Workflow:
     """Ref2VA：参考图/视频/音频保持身份、风格、动作或音色。
 
-    默认不锁定第 0 帧；传入 ``first_frame`` / ``last_frame`` 时用
-    ``MiniMaxH3AddGuide`` 把这两张图硬锚定到目标时间轴（0 与最后一帧），
-    参考素材仍然只做语义条件。这样空间锚（构图/光线）和身份锚（人物/道具）
-    可以同时成立——首帧不必包含主角。
+    参考素材只做语义条件，不锁定第 0 帧；构图与起幅交给首尾帧模式。
 
     参考顺序决定提示词里的 ``<Picture i>`` / ``<Video k>`` / ``<Audio j>``：
     图片按传入顺序，视频按传入顺序，独立音频排在所有视频音轨之后。
-    引导帧不占 ``<Picture i>`` 编号，靠时间轴而不是提示词标签来定位。
     """
     if size not in VIDEO_TIERS["768"]:
         raise InvalidArgument(f"视频比例只支持: {', '.join(VIDEO_TIERS['768'])}")
@@ -580,34 +574,6 @@ def video_reference_workflow(
     if audio_refs:
         graph["7"]["inputs"]["ref_audios"] = audio_refs
 
-    # 引导帧：AddGuide 自己按画布居中裁切并编码，不需要额外的 ImageScale。
-    # 首帧锚 0，尾帧用 -1（从结尾倒数，避免依赖帧数计算）。
-    positive: list[Any] = ["7", 0]
-    for path, frame_idx in ((first_frame, 0), (last_frame, -1)):
-        if path is None:
-            continue
-        loader_id = str(next_node)
-        guide_id = str(next_node + 1)
-        next_node += 2
-        graph[loader_id] = {"class_type": "FilmlineLoadImage", "inputs": {"path": path}}
-        graph[guide_id] = {
-            "class_type": "MiniMaxH3AddGuide",
-            "inputs": {
-                "positive": positive,
-                "vae": ["5", 0],
-                "latent": ["7", 1],
-                "image": [loader_id, 0],
-                "frame_idx": frame_idx,
-            },
-        }
-        positive = [guide_id, 0]
-
-    if positive != ["7", 0]:
-        # 负向条件跟着正向走，保持与 fl2va 一致的结构（cfg=1 时不参与计算）
-        graph["8"]["inputs"]["conditioning"] = positive
-        graph["9"]["inputs"]["positive"] = positive
-
-    keyframes = int(first_frame is not None) + int(last_frame is not None)
     return Workflow(
         prompt=graph,
         kind="video",
@@ -629,7 +595,6 @@ def video_reference_workflow(
             "refs": len(refs),
             "ref_videos": len(ref_videos),
             "ref_audios": len(ref_audios),
-            "keyframes": keyframes,
             "ref_image_size": ref_image_size,
         },
     )

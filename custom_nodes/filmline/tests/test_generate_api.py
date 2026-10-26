@@ -241,99 +241,15 @@ class GenerateApiTest(ApiTestCase):
         self.assertNotIn("first_frame_id", meta)
         self.assertEqual(meta["ref_image_size"], "match")
 
-    async def test_hybrid_requires_frame_and_reference(self) -> None:
+    async def test_removed_hybrid_mode_is_rejected(self) -> None:
         project = await self._project()
-        ref = project["code"]
-        image = await self._image(ref, "ref.png")
-
-        # 只有参考素材、没有引导帧
         res = await self.client.post(
-            f"/studio/api/projects/{ref}/generate",
-            json={
-                "kind": "video",
-                "mode": "hybrid",
-                "prompt": "x",
-                "duration": 5,
-                "refs": [image["id"]],
-            },
+            f"/studio/api/projects/{project['code']}/generate",
+            json={"kind": "video", "mode": "hybrid", "prompt": "x", "duration": 5},
         )
         body = await res.json()
         self.assertEqual(res.status, 400, body)
-        self.assertIn("首帧或尾帧", body["error"]["message"])
-
-        # 只有引导帧、没有参考素材
-        res = await self.client.post(
-            f"/studio/api/projects/{ref}/generate",
-            json={
-                "kind": "video",
-                "mode": "hybrid",
-                "prompt": "x",
-                "duration": 5,
-                "first_frame_id": image["id"],
-            },
-        )
-        body = await res.json()
-        self.assertEqual(res.status, 400, body)
-        self.assertIn("参考素材", body["error"]["message"])
-
-        # 同一张图既当首帧又当尾帧
-        res = await self.client.post(
-            f"/studio/api/projects/{ref}/generate",
-            json={
-                "kind": "video",
-                "mode": "hybrid",
-                "prompt": "x",
-                "duration": 5,
-                "refs": [image["id"]],
-                "first_frame_id": image["id"],
-                "last_frame_id": image["id"],
-            },
-        )
-        body = await res.json()
-        self.assertEqual(res.status, 400, body)
-        self.assertIn("重复", body["error"]["message"])
-
-    async def test_hybrid_payload_and_meta(self) -> None:
-        project = await self._project()
-        ref = project["code"]
-        frame = await self._image(ref, "empty_alley.png")
-        hero = await self._image(ref, "hero.png")
-        last = await self._image(ref, "hero_close.png")
-
-        with patch(
-            "filmline.generation.submit", new=AsyncMock(return_value="prompt-hybrid")
-        ), patch("filmline.generation.collect", new=self._fake_run("video", 2.0)):
-            res = await self.client.post(
-                f"/studio/api/projects/{ref}/generate",
-                json={
-                    "kind": "video",
-                    "mode": "hybrid",
-                    "prompt": "空镜起幅，<Subject 1> 从画右入画",
-                    "size": "16:9",
-                    "duration": 5,
-                    "refs": [hero["id"]],
-                    "first_frame_id": frame["id"],
-                    "last_frame_id": last["id"],
-                },
-            )
-            body = await res.json()
-            self.assertEqual(res.status, 202, body)
-            task = await self._wait_task(body["data"]["task"]["id"])
-
-        self.assertEqual(task["status"], "succeeded")
-        asset = (
-            await (
-                await self.client.get(f"/studio/api/assets/{task['asset_ids'][0]}")
-            ).json()
-        )["data"]
-        meta = asset["meta"]
-        self.assertEqual(meta["video_mode"], "hybrid")
-        self.assertEqual(meta["ref_ids"], [hero["id"]])
-        self.assertEqual(meta["first_frame_id"], frame["id"])
-        self.assertEqual(meta["last_frame_id"], last["id"])
-        self.assertEqual(meta["keyframes"], 2)
-        # 参考素材与引导帧不能互相顶替
-        self.assertEqual(meta["model"], generation.VIDEO_REF_MODEL)
+        self.assertIn("keyframes / reference", body["error"]["message"])
 
     async def test_media_info_endpoint(self) -> None:
         project = await self._project()

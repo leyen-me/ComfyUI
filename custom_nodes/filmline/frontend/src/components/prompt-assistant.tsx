@@ -53,7 +53,7 @@ export function PromptAssistant({
   onInsertTemplate,
 }: PromptAssistantProps) {
   const sections = sectionsFor(mode, videoMode, keyframes, counts)
-  const snippets = snippetsFor(mode, videoMode, counts, keyframes)
+  const snippets = snippetsFor(mode, videoMode, counts)
   const warnings = lintPrompt({ mode, videoMode, prompt, counts })
   const hint = modeHint(mode, videoMode, keyframes)
   const [tab, setTab] = useState<Tab>('build')

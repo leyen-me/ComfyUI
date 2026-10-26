@@ -22,7 +22,7 @@ from ..errors import InvalidArgument
 from ..runner import RUNNER_KEY
 from .http import handle_errors, ok, read_object
 
-VIDEO_MODES = ("keyframes", "reference", "hybrid")
+VIDEO_MODES = ("keyframes", "reference")
 
 
 def _episode_scope(request: web.Request, project_id: int) -> tuple[int | None, str]:
@@ -92,10 +92,8 @@ class _ReferenceMaterials:
 async def _resolve_reference_materials(
     payload: dict,
     project_id: int,
-    *,
-    empty_message: str = "参考生成至少需要 1 个素材",
 ) -> _ReferenceMaterials:
-    """校验并解析 ref2va 的参考图/视频/音频，供 reference 与 hybrid 共用。"""
+    """校验并解析 ref2va 的参考图/视频/音频。"""
     assets = AssetService()
     image_ids = _asset_id_list(payload.get("refs"), "refs")
     video_items = _video_ref_list(payload.get("ref_videos"))
@@ -105,7 +103,7 @@ async def _resolve_reference_materials(
 
     all_ids = [*image_ids, *video_ids, *audio_ids]
     if not all_ids:
-        raise InvalidArgument(empty_message)
+        raise InvalidArgument("参考生成至少需要 1 个素材")
     if len(all_ids) > generation.MAX_VIDEO_FILES:
         raise InvalidArgument(f"参考素材合计最多 {generation.MAX_VIDEO_FILES} 个")
     if len(set(all_ids)) != len(all_ids):
@@ -234,7 +232,7 @@ def register_generate_routes(routes: web.RouteTableDef) -> None:
         else:
             mode = str(payload.get("mode") or "keyframes")
             if mode not in VIDEO_MODES:
-                raise InvalidArgument("视频生成方式只支持 keyframes / reference / hybrid")
+                raise InvalidArgument("视频生成方式只支持 keyframes / reference")
 
             first_id = _optional_asset_id(payload.get("first_frame_id"), "first_frame_id")
             last_id = _optional_asset_id(payload.get("last_frame_id"), "last_frame_id")
@@ -259,12 +257,6 @@ def register_generate_routes(routes: web.RouteTableDef) -> None:
                     f"视频时长只支持 {generation.VIDEO_MIN_SECONDS}–"
                     f"{generation.VIDEO_MAX_SECONDS} 秒"
                 )
-
-            raw_refs: list[int] = []
-            frame_ids: list[int] = []
-            video_ids: list[int] = []
-            video_use_audio: list[bool] = []
-            audio_ids: list[int] = []
 
             if mode == "keyframes":
                 if payload.get("ref_videos") or payload.get("ref_audios"):
@@ -302,33 +294,14 @@ def register_generate_routes(routes: web.RouteTableDef) -> None:
                     prefix=f"filmline/{project.code}/{scope}",
                 )
             else:
-                if mode == "hybrid":
-                    if first_id is None and last_id is None:
-                        raise InvalidArgument("首帧+参考模式至少需要 1 张首帧或尾帧")
-                    empty_message = "首帧+参考模式至少需要 1 个参考素材"
-                else:
-                    if first_id is not None or last_id is not None:
-                        raise InvalidArgument("参考生成不能使用 first_frame_id / last_frame_id")
-                    empty_message = "参考生成至少需要 1 个素材"
+                if first_id is not None or last_id is not None:
+                    raise InvalidArgument("参考生成不能使用 first_frame_id / last_frame_id")
 
-                materials = await _resolve_reference_materials(
-                    payload, project.id, empty_message=empty_message
-                )
+                materials = await _resolve_reference_materials(payload, project.id)
                 raw_refs = materials.image_ids
                 video_ids = materials.video_ids
                 video_use_audio = materials.video_use_audio
                 audio_ids = materials.audio_ids
-
-                paths_by_id = {}
-                if mode == "hybrid":
-                    frame_ids = [
-                        asset_id
-                        for asset_id in (first_id, last_id)
-                        if asset_id is not None
-                    ]
-                    paths_by_id = await _resolve_keyframe_paths(
-                        assets, project.id, first_id, last_id
-                    )
 
                 workflow = generation.video_reference_workflow(
                     prompt=prompt,
@@ -338,8 +311,6 @@ def register_generate_routes(routes: web.RouteTableDef) -> None:
                     refs=materials.image_paths,
                     ref_videos=materials.video_refs,
                     ref_audios=materials.audio_paths,
-                    first_frame=paths_by_id.get(first_id) if first_id is not None else None,
-                    last_frame=paths_by_id.get(last_id) if last_id is not None else None,
                     prefix=f"filmline/{project.code}/{scope}",
                 )
 
@@ -349,10 +320,10 @@ def register_generate_routes(routes: web.RouteTableDef) -> None:
         else:
             meta["video_mode"] = mode
             meta["ref_ids"] = frame_ids if mode == "keyframes" else raw_refs
-            if mode != "reference":
+            if mode == "keyframes":
                 meta["first_frame_id"] = first_id
                 meta["last_frame_id"] = last_id
-            if mode != "keyframes":
+            else:
                 meta["ref_video_ids"] = video_ids
                 meta["ref_video_use_audio"] = video_use_audio
                 meta["ref_audio_ids"] = audio_ids

@@ -4,7 +4,7 @@
 import { PROMPT_SOFT_HINT_CHARS } from './limits.ts'
 
 export type AssistantMode = 'image' | 'video'
-export type AssistantVideoMode = 'keyframes' | 'reference' | 'hybrid'
+export type AssistantVideoMode = 'keyframes' | 'reference'
 
 export interface AssistantCounts {
   images: number
@@ -74,9 +74,6 @@ export function modeHint(
   if (videoMode === 'reference') {
     return '参考模式：先定义 <Subject>/<Picture>/<Video>/<Audio> 的角色，再写保留关系和时间轴。'
   }
-  if (videoMode === 'hybrid') {
-    return '首帧+参考：参考锁人物与道具，引导帧锁起幅和落点；标签只给参考素材，引导帧按秒描述。'
-  }
   if (keyframes.first && keyframes.last) {
     return '首尾帧：重点写从首帧到尾帧的动作路径，不要让结尾切走。'
   }
@@ -87,17 +84,6 @@ export function modeHint(
     return '尾帧：从合理的前置状态出发，让最后一个镜头落到尾帧。'
   }
   return '文生视频：按 画面 → 动作 → 镜头 → 声音 的顺序写。'
-}
-
-export function hybridAlignment(keyframes: AssistantKeyframes): string {
-  const start =
-    'The target video starts exactly from the guide image anchored at 0.00 seconds, keeping its composition, framing, lighting, lens and background.'
-  const end =
-    'The video must land exactly on the guide image anchored at the final frame, keeping its composition, framing, lighting and background.'
-  if (keyframes.first && keyframes.last) return `${start} ${end}`
-  if (keyframes.first) return start
-  if (keyframes.last) return end
-  return ''
 }
 
 export function sectionsFor(
@@ -141,7 +127,7 @@ export function sectionsFor(
     ]
   }
 
-  if (videoMode === 'reference' || videoMode === 'hybrid') {
+  if (videoMode === 'reference') {
     const sections: AssistantSection[] = [
       {
         id: 'subject_definitions',
@@ -185,20 +171,6 @@ export function sectionsFor(
       },
     ]
 
-    if (videoMode === 'hybrid') {
-      const alignment = hybridAlignment(keyframes)
-      return alignment
-        ? [
-            {
-              id: 'guide_alignment',
-              title: '引导帧对齐',
-              hint: '引导帧按时间轴锚定，不占用 <Picture N> 编号',
-              template: alignment,
-            },
-            ...sections,
-          ]
-        : sections
-    }
     return sections
   }
 
@@ -267,7 +239,6 @@ export function snippetsFor(
   mode: AssistantMode,
   videoMode: AssistantVideoMode,
   counts: AssistantCounts,
-  keyframes: AssistantKeyframes = { first: false, last: false },
 ): AssistantSnippet[] {
   if (mode === 'image') {
     return [
@@ -294,31 +265,17 @@ export function snippetsFor(
     { id: 'music', label: '配乐', text: 'non_diegetic_music: N/A', block: true },
   ]
 
-  if (videoMode === 'reference' || videoMode === 'hybrid') {
+  if (videoMode === 'reference') {
     items.unshift(
       { id: 'picture', label: '<Picture 1>', text: '<Picture 1>' },
       { id: 'video', label: '<Video 1>', text: '<Video 1>' },
       { id: 'audio', label: '<Audio 1>', text: '<Audio 1>' },
     )
-    if (videoMode === 'hybrid') {
-      const alignment = hybridAlignment(keyframes)
-      if (alignment) {
-        items.splice(3, 0, {
-          id: 'guide-align',
-          label: '引导帧对齐',
-          text: alignment,
-          block: true,
-        })
-      }
-    }
     if (total(counts) === 0) {
       items.push({
         id: 'ref-hint',
         label: '参考提示',
-        text:
-          videoMode === 'hybrid'
-            ? '先在参考托盘加入人物/道具，再把首帧槽位填上起幅画面。'
-            : '先在右侧托盘加入图片/视频/音频，再在提示词里引用标签。',
+        text: '先在右侧托盘加入图片/视频/音频，再在提示词里引用标签。',
         block: true,
       })
     }
@@ -344,7 +301,7 @@ export function fullTemplate(
     ].join('\n')
   }
 
-  if (videoMode === 'reference' || videoMode === 'hybrid') {
+  if (videoMode === 'reference') {
     const sections = [
       'subject_definitions:',
       '<Subject 1> is the ... in <Picture 1>, with ... .',
@@ -368,10 +325,6 @@ export function fullTemplate(
       '',
       'non_diegetic_music: N/A',
     ]
-    if (videoMode === 'hybrid') {
-      const alignment = hybridAlignment(keyframes)
-      return [...(alignment ? [alignment, ''] : []), ...sections].join('\n')
-    }
     return sections.join('\n')
   }
 
@@ -451,7 +404,7 @@ export function lintPrompt({ mode, videoMode, prompt, counts }: LintInput): Prom
     })
   }
   if (
-    (videoMode === 'reference' || videoMode === 'hybrid') &&
+    videoMode === 'reference' &&
     total(counts) > 0 &&
     text.length > 0 &&
     !VIDEO_TAG.test(text)

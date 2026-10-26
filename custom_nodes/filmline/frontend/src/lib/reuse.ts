@@ -18,18 +18,12 @@ export function reuseDetailFor(asset: Asset): ReusePromptDetail | null {
     refIds: meta.ref_ids ?? [],
     ...(isVideo
       ? {
-          videoMode:
-            meta.video_mode === 'hybrid'
-              ? 'hybrid'
-              : meta.video_mode === 'reference'
-                ? 'reference'
-                : 'keyframes',
-          // hybrid 与 keyframes 都有显式首尾帧字段；只有旧资产才从 ref_ids 回退
+          videoMode: meta.video_mode === 'reference' ? 'reference' : 'keyframes',
+          // 旧资产里已下线的「首帧+参考」也带显式首尾帧字段，按首尾帧还原；
+          // 只有参考生成或更老的资产才需要从 ref_ids 回退判断首帧。
           firstFrameId:
             meta.first_frame_id ??
-            (meta.video_mode === 'reference' || meta.video_mode === 'hybrid'
-              ? undefined
-              : meta.ref_ids?.[0]) ??
+            (meta.video_mode === 'reference' ? undefined : meta.ref_ids?.[0]) ??
             undefined,
           lastFrameId: meta.last_frame_id ?? undefined,
           videoRefIds: meta.ref_video_ids ?? [],

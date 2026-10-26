@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Check, FileAudio, Film, Loader2, RefreshCw, Search } from 'lucide-react'
+import { Check, FileAudio, Loader2, RefreshCw, Search } from 'lucide-react'
 
 import { ApiError, api, type Asset, type AssetKind, type Project } from '@/lib/api'
 import { assetDimensions, generationMeta } from '@/lib/asset-meta'
@@ -8,6 +8,7 @@ import { cn } from '@/lib/utils'
 import { Button } from './ui/button'
 import { Dialog } from './ui/dialog'
 import { Input } from './ui/field'
+import { VideoThumb } from './video-thumb'
 
 interface AssetPickerDialogProps {
   open: boolean
@@ -199,7 +200,10 @@ export function AssetPickerDialog({
                         className="size-full object-cover transition-transform duration-200 group-hover:scale-[1.02]"
                       />
                     ) : kind === 'video' ? (
-                      <Film className="size-6" />
+                      <VideoThumb
+                        src={asset.content_url ?? ''}
+                        className="size-full bg-black"
+                      />
                     ) : (
                       <FileAudio className="size-6" />
                     )}
