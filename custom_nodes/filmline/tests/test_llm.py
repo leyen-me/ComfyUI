@@ -218,6 +218,10 @@ class SystemPromptTest(unittest.TestCase):
         self.assertIn("Reserve <Picture N> for a picture used as a concrete frame", llm.SYSTEM_PROMPT)
         self.assertIn("do NOT give it its own line", llm.SYSTEM_PROMPT)
 
+
+    def test_retention_uses_only_defined_labels(self) -> None:
+        self.assertIn("Use exactly the labels defined in subject_definitions", llm.SYSTEM_PROMPT)
+
     def test_reframed_location_is_partially_preserved(self) -> None:
         self.assertIn("a location reference that gets reframed", llm.SYSTEM_PROMPT)
 

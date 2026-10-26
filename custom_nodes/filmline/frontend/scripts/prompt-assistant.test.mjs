@@ -219,6 +219,28 @@ assert.ok(
   }).some((item) => item.id === 'retention-line'),
 )
 
+// retention_analysis 里多出 subject_definitions 未定义的条目
+assert.ok(
+  lintPrompt({
+    mode: 'video',
+    videoMode: 'reference',
+    prompt: refPrompt('[Shot 1] <Subject 1> stands in the rain.').replace(
+      '<Subject 1> (appears in [Shot 1]): fully_preserved - identity kept.',
+      '<Subject 1> (appears in [Shot 1]): fully_preserved - identity kept.\n<Picture 1>: attribute_transfer - face transferred to <Subject 1>.',
+    ),
+    counts,
+  }).some((item) => item.id === 'retention-labels'),
+)
+// 标签与定义一致时不报
+assert.ok(
+  !lintPrompt({
+    mode: 'video',
+    videoMode: 'reference',
+    prompt: refPrompt('[Shot 1] <Subject 1> stands in the rain.'),
+    counts,
+  }).some((item) => item.id === 'retention-labels'),
+)
+
 // 正文不点名 Subject / Picture
 const noSubject = lintPrompt({
   mode: 'video',
@@ -284,9 +306,20 @@ assert.ok(
   }).some((item) => item.id === 'cut-conflict'),
 )
 
-// 首尾帧缺「不要切镜」
+// 首尾帧双图写了多镜头又没说明切点
 assert.ok(
   lintPrompt({
+    mode: 'video',
+    videoMode: 'keyframes',
+    prompt:
+      'integrated_multimodal_description: [Shot 1] A cyclist opens an umbrella.\n[Shot 2] At 00:03.000, the camera cuts to the handle.',
+    counts: noCounts,
+    keyframes: { first: true, last: true },
+  }).some((item) => item.id === 'keyframe-no-cut'),
+)
+// 单镜头首尾帧不应要求写 no cut
+assert.ok(
+  !lintPrompt({
     mode: 'video',
     videoMode: 'keyframes',
     prompt: 'integrated_multimodal_description: [Shot 1] A cyclist opens an umbrella.',

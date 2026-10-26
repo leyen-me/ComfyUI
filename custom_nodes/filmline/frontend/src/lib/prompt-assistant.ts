@@ -67,6 +67,7 @@ const ALIGNMENT_PLACEHOLDER = /\bS\.SS\b/
 const ALIGNMENT_SECONDS = /(\d+\.\d{2})-second mark/g
 const SCENETRANS = /<scenetrans>/g
 const SPEAKER_IN_RETENTION = /\(S\d+\)/
+const TAG_LABEL = /<(Subject|Picture|Video|Audio)\s+(\d+)>/g
 const REF_SECTIONS = [
   'subject_definitions',
   'summary',
@@ -520,7 +521,10 @@ export function lintPrompt({
     duration > 0 &&
     /aligns with the/i.test(text)
   ) {
-    const marks = [...text.matchAll(ALIGNMENT_SECONDS)].map((match) => Number(match[1]))
+    const marks = [...text.matchAll(ALIGNMENT_SECONDS)]
+      .map((match) => Number(match[1]))
+      // 首帧固定写 0.00-second mark，它不是视频时长
+      .filter((value) => value > 0)
     const expected = duration.toFixed(2)
     const wrong = marks.filter((value) => Math.abs(value - duration) > 0.005)
     if (wrong.length > 0) {
@@ -591,6 +595,8 @@ export function lintPrompt({
         message: `官方参考模式要求六段：缺少 ${missing.join(' / ')}。`,
       })
     }
+    const definitionsBlock =
+      text.split(/subject_definitions:/i)[1]?.split(/summary:/i)[0] ?? ''
     const retentionBlock =
       text.split(/retention_analysis:/i)[1]?.split(/detailed_description:/i)[0] ?? ''
     if (text.includes('retention_analysis') && !RETENTION_MARKER.test(retentionBlock)) {
@@ -617,11 +623,30 @@ export function lintPrompt({
             'retention_analysis 每行必须是 <标签> (作用范围): 标记 - 说明；不写 (Sx)，也不插其他散文。',
         })
       }
+      const definedLabels = new Set(
+        definitionsBlock
+          .split('\n')
+          .map((line) => line.trim())
+          .filter((line) => line.startsWith('<'))
+          .map((line) => line.match(/^<(Subject|Picture|Video|Audio)\s+(\d+)>/))
+          .filter((match): match is RegExpMatchArray => match !== null)
+          .map((match) => `${match[1]} ${match[2]}`),
+      )
+      const extraLabels = [
+        ...new Set([...retentionBlock.matchAll(TAG_LABEL)].map((m) => `${m[1]} ${m[2]}`)),
+      ].filter((label) => !definedLabels.has(label))
+      if (definedLabels.size > 0 && extraLabels.length > 0) {
+        warnings.push({
+          id: 'retention-labels',
+          level: 'warn',
+          message: `retention_analysis 多出未定义的条目：${extraLabels
+            .map((label) => `<${label}>`)
+            .join(' ')}；这里的标签必须与 subject_definitions 完全一致。`,
+        })
+      }
     }
     const descriptionBlock =
       text.split(/detailed_description:/i)[1]?.split(/overall_soundscape:/i)[0] ?? ''
-    const definitionsBlock =
-      text.split(/subject_definitions:/i)[1]?.split(/summary:/i)[0] ?? ''
     if (
       text.includes('detailed_description:') &&
       SUBJECT_TAG.test(text) &&
@@ -681,13 +706,14 @@ export function lintPrompt({
     videoMode === 'keyframes' &&
     keyframes?.first &&
     keyframes?.last &&
-    text.length > 0 &&
+    EXTRA_SHOT.test(text) &&
     !NO_CUT.test(text)
   ) {
     warnings.push({
       id: 'keyframe-no-cut',
       level: 'warn',
-      message: '首尾帧默认单镜头：H3 不会自动加切镜，建议明确写 no cut / one continuous shot。',
+      message:
+        '首尾帧双图默认单镜头（H3 不会自动加切镜），但提示词写了 [Shot 2] 及之后；确认是否有意，否则删掉多镜头或写明切点。',
     })
   }
 
