@@ -17,6 +17,7 @@
   --destructive: #c93c4a;
   --ring: #c2741a;
   --elevated: #ffffff;
+  --segment: #ffffff;
   --shadow-color: 30 20 10;
 }
 
@@ -34,6 +35,7 @@
   --destructive: #ef5b67;
   --ring: #f2a93b;
   --elevated: #1a1a1c;
+  --segment: #3a3a40;
   --shadow-color: 0 0 0;
 }
 
@@ -51,6 +53,7 @@
   --color-destructive: var(--destructive);
   --color-ring: var(--ring);
   --color-elevated: var(--elevated);
+  --color-segment: var(--segment);
   --shadow-soft: 0 1px 2px rgb(var(--shadow-color) / 0.06), 0 8px 24px -12px rgb(var(--shadow-color) / 0.25);
   --shadow-pop: 0 2px 6px rgb(var(--shadow-color) / 0.12), 0 24px 48px -16px rgb(var(--shadow-color) / 0.45);
   --radius-lg: 0.75rem;

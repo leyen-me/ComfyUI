@@ -41,6 +41,7 @@ import { cn } from '@/lib/utils'
 import { formatClock } from '@/lib/format'
 import { GenerationStage } from './generation-stage'
 import { Popover } from './ui/popover'
+import { segmentGroupClass, segmentItemClass } from './ui/segmented'
 import { AssetPickerDialog } from './asset-picker-dialog'
 import { DurationSelect } from './duration-select'
 import { GenerationOptions } from './generation-options'
@@ -877,7 +878,7 @@ export function GenerationPanel({ project, episodeCode }: GenerationPanelProps) 
               <div className="flex flex-wrap items-center gap-2 px-1 pt-0.5 pb-2">
                 <span className="text-[11px] font-medium text-muted-foreground">视频方式</span>
                 <div
-                  className="flex rounded-[10px] bg-muted p-0.5"
+                  className={segmentGroupClass}
                   role="group"
                   aria-label="视频生成方式"
                 >
@@ -984,7 +985,7 @@ export function GenerationPanel({ project, episodeCode }: GenerationPanelProps) 
 
             <div className="flex flex-wrap items-center gap-1.5 px-1 pt-1">
               <div
-                className="flex rounded-[10px] bg-muted p-0.5"
+                className={segmentGroupClass}
                 role="group"
                 aria-label="生成类型"
               >
@@ -1221,12 +1222,7 @@ function ModeButton({
     <button
       type="button"
       aria-pressed={active}
-      className={cn(
-        'flex h-6 cursor-pointer items-center gap-1 rounded-lg px-2.5 text-xs transition-all',
-        active
-          ? 'bg-elevated font-medium text-foreground shadow-[0_1px_2px_rgb(0_0_0/0.15)] ring-1 ring-border'
-          : 'text-muted-foreground hover:text-foreground',
-      )}
+      className={segmentItemClass(active)}
       onClick={onClick}
     >
       {children}
@@ -1253,14 +1249,7 @@ function VideoModeTab({
       aria-pressed={active}
       disabled={disabled}
       title={title}
-      className={cn(
-        'h-6 cursor-pointer rounded-lg px-2.5 text-xs transition-all',
-        active
-          ? 'bg-elevated font-medium text-foreground shadow-[0_1px_2px_rgb(0_0_0/0.15)] ring-1 ring-border'
-          : 'text-muted-foreground',
-        !disabled && !active && 'hover:text-foreground',
-        disabled && 'cursor-not-allowed opacity-45',
-      )}
+      className={segmentItemClass(active)}
       onClick={onClick}
     >
       {children}
