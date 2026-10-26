@@ -118,12 +118,20 @@ export function AssetPanel({
       refIds: meta.ref_ids ?? [],
       ...(isVideo
         ? {
-            videoMode: meta.video_mode === 'reference' ? 'reference' : 'keyframes',
-            firstFrameId: meta.first_frame_id ?? meta.ref_ids?.[0] ?? undefined,
-            lastFrameId:
-              meta.last_frame_id ??
-              (meta.video_mode === 'keyframes' ? meta.ref_ids?.[1] : undefined) ??
+            videoMode:
+              meta.video_mode === 'hybrid'
+                ? 'hybrid'
+                : meta.video_mode === 'reference'
+                  ? 'reference'
+                  : 'keyframes',
+            // hybrid 与 keyframes 都有显式首尾帧字段；只有旧资产才从 ref_ids 回退
+            firstFrameId:
+              meta.first_frame_id ??
+              (meta.video_mode === 'reference' || meta.video_mode === 'hybrid'
+                ? undefined
+                : meta.ref_ids?.[0]) ??
               undefined,
+            lastFrameId: meta.last_frame_id ?? undefined,
             videoRefIds: meta.ref_video_ids ?? [],
             videoUseAudio: meta.ref_video_use_audio ?? [],
             audioRefIds: meta.ref_audio_ids ?? [],

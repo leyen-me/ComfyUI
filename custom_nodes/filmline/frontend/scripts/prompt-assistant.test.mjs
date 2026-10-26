@@ -37,6 +37,21 @@ assert.deepEqual(
 )
 assert.ok(modeHint('video', 'keyframes', { first: true, last: true }).includes('动作路径'))
 
+// 首帧+参考：六段式前面多一条引导帧对齐，引导帧不占 <Picture N>
+const hybridSections = sectionsFor('video', 'hybrid', keyframes, counts)
+assert.equal(hybridSections.length, 7)
+assert.equal(hybridSections[0].id, 'guide_alignment')
+assert.ok(hybridSections[0].template.includes('0.00 seconds'))
+assert.ok(!hybridSections[0].template.includes('<Picture'))
+assert.ok(modeHint('video', 'hybrid', keyframes).includes('引导帧'))
+const hybridSnippets = snippetsFor('video', 'hybrid', counts, keyframes).map((item) => item.label)
+assert.ok(hybridSnippets.includes('<Picture 1>'))
+assert.ok(hybridSnippets.includes('引导帧对齐'))
+const hybridTemplate = fullTemplate('video', 'hybrid', keyframes, counts)
+assert.ok(hybridTemplate.startsWith('The target video starts exactly from the guide image'))
+assert.ok(hybridTemplate.includes('subject_definitions:'))
+assert.ok(!hybridTemplate.includes('No subtitles'))
+
 // 快速片段：参考模式必须带三类标签
 const refSnippets = snippetsFor('video', 'reference', counts).map((item) => item.label)
 assert.ok(refSnippets.includes('<Picture 1>'))
@@ -77,6 +92,22 @@ const missingRefTag = lintPrompt({
   counts,
 })
 assert.ok(missingRefTag.some((item) => item.id === 'ref-tag'))
+assert.ok(
+  lintPrompt({
+    mode: 'video',
+    videoMode: 'hybrid',
+    prompt: '<Subject 1> walks into the room, the camera pushes in slowly.',
+    counts,
+  }).some((item) => item.id === 'ref-tag'),
+)
+assert.ok(
+  lintPrompt({
+    mode: 'video',
+    videoMode: 'hybrid',
+    prompt: 'The empty alley in <Picture 1>, camera pushes in slowly as the man enters.',
+    counts,
+  }).some((item) => item.id === 'shot'),
+)
 
 // Lint：图片模式不要使用视频标签
 const imageLint = lintPrompt({

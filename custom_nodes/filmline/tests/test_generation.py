@@ -371,6 +371,80 @@ class ReferenceVideoWorkflowTest(unittest.TestCase):
             )
 
 
+class HybridVideoWorkflowTest(unittest.TestCase):
+    """ref2va + AddGuide：参考锁身份，引导帧锁时间轴，两者可以同时成立。"""
+
+    def test_reference_plus_first_frame(self) -> None:
+        wf = generation.video_reference_workflow(
+            prompt="空镜起幅，<Subject 1> 从画右入画",
+            size="16:9",
+            duration=5,
+            refs=["4/project/hero.png"],
+            first_frame="4/project/empty_alley.png",
+            seed=3,
+        )
+        graph = wf.prompt
+
+        self.assertEqual(graph["7"]["class_type"], "MiniMaxH3ReferenceToVideo")
+        self.assertEqual(graph["7"]["inputs"]["ref_images"]["ref_image_0"], ["14", 0])
+        # 参考图之后才是引导帧：15 = 加载图片，16 = AddGuide
+        self.assertEqual(graph["15"]["class_type"], "FilmlineLoadImage")
+        self.assertEqual(graph["15"]["inputs"]["path"], "4/project/empty_alley.png")
+        self.assertEqual(graph["16"]["class_type"], "MiniMaxH3AddGuide")
+        self.assertEqual(graph["16"]["inputs"]["frame_idx"], 0)
+        self.assertEqual(graph["16"]["inputs"]["image"], ["15", 0])
+        self.assertEqual(graph["16"]["inputs"]["positive"], ["7", 0])
+        self.assertEqual(graph["16"]["inputs"]["latent"], ["7", 1])
+        self.assertEqual(graph["16"]["inputs"]["vae"], ["5", 0])
+        # 采样器与负向条件都接到引导后的条件
+        self.assertEqual(graph["9"]["inputs"]["positive"], ["16", 0])
+        self.assertEqual(graph["8"]["inputs"]["conditioning"], ["16", 0])
+        # 引导帧不占 <Picture N> 编号
+        self.assertEqual(list(graph["7"]["inputs"]["ref_images"]), ["ref_image_0"])
+        self.assertEqual(wf.meta["refs"], 1)
+        self.assertEqual(wf.meta["keyframes"], 1)
+        self.assertEqual(wf.meta["steps"], generation.VIDEO_REF_STEPS)
+
+    def test_first_and_last_guides_chain(self) -> None:
+        wf = generation.video_reference_workflow(
+            prompt="x",
+            size="9:16",
+            duration=10,
+            refs=["a.png"],
+            first_frame="f.png",
+            last_frame="l.png",
+        )
+        graph = wf.prompt
+
+        self.assertEqual(graph["16"]["inputs"]["frame_idx"], 0)
+        self.assertEqual(graph["18"]["inputs"]["frame_idx"], -1)
+        self.assertEqual(graph["18"]["inputs"]["positive"], ["16", 0])
+        self.assertEqual(graph["9"]["inputs"]["positive"], ["18", 0])
+        self.assertEqual(graph["18"]["inputs"]["image"], ["17", 0])
+        self.assertEqual(wf.meta["keyframes"], 2)
+        self.assertEqual(graph["7"]["inputs"]["length"], 243)
+
+    def test_last_frame_only(self) -> None:
+        wf = generation.video_reference_workflow(
+            prompt="x", size="16:9", duration=5, refs=["a.png"], last_frame="l.png"
+        )
+        graph = wf.prompt
+        self.assertEqual(graph["15"]["inputs"]["path"], "l.png")
+        self.assertEqual(graph["16"]["inputs"]["frame_idx"], -1)
+        self.assertEqual(graph["9"]["inputs"]["positive"], ["16", 0])
+        self.assertNotIn("17", graph)
+
+    def test_without_guides_keeps_plain_reference_graph(self) -> None:
+        wf = generation.video_reference_workflow(
+            prompt="x", size="16:9", duration=5, refs=["a.png"]
+        )
+        self.assertFalse(
+            any(node["class_type"] == "MiniMaxH3AddGuide" for node in wf.prompt.values())
+        )
+        self.assertEqual(wf.prompt["9"]["inputs"]["positive"], ["7", 0])
+        self.assertEqual(wf.meta["keyframes"], 0)
+
+
 class DimensionsTest(unittest.TestCase):
     def test_tiers(self) -> None:
         # 2K 行与官方原生表一致

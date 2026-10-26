@@ -134,6 +134,32 @@ class PromptOptimizeApiTest(ApiTestCase):
         body = await res.json()
         self.assertEqual(res.status, 400, body)
 
+    async def test_hybrid_mode_is_forwarded(self) -> None:
+        fake = AsyncMock(
+            return_value={
+                "enhanced_prompt": "optimized",
+                "warnings": [],
+                "notes": "",
+                "model": "deepseek-flash",
+            }
+        )
+        with patch("filmline.llm.optimize_prompt", new=fake):
+            res = await self.client.post(
+                "/studio/api/prompts/optimize",
+                json={
+                    "mode": "video",
+                    "video_mode": "hybrid",
+                    "prompt": "空镜起幅，人物从画右入画",
+                    "keyframes": {"first": True, "last": False},
+                    "references": [{"label": "<Picture 1>", "kind": "image"}],
+                },
+            )
+        body = await res.json()
+        self.assertEqual(res.status, 200, body)
+        args, _kwargs = fake.await_args
+        self.assertEqual(args[0]["video_mode"], "hybrid")
+        self.assertEqual(args[0]["keyframes"], {"first": True, "last": False})
+
     async def test_long_draft_is_accepted(self) -> None:
         fake = AsyncMock(
             return_value={

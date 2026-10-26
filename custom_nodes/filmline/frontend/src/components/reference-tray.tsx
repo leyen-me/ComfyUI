@@ -37,6 +37,7 @@ interface RefDrag {
 interface ReferenceTrayProps {
   lists: ReferenceLists
   disabled?: boolean
+  hint?: string
   onAdd: (kind: ReferenceKind) => void
   onDropAsset: (asset: AssetDragPayload) => void
   onRemove: (kind: ReferenceKind, index: number) => void
@@ -53,6 +54,7 @@ interface ReferenceTrayProps {
 export function ReferenceTray({
   lists,
   disabled = false,
+  hint,
   onAdd,
   onDropAsset,
   onRemove,
@@ -213,7 +215,8 @@ export function ReferenceTray({
       </div>
 
       <p className="mt-1.5 px-0.5 text-[10px] leading-relaxed text-muted-foreground">
-        参考素材不锁定首帧。视频原声会占用一个 &lt;Audio j&gt; 编号，独立音频排在所有原声之后。
+        {hint ??
+          '参考素材不锁定首帧。视频原声会占用一个 <Audio j> 编号，独立音频排在所有原声之后。'}
       </p>
       {durationWarning ? (
         <p className="mt-0.5 px-0.5 text-[10px] leading-relaxed text-amber-600 dark:text-amber-400">

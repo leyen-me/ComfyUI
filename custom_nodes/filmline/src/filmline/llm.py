@@ -69,6 +69,10 @@ Rules:
   subject_definitions, summary, retention_analysis, detailed_description, overall_soundscape, non_diegetic_music.
   Use <Subject N>, <Picture N>, <Video N>, <Audio N>. Only use the labels listed in the input; never invent new labels or numbers.
   State which reference controls identity, style, motion, camera or voice, and whether audio is copied or only referenced.
+- Hybrid mode (reference materials plus first/last frame guides): write the same six reference sections in the same order.
+  The guide frames are anchored on the output timeline with frame indices, not through token order, so never tag them as <Picture N> and never renumber the real <Picture N> labels.
+  Put one sentence at the start of detailed_description: the target video starts exactly from the guide image at 0.00 seconds, keeping its composition, lighting, lens and background; if a last-frame guide exists, add that the video must land on the guide image at the final frame.
+  Name the reference materials by their tags in the same sentence, for example "<Subject 1> from <Picture 1> enters the empty alley".
 - Include camera motion as type + amplitude + speed when relevant.
 - Avoid vague mood-only words in the music section; describe instrumentation, tempo and dynamics.
 - If the draft conflicts with the first frame (for example the intended speaker is silent in the image), add a warning instead of silently pretending it will work.

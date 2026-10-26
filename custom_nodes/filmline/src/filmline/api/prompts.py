@@ -74,8 +74,8 @@ def register_prompt_routes(routes: web.RouteTableDef) -> None:
         if mode != "video":
             raise InvalidArgument("AI 优化目前只支持视频提示词")
         video_mode = str(payload.get("video_mode") or "keyframes")
-        if video_mode not in ("keyframes", "reference"):
-            raise InvalidArgument("video_mode 只支持 keyframes / reference")
+        if video_mode not in ("keyframes", "reference", "hybrid"):
+            raise InvalidArgument("video_mode 只支持 keyframes / reference / hybrid")
         prompt = str(payload.get("prompt") or "").strip()
         if not prompt:
             raise InvalidArgument("请先写下提示词")

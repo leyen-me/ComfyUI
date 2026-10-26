@@ -9,7 +9,7 @@
 from __future__ import annotations
 
 import asyncio
-from dataclasses import asdict
+from dataclasses import asdict, dataclass
 
 from aiohttp import web
 
@@ -21,6 +21,8 @@ from ..domain.tasks import TaskService
 from ..errors import InvalidArgument
 from ..runner import RUNNER_KEY
 from .http import handle_errors, ok, read_object
+
+VIDEO_MODES = ("keyframes", "reference", "hybrid")
 
 
 def _episode_scope(request: web.Request, project_id: int) -> tuple[int | None, str]:
@@ -74,6 +76,113 @@ def _check_reference_duration(info: media.MediaInfo, label: str) -> None:
         raise InvalidArgument(f"{label}时长必须在 2–15 秒之间（当前 {info.duration:.1f} 秒）")
 
 
+@dataclass(frozen=True)
+class _ReferenceMaterials:
+    """已校验的参考素材：id 保持前端顺序，路径/时长已探明。"""
+
+    image_ids: list[int]
+    image_paths: list[str]
+    video_ids: list[int]
+    video_use_audio: list[bool]
+    video_refs: list[generation.VideoReference]
+    audio_ids: list[int]
+    audio_paths: list[str]
+
+
+async def _resolve_reference_materials(
+    payload: dict,
+    project_id: int,
+    *,
+    empty_message: str = "参考生成至少需要 1 个素材",
+) -> _ReferenceMaterials:
+    """校验并解析 ref2va 的参考图/视频/音频，供 reference 与 hybrid 共用。"""
+    assets = AssetService()
+    image_ids = _asset_id_list(payload.get("refs"), "refs")
+    video_items = _video_ref_list(payload.get("ref_videos"))
+    audio_ids = _asset_id_list(payload.get("ref_audios"), "ref_audios")
+    video_ids = [asset_id for asset_id, _ in video_items]
+    video_use_audio = [use_audio for _, use_audio in video_items]
+
+    all_ids = [*image_ids, *video_ids, *audio_ids]
+    if not all_ids:
+        raise InvalidArgument(empty_message)
+    if len(all_ids) > generation.MAX_VIDEO_FILES:
+        raise InvalidArgument(f"参考素材合计最多 {generation.MAX_VIDEO_FILES} 个")
+    if len(set(all_ids)) != len(all_ids):
+        raise InvalidArgument("参考素材不能重复")
+
+    image_assets = await asyncio.to_thread(
+        assets.resolve_assets,
+        project_id,
+        image_ids,
+        kinds={"image"},
+        limit=generation.MAX_VIDEO_REFS,
+        label="参考图",
+    )
+    video_assets = await asyncio.to_thread(
+        assets.resolve_assets,
+        project_id,
+        video_ids,
+        kinds={"video"},
+        limit=generation.MAX_VIDEO_VIDEOS,
+        label="参考视频",
+    )
+    audio_assets = await asyncio.to_thread(
+        assets.resolve_assets,
+        project_id,
+        audio_ids,
+        kinds={"audio"},
+        limit=generation.MAX_VIDEO_AUDIOS,
+        label="参考音频",
+    )
+
+    video_refs: list[generation.VideoReference] = []
+    video_total = 0.0
+    for (_, use_audio), asset in zip(video_items, video_assets):
+        info = await asyncio.to_thread(media.probe, storage.resolve(asset.path))
+        _check_reference_duration(info, "参考视频")
+        if use_audio and not info.has_audio:
+            raise InvalidArgument(f"参考视频「{asset.name}」没有音轨")
+        video_total += info.duration
+        video_refs.append(generation.VideoReference(path=asset.path, use_audio=use_audio))
+    if video_total > 15.05:
+        raise InvalidArgument(f"参考视频总时长不能超过 15 秒（当前 {video_total:.1f} 秒）")
+
+    audio_total = 0.0
+    for asset in audio_assets:
+        info = await asyncio.to_thread(media.probe, storage.resolve(asset.path))
+        _check_reference_duration(info, "参考音频")
+        audio_total += info.duration
+    if audio_total > 15.05:
+        raise InvalidArgument(f"参考音频总时长不能超过 15 秒（当前 {audio_total:.1f} 秒）")
+
+    return _ReferenceMaterials(
+        image_ids=image_ids,
+        image_paths=[asset.path for asset in image_assets],
+        video_ids=video_ids,
+        video_use_audio=video_use_audio,
+        video_refs=video_refs,
+        audio_ids=audio_ids,
+        audio_paths=[asset.path for asset in audio_assets],
+    )
+
+
+async def _resolve_keyframe_paths(
+    assets: AssetService, project_id: int, first_id: int | None, last_id: int | None
+) -> dict[int, str]:
+    """解析首尾帧并返回 id → 路径；顺序决定首/尾，与资产 id 大小无关。"""
+    frame_ids = [asset_id for asset_id in (first_id, last_id) if asset_id is not None]
+    paths = await asyncio.to_thread(
+        assets.resolve_ref_paths,
+        project_id,
+        frame_ids,
+        limit=2,
+        label="首尾帧图片",
+    )
+    return dict(zip(frame_ids, paths))
+
+
+
 def register_generate_routes(routes: web.RouteTableDef) -> None:
     assets = AssetService()
 
@@ -124,8 +233,8 @@ def register_generate_routes(routes: web.RouteTableDef) -> None:
             )
         else:
             mode = str(payload.get("mode") or "keyframes")
-            if mode not in ("keyframes", "reference"):
-                raise InvalidArgument("视频生成方式只支持 keyframes / reference")
+            if mode not in VIDEO_MODES:
+                raise InvalidArgument("视频生成方式只支持 keyframes / reference / hybrid")
 
             first_id = _optional_asset_id(payload.get("first_frame_id"), "first_frame_id")
             last_id = _optional_asset_id(payload.get("last_frame_id"), "last_frame_id")
@@ -151,6 +260,12 @@ def register_generate_routes(routes: web.RouteTableDef) -> None:
                     f"{generation.VIDEO_MAX_SECONDS} 秒"
                 )
 
+            raw_refs: list[int] = []
+            frame_ids: list[int] = []
+            video_ids: list[int] = []
+            video_use_audio: list[bool] = []
+            audio_ids: list[int] = []
+
             if mode == "keyframes":
                 if payload.get("ref_videos") or payload.get("ref_audios"):
                     raise InvalidArgument("首尾帧模式不能使用参考视频或参考音频")
@@ -174,14 +289,9 @@ def register_generate_routes(routes: web.RouteTableDef) -> None:
                 frame_ids = [
                     asset_id for asset_id in (first_id, last_id) if asset_id is not None
                 ]
-                frame_paths = await asyncio.to_thread(
-                    assets.resolve_ref_paths,
-                    project.id,
-                    frame_ids,
-                    limit=2,
-                    label="首尾帧图片",
+                paths_by_id = await _resolve_keyframe_paths(
+                    assets, project.id, first_id, last_id
                 )
-                paths_by_id = dict(zip(frame_ids, frame_paths))
                 workflow = generation.video_workflow(
                     prompt=prompt,
                     size=size,
@@ -192,74 +302,32 @@ def register_generate_routes(routes: web.RouteTableDef) -> None:
                     prefix=f"filmline/{project.code}/{scope}",
                 )
             else:
-                if first_id is not None or last_id is not None:
-                    raise InvalidArgument("参考生成不能使用 first_frame_id / last_frame_id")
+                if mode == "hybrid":
+                    if first_id is None and last_id is None:
+                        raise InvalidArgument("首帧+参考模式至少需要 1 张首帧或尾帧")
+                    empty_message = "首帧+参考模式至少需要 1 个参考素材"
+                else:
+                    if first_id is not None or last_id is not None:
+                        raise InvalidArgument("参考生成不能使用 first_frame_id / last_frame_id")
+                    empty_message = "参考生成至少需要 1 个素材"
 
-                raw_refs = _asset_id_list(payload.get("refs"), "refs")
-                video_items = _video_ref_list(payload.get("ref_videos"))
-                audio_ids = _asset_id_list(payload.get("ref_audios"), "ref_audios")
-                video_ids = [asset_id for asset_id, _ in video_items]
-                video_use_audio = [use_audio for _, use_audio in video_items]
-
-                all_ids = [*raw_refs, *video_ids, *audio_ids]
-                if not all_ids:
-                    raise InvalidArgument("参考生成至少需要 1 个素材")
-                if len(all_ids) > generation.MAX_VIDEO_FILES:
-                    raise InvalidArgument(
-                        f"参考素材合计最多 {generation.MAX_VIDEO_FILES} 个"
-                    )
-                if len(set(all_ids)) != len(all_ids):
-                    raise InvalidArgument("参考素材不能重复")
-
-                image_assets = await asyncio.to_thread(
-                    assets.resolve_assets,
-                    project.id,
-                    raw_refs,
-                    kinds={"image"},
-                    limit=generation.MAX_VIDEO_REFS,
-                    label="参考图",
+                materials = await _resolve_reference_materials(
+                    payload, project.id, empty_message=empty_message
                 )
-                video_assets = await asyncio.to_thread(
-                    assets.resolve_assets,
-                    project.id,
-                    video_ids,
-                    kinds={"video"},
-                    limit=generation.MAX_VIDEO_VIDEOS,
-                    label="参考视频",
-                )
-                audio_assets = await asyncio.to_thread(
-                    assets.resolve_assets,
-                    project.id,
-                    audio_ids,
-                    kinds={"audio"},
-                    limit=generation.MAX_VIDEO_AUDIOS,
-                    label="参考音频",
-                )
+                raw_refs = materials.image_ids
+                video_ids = materials.video_ids
+                video_use_audio = materials.video_use_audio
+                audio_ids = materials.audio_ids
 
-                video_refs: list[generation.VideoReference] = []
-                video_total = 0.0
-                for (_, use_audio), asset in zip(video_items, video_assets):
-                    info = await asyncio.to_thread(media.probe, storage.resolve(asset.path))
-                    _check_reference_duration(info, "参考视频")
-                    if use_audio and not info.has_audio:
-                        raise InvalidArgument(f"参考视频「{asset.name}」没有音轨")
-                    video_total += info.duration
-                    video_refs.append(
-                        generation.VideoReference(path=asset.path, use_audio=use_audio)
-                    )
-                if video_total > 15.05:
-                    raise InvalidArgument(
-                        f"参考视频总时长不能超过 15 秒（当前 {video_total:.1f} 秒）"
-                    )
-
-                audio_total = 0.0
-                for asset in audio_assets:
-                    info = await asyncio.to_thread(media.probe, storage.resolve(asset.path))
-                    _check_reference_duration(info, "参考音频")
-                    audio_total += info.duration
-                if audio_total > 15.05:
-                    raise InvalidArgument(
-                        f"参考音频总时长不能超过 15 秒（当前 {audio_total:.1f} 秒）"
+                paths_by_id = {}
+                if mode == "hybrid":
+                    frame_ids = [
+                        asset_id
+                        for asset_id in (first_id, last_id)
+                        if asset_id is not None
+                    ]
+                    paths_by_id = await _resolve_keyframe_paths(
+                        assets, project.id, first_id, last_id
                     )
 
                 workflow = generation.video_reference_workflow(
@@ -267,9 +335,11 @@ def register_generate_routes(routes: web.RouteTableDef) -> None:
                     size=size,
                     duration=duration,
                     tier=video_tier,
-                    refs=[asset.path for asset in image_assets],
-                    ref_videos=video_refs,
-                    ref_audios=[asset.path for asset in audio_assets],
+                    refs=materials.image_paths,
+                    ref_videos=materials.video_refs,
+                    ref_audios=materials.audio_paths,
+                    first_frame=paths_by_id.get(first_id) if first_id is not None else None,
+                    last_frame=paths_by_id.get(last_id) if last_id is not None else None,
                     prefix=f"filmline/{project.code}/{scope}",
                 )
 
@@ -278,11 +348,11 @@ def register_generate_routes(routes: web.RouteTableDef) -> None:
             meta["ref_ids"] = raw_refs
         else:
             meta["video_mode"] = mode
-            meta["ref_ids"] = raw_refs if mode == "reference" else frame_ids
-            if mode == "keyframes":
+            meta["ref_ids"] = frame_ids if mode == "keyframes" else raw_refs
+            if mode != "reference":
                 meta["first_frame_id"] = first_id
                 meta["last_frame_id"] = last_id
-            else:
+            if mode != "keyframes":
                 meta["ref_video_ids"] = video_ids
                 meta["ref_video_use_audio"] = video_use_audio
                 meta["ref_audio_ids"] = audio_ids

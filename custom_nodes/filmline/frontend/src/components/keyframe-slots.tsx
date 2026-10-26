@@ -10,6 +10,7 @@ interface KeyframeSlotsProps {
   last: AssetDragPayload | null
   size: string
   disabled?: boolean
+  hint?: string
   onPick: (slot: KeyframeSlot) => void
   onClear: (slot: KeyframeSlot) => void
   onDropAsset: (slot: KeyframeSlot, asset: AssetDragPayload) => void
@@ -26,6 +27,7 @@ export function KeyframeSlots({
   last,
   size,
   disabled = false,
+  hint,
   onPick,
   onClear,
   onDropAsset,
@@ -78,7 +80,8 @@ export function KeyframeSlots({
       </div>
 
       <p className="mt-1.5 px-0.5 text-[10px] leading-relaxed text-muted-foreground">
-        两个都留空为文生视频；只填一个就是首帧或尾帧。图片会按所选比例居中裁切；把视频拖进来可以挑其中一帧。
+        {hint ??
+          '两个都留空为文生视频；只填一个就是首帧或尾帧。图片会按所选比例居中裁切；把视频拖进来可以挑其中一帧。'}
       </p>
     </div>
   )

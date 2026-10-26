@@ -14,7 +14,7 @@ export interface ReusePromptDetail {
   /** 原生成使用的参考图 id，复用时用来还原图片块 */
   refIds?: number[]
   /** 视频生成方式；旧资产为空，按首尾帧处理 */
-  videoMode?: 'keyframes' | 'reference'
+  videoMode?: 'keyframes' | 'reference' | 'hybrid'
   firstFrameId?: number
   lastFrameId?: number
   /** 参考视频/音频 id 与视频原声开关 */

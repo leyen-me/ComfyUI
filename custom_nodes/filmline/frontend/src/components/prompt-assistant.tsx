@@ -47,7 +47,7 @@ export function PromptAssistant({
   onClose,
 }: PromptAssistantProps) {
   const sections = sectionsFor(mode, videoMode, keyframes, counts)
-  const snippets = snippetsFor(mode, videoMode, counts)
+  const snippets = snippetsFor(mode, videoMode, counts, keyframes)
   const warnings = lintPrompt({ mode, videoMode, prompt, counts })
   const hint = modeHint(mode, videoMode, keyframes)
 
