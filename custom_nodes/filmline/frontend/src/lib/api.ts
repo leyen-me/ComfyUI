@@ -228,6 +228,17 @@ export interface PromptOptimizeImage {
   role: 'first_frame' | 'last_frame' | 'reference'
 }
 
+export interface PromptOptimizeVideoFrame {
+  asset_id: number
+  label: string
+  /** 裁剪入点（秒）；0 表示开头 */
+  start: number
+  /** 裁剪出点（秒）；0 表示结尾 */
+  end: number
+  /** 抽几帧，1–3 */
+  count: number
+}
+
 export interface PromptOptimizeInput {
   mode: 'video'
   video_mode: 'keyframes' | 'reference'
@@ -236,6 +247,8 @@ export interface PromptOptimizeInput {
   keyframes: { first: boolean; last: boolean }
   references: PromptOptimizeReference[]
   images?: PromptOptimizeImage[]
+  /** 参考视频抽帧，让 AI 看到视频里的实际动作 */
+  video_frames?: PromptOptimizeVideoFrame[]
   size?: string
   duration?: number
   no_subtitles?: boolean

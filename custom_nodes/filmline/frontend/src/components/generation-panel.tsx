@@ -10,6 +10,7 @@ import {
   type PromptOptimizeImage,
   type PromptOptimizeReference,
   type PromptOptimizeResult,
+  type PromptOptimizeVideoFrame,
   type TaskInfo,
 } from '@/lib/api'
 import type { AssetDragPayload } from '@/lib/asset-drag'
@@ -749,6 +750,20 @@ export function GenerationPanel({ project, episodeCode }: GenerationPanelProps) 
     }))
   }
 
+  /** 参考视频抽帧：单段取 3 帧，多段各取 2 帧，总帧数不超过 6。 */
+  function optimizeVideoFrames(): PromptOptimizeVideoFrame[] {
+    if (videoMode !== 'reference') return []
+    const videos = referenceLists.videos.slice(0, 3)
+    const count = videos.length <= 1 ? 3 : 2
+    return videos.map((item, index) => ({
+      asset_id: item.assetId,
+      label: `<Video ${index + 1}>`,
+      start: item.trimStart ?? 0,
+      end: item.trimEnd ?? 0,
+      count,
+    }))
+  }
+
   async function handleOptimize() {
     if (optimizing) return
     if (mode !== 'video') {
@@ -772,6 +787,7 @@ export function GenerationPanel({ project, episodeCode }: GenerationPanelProps) 
         keyframes: assistantKeyframes,
         references: optimizeReferences(),
         images: optimizeImages(),
+        video_frames: optimizeVideoFrames(),
         size: videoSize,
         duration,
         no_subtitles: true,

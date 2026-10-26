@@ -73,6 +73,51 @@ def image_data_url(path: Path) -> str:
         raise InvalidArgument("无法读取图片，不能发送给 AI 优化") from exc
 
 
+def video_frame_data_url(path: Path, seconds: float) -> str:
+    """抽取视频指定时间点的一帧，作为 JPEG data URL 发给 AI 优化。"""
+    try:
+        import av
+
+        with av.open(str(path)) as container:
+            stream = container.streams.video[0] if container.streams.video else None
+            if stream is None:
+                raise InvalidArgument("参考视频不包含视频流")
+            target = max(0.0, float(seconds))
+            if stream.time_base is not None:
+                try:
+                    container.seek(
+                        int(target / stream.time_base), stream=stream, backward=True
+                    )
+                except Exception:
+                    pass
+
+            frame = None
+            for candidate in container.decode(stream):
+                if candidate.time is not None:
+                    stamp = float(candidate.time)
+                elif candidate.pts is not None and stream.time_base is not None:
+                    stamp = float(candidate.pts * stream.time_base)
+                else:
+                    stamp = target
+                frame = candidate
+                if stamp >= target - 1e-6:
+                    break
+            if frame is None:
+                raise InvalidArgument("无法读取参考视频帧")
+
+            from PIL import Image
+
+            image = Image.fromarray(frame.to_ndarray(format="rgb24")).convert("RGB")
+            image.thumbnail((MAX_INLINE_IMAGE_PIXELS, MAX_INLINE_IMAGE_PIXELS))
+            buffer = io.BytesIO()
+            image.save(buffer, format="JPEG", quality=88, optimize=True)
+            return _image_payload(buffer.getvalue(), "image/jpeg")
+    except InvalidArgument:
+        raise
+    except Exception as exc:
+        raise InvalidArgument("无法读取参考视频帧，不能发送给 AI 优化") from exc
+
+
 def probe(path: Path) -> MediaInfo:
     """读取媒体信息；无法解析时抛 InvalidArgument（而不是泄漏 ffmpeg 细节）。"""
     try:

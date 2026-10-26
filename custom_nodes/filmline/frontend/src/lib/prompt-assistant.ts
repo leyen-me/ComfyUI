@@ -53,6 +53,17 @@ const VIDEO_TAG = /<(?:Picture|Video|Audio)\s+\d+>/i
 const LEGACY_IMAGE_TAG = /<image\d+>/i
 const CN_FIGURE = /图\s*\d+/
 const SHOT = /\[Shot\s+1\]/i
+const REF_SECTIONS = [
+  'subject_definitions',
+  'summary',
+  'retention_analysis',
+  'detailed_description',
+  'overall_soundscape',
+  'non_diegetic_music',
+] as const
+const RETENTION_MARKER =
+  /(fully_preserved|partially_preserved|attribute_transfer|weak_reference|fully_copy|partially_copy|reference)\b/i
+const SUBJECT_TAG = /<Subject\s+\d+>/i
 
 function hasQuotedDialogue(prompt: string): boolean {
   QUOTED.lastIndex = 0
@@ -132,30 +143,30 @@ export function sectionsFor(
       {
         id: 'subject_definitions',
         title: 'subject_definitions',
-        hint: '定义参考素材各自负责什么',
+        hint: '定义参考素材各自负责什么；动作参考要挂到 Subject 上，未使用的标签行删掉',
         template:
-          'subject_definitions:\n<Subject 1> is the ... in <Picture 1>, with ... .\n<Video 1> provides the ... .\n<Audio 1> is the ... reference for <Subject 1> (S1).',
+          'subject_definitions:\n<Subject 1> is the ... in <Picture 1>, with ... . Its body motion comes from <Video 1>.\n<Video 1> is the motion reference for <Subject 1>; only body motion and camera framing are used.\n<Audio 1> is the ... reference for <Subject 1> (S1).',
       },
       {
         id: 'summary',
         title: 'summary',
-        hint: '任务类型 + 目标视频 + 参考关系',
+        hint: '任务类型 + 目标视频 + 参考关系；角色设定图要说明画面里只出现一个角色',
         template:
-          'summary:\n[reference generation] The target video shows <Subject 1> ...',
+          'summary:\n[reference generation] The target video shows one instance of <Subject 1> ...',
       },
       {
         id: 'retention_analysis',
         title: 'retention_analysis',
-        hint: '每个标签保留什么、改变什么',
+        hint: '每个标签保留什么、改变什么；动作参考用 attribute_transfer',
         template:
-          'retention_analysis:\n<Subject 1> (appears in [Shot 1]): fully_preserved - ...\n<Video 1> (camera movement): weak_reference - ...\n<Audio 1>: reference - ...',
+          'retention_analysis:\n<Subject 1> (appears in [Shot 1]): fully_preserved - ...\n<Video 1> (body motion): attribute_transfer - ... motion transferred onto <Subject 1>; the source body and background are replaced.\n<Audio 1>: reference - ...',
       },
       {
         id: 'detailed_description',
         title: 'detailed_description',
-        hint: '按镜头写画面、动作、说话人与声音',
+        hint: '按镜头写画面、动作、说话人与声音；动作参考补时间点姿态，并写明画面里只有一个角色',
         template:
-          'detailed_description:\nThe target video is in a cinematic style.\n[Shot 1] <Subject 1> (S1) ... says: <d>[Chinese] ...</d>\nThe other subject remains silent.',
+          'detailed_description:\nThe target video is in a cinematic style.\n[Shot 1] The frame contains only <Subject 1>. <Subject 1> (S1) ... At 00:00.8 ... At 00:02.0 ... At 00:04.5 ... says: <d>[Chinese] ...</d>',
       },
       {
         id: 'overall_soundscape',
@@ -271,6 +282,20 @@ export function snippetsFor(
       { id: 'video', label: '<Video 1>', text: '<Video 1>' },
       { id: 'audio', label: '<Audio 1>', text: '<Audio 1>' },
     )
+    items.push(
+      {
+        id: 'motion-beats',
+        label: '动作节拍',
+        text: 'At 00:00.8 ..., At 00:02.0 ..., At 00:04.5 ...',
+        block: true,
+      },
+      {
+        id: 'single-subject',
+        label: '只出现一个角色',
+        text: 'The frame contains only <Subject 1>.',
+        block: true,
+      },
+    )
     if (total(counts) === 0) {
       items.push({
         id: 'ref-hint',
@@ -304,22 +329,21 @@ export function fullTemplate(
   if (videoMode === 'reference') {
     const sections = [
       'subject_definitions:',
-      '<Subject 1> is the ... in <Picture 1>, with ... .',
-      '<Video 1> provides the ... .',
+      '<Subject 1> is the ... in <Picture 1>, with ... . Its body motion comes from <Video 1>.',
+      '<Video 1> is the motion reference for <Subject 1>; only body motion and camera framing are used.',
       '<Audio 1> is the ... reference for <Subject 1> (S1).',
       '',
       'summary:',
-      '[reference generation] The target video shows <Subject 1> ...',
+      '[reference generation] The target video shows one instance of <Subject 1> ...',
       '',
       'retention_analysis:',
       '<Subject 1> (appears in [Shot 1]): fully_preserved - ...',
-      '<Video 1> (camera movement): weak_reference - ...',
+      '<Video 1> (body motion): attribute_transfer - ... motion transferred onto <Subject 1>; the source body and background are replaced.',
       '<Audio 1>: reference - ...',
       '',
       'detailed_description:',
       'The target video is in a cinematic style.',
-      '[Shot 1] <Subject 1> (S1) ... says: <d>[Chinese] ...</d>',
-      'The other subject remains silent.',
+      '[Shot 1] The frame contains only <Subject 1>. <Subject 1> (S1) ... At 00:00.8 ... At 00:02.0 ... At 00:04.5 ... says: <d>[Chinese] ...</d>',
       '',
       'overall_soundscape: ...',
       '',
@@ -414,6 +438,36 @@ export function lintPrompt({ mode, videoMode, prompt, counts }: LintInput): Prom
       level: 'warn',
       message: '参考托盘已有素材，但提示词里没有 <Picture N>/<Video N>/<Audio N> 引用。',
     })
+  }
+  if (videoMode === 'reference' && text.length > 0) {
+    const missing = REF_SECTIONS.filter(
+      (section) => !new RegExp(`(^|\\n)\\s*${section}\\s*:`).test(text),
+    )
+    if (missing.length > 0) {
+      warnings.push({
+        id: 'ref-sections',
+        level: 'warn',
+        message: `官方参考模式要求六段：缺少 ${missing.join(' / ')}。`,
+      })
+    }
+    const retentionBlock =
+      text.split(/retention_analysis:/i)[1]?.split(/detailed_description:/i)[0] ?? ''
+    if (text.includes('retention_analysis') && !RETENTION_MARKER.test(retentionBlock)) {
+      warnings.push({
+        id: 'retention-marker',
+        level: 'warn',
+        message:
+          'retention_analysis 需要官方标记：fully_preserved / partially_preserved / attribute_transfer / weak_reference，音频用 fully_copy / partially_copy / reference。',
+      })
+    }
+    if (total(counts) > 0 && !SUBJECT_TAG.test(text)) {
+      warnings.push({
+        id: 'subject-tag',
+        level: 'warn',
+        message:
+          '建议把角色/动作写成 <Subject N>：外观可来自 <Picture N>，动作来自 <Video N>；否则模型容易把视频当成风格参考。',
+      })
+    }
   }
   if (CN_FIGURE.test(text)) {
     warnings.push({

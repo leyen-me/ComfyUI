@@ -50,6 +50,35 @@ assert.ok(template.includes('<d>[Chinese]'))
 assert.ok(template.includes('overall_soundscape:'))
 assert.ok(template.includes('No subtitles'))
 
+// 参考模板：动作要挂到 Subject，并带官方保留标记
+const refTemplate = fullTemplate('video', 'reference', keyframes, counts)
+assert.ok(refTemplate.includes('Its body motion comes from <Video 1>'))
+assert.ok(refTemplate.includes('attribute_transfer'))
+assert.ok(refTemplate.includes('The frame contains only <Subject 1>'))
+assert.ok(refTemplate.includes('At 00:02.0'))
+assert.ok(
+  snippetsFor('video', 'reference', counts).some((item) => item.id === 'motion-beats'),
+)
+
+// Lint：参考模式缺少官方六段
+const missingSections = lintPrompt({
+  mode: 'video',
+  videoMode: 'reference',
+  prompt: '<Subject 1> walks into the room.',
+  counts,
+})
+assert.ok(missingSections.some((item) => item.id === 'ref-sections'))
+
+// Lint：有 retention_analysis 但没有官方标记
+const missingMarker = lintPrompt({
+  mode: 'video',
+  videoMode: 'reference',
+  prompt:
+    'subject_definitions:\n<Subject 1> in <Picture 1>.\nsummary:\n[reference generation] ...\nretention_analysis:\n<Subject 1> keeps the same look.\ndetailed_description:\n[Shot 1] ...\noverall_soundscape: room tone.\nnon_diegetic_music: N/A',
+  counts,
+})
+assert.ok(missingMarker.some((item) => item.id === 'retention-marker'))
+
 // Lint：裸引号
 const quoted = lintPrompt({
   mode: 'video',

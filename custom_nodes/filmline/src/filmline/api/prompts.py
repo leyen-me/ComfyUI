@@ -15,7 +15,49 @@ from .http import handle_errors, ok, read_object
 
 API_PREFIX = "/studio/api"
 MAX_IMAGES = 4
+MAX_VIDEO_REFS = 3
+MAX_VIDEO_FRAMES_PER_CLIP = 3
+MAX_TOTAL_IMAGES = 8
 MAX_IMAGE_DATA_URL_TOTAL = 24 * 1024 * 1024
+
+
+def _video_frames(raw: object) -> list[dict]:
+    if raw is None:
+        return []
+    if not isinstance(raw, list) or len(raw) > MAX_VIDEO_REFS:
+        raise InvalidArgument(f"video_frames 必须是不超过 {MAX_VIDEO_REFS} 项的数组")
+    result: list[dict] = []
+    for item in raw:
+        if not isinstance(item, dict):
+            raise InvalidArgument("video_frames 每项必须是对象")
+        asset_id = item.get("asset_id")
+        if isinstance(asset_id, bool) or not isinstance(asset_id, int) or asset_id <= 0:
+            raise InvalidArgument("video_frames.asset_id 必须是资产 id")
+        label = str(item.get("label") or "").strip()
+        if not label:
+            raise InvalidArgument("video_frames 需要 label")
+        try:
+            start = float(item.get("start") or 0)
+            end = float(item.get("end") or 0)
+        except (TypeError, ValueError) as exc:
+            raise InvalidArgument("video_frames.start/end 必须是数字") from exc
+        if start < 0 or end < 0:
+            raise InvalidArgument("video_frames.start/end 不能为负数")
+        count = item.get("count", 2)
+        if isinstance(count, bool) or not isinstance(count, int) or not 1 <= count <= 3:
+            raise InvalidArgument("video_frames.count 必须是 1–3 的整数")
+        result.append(
+            {
+                "asset_id": asset_id,
+                "label": label[:60],
+                "start": start,
+                "end": end,
+                "count": count,
+            }
+        )
+    if len({item["asset_id"] for item in result}) != len(result):
+        raise InvalidArgument("video_frames 不能重复")
+    return result
 
 
 def _reference_list(raw: object) -> list[dict]:
@@ -81,13 +123,17 @@ def register_prompt_routes(routes: web.RouteTableDef) -> None:
             raise InvalidArgument("请先写下提示词")
 
         image_items = _images(payload.get("images"))
+        video_items = _video_frames(payload.get("video_frames"))
         project_ref = str(payload.get("project_ref") or "").strip()
-        if image_items and not project_ref:
-            raise InvalidArgument("发送图片时必须提供 project_ref")
+        if (image_items or video_items) and not project_ref:
+            raise InvalidArgument("发送图片或视频帧时必须提供 project_ref")
 
         images: list[dict[str, Any]] = []
-        if image_items:
+        project = None
+        if image_items or video_items:
             project = await asyncio.to_thread(ProjectService().get, project_ref)
+        total = 0
+        if image_items and project is not None:
             resolved = await asyncio.to_thread(
                 AssetService().resolve_assets,
                 project.id,
@@ -96,7 +142,6 @@ def register_prompt_routes(routes: web.RouteTableDef) -> None:
                 limit=MAX_IMAGES,
                 label="AI 参考图片",
             )
-            total = 0
             for item, asset in zip(image_items, resolved):
                 target = storage.resolve(asset.path)
                 if not target.is_file():
@@ -108,6 +153,44 @@ def register_prompt_routes(routes: web.RouteTableDef) -> None:
                 images.append(
                     {"label": item["label"], "role": item["role"], "data_url": data_url}
                 )
+
+        if video_items and project is not None:
+            resolved_videos = await asyncio.to_thread(
+                AssetService().resolve_assets,
+                project.id,
+                [item["asset_id"] for item in video_items],
+                kinds={"video"},
+                limit=MAX_VIDEO_REFS,
+                label="AI 参考视频",
+            )
+            for item, asset in zip(video_items, resolved_videos):
+                target = storage.resolve(asset.path)
+                if not target.is_file():
+                    raise InvalidArgument(f"视频资产文件已丢失: {asset.name}")
+                info = await asyncio.to_thread(media.probe, target)
+                start = min(item["start"], info.duration)
+                end = info.duration if item["end"] <= 0 else min(item["end"], info.duration)
+                if end <= start:
+                    start, end = 0.0, info.duration
+                count = min(item["count"], MAX_VIDEO_FRAMES_PER_CLIP)
+                for index in range(count):
+                    if len(images) >= MAX_TOTAL_IMAGES:
+                        break
+                    ratio = index / (count - 1) if count > 1 else 0.0
+                    seconds = start + (end - start) * ratio
+                    data_url = await asyncio.to_thread(
+                        media.video_frame_data_url, target, seconds
+                    )
+                    total += len(data_url)
+                    if total > MAX_IMAGE_DATA_URL_TOTAL:
+                        raise InvalidArgument("发送给 AI 的图片总大小过大")
+                    images.append(
+                        {
+                            "label": f"{item['label']} @ {seconds:.1f}s",
+                            "role": "reference_video",
+                            "data_url": data_url,
+                        }
+                    )
 
         request_payload: dict[str, Any] = {
             "video_mode": video_mode,

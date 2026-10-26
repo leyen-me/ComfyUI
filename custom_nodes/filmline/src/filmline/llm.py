@@ -69,11 +69,18 @@ Rules:
   subject_definitions, summary, retention_analysis, detailed_description, overall_soundscape, non_diegetic_music.
   Use <Subject N>, <Picture N>, <Video N>, <Audio N>. Only use the labels listed in the input; never invent new labels or numbers.
   State which reference controls identity, style, motion, camera or voice, and whether audio is copied or only referenced.
+  When a reference video supplies body motion, define ONE <Subject N> whose appearance comes from the picture and whose motion comes from the video. Do not describe the video as a style-only asset.
+  retention_analysis must use the official relationship markers: fully_preserved, partially_preserved, attribute_transfer, weak_reference for visual content; fully_copy, partially_copy, reference, weak_reference for audio.
+  In detailed_description, write concrete action beats with timestamps (for example "At 00:02.0 both arms extend outward") when motion matters.
+  If a character sheet has multiple panels, define one Subject from a named panel (for example the full-body front view) and state that the target frame contains only that one character; other panels are design details and must not become extra figures.
+  The target video should contain only the named subjects unless the user asks for more; state this positively in the summary and detailed_description.
 - Include camera motion as type + amplitude + speed when relevant.
 - Avoid vague mood-only words in the music section; describe instrumentation, tempo and dynamics.
 - If the draft conflicts with the first frame (for example the intended speaker is silent in the image), add a warning instead of silently pretending it will work.
 - Images are attached in the same order as the `images` metadata. Inspect them carefully before writing.
   Describe what is actually visible: subject positions, which mouth or beak is open, lighting and background.
+  Some attached images are sampled frames from a reference video, labelled like "<Video 1> @ 2.5s".
+  Use these frames to describe the real poses, action beats, direction of movement and camera motion of that video; do not treat the video as a style-only reference.
   Do not invent a different setting or move a subject off-frame. If the intended speaker's mouth is not visible or open in the first frame, add a warning.
 """
 

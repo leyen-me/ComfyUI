@@ -105,6 +105,63 @@ class PromptOptimizeApiTest(ApiTestCase):
         self.assertEqual(images[0]["role"], "first_frame")
         self.assertTrue(images[0]["data_url"].startswith("data:image/png;base64,"))
 
+    async def test_sends_video_frames_to_llm(self) -> None:
+        project = await self._project()
+        path = self.tmp / "motion.mp4"
+        import subprocess
+
+        subprocess.run(
+            [
+                "ffmpeg", "-y", "-loglevel", "error",
+                "-f", "lavfi", "-i", "color=c=blue:s=320x240:d=2:r=24",
+                "-c:v", "libx264", "-pix_fmt", "yuv420p", str(path),
+            ],
+            check=True,
+        )
+        data = FormData()
+        data.add_field("file", path.read_bytes(), filename="motion.mp4", content_type="video/mp4")
+        res = await self.client.post(
+            f"/studio/api/projects/{project['code']}/assets/upload", data=data
+        )
+        video = (await res.json())["data"]
+        self.assertEqual(res.status, 201)
+        fake = AsyncMock(
+            return_value={
+                "enhanced_prompt": "optimized",
+                "warnings": [],
+                "notes": "",
+                "model": "deepseek-chat",
+            }
+        )
+        with patch("filmline.llm.optimize_prompt", new=fake):
+            res = await self.client.post(
+                "/studio/api/prompts/optimize",
+                json={
+                    "mode": "video",
+                    "video_mode": "reference",
+                    "prompt": "<Video 1> 的动作",
+                    "project_ref": project["code"],
+                    "references": [{"label": "<Video 1>", "kind": "video"}],
+                    "video_frames": [
+                        {
+                            "asset_id": video["id"],
+                            "label": "<Video 1>",
+                            "start": 0,
+                            "end": 0,
+                            "count": 2,
+                        }
+                    ],
+                },
+            )
+        body = await res.json()
+        self.assertEqual(res.status, 200, body)
+        _args, kwargs = fake.await_args
+        images = kwargs.get("images") or []
+        self.assertEqual(len(images), 2)
+        self.assertTrue(images[0]["label"].startswith("<Video 1> @"))
+        self.assertEqual(images[0]["role"], "reference_video")
+        self.assertTrue(images[0]["data_url"].startswith("data:image/jpeg;base64,"))
+
     async def test_images_require_project(self) -> None:
         res = await self.client.post(
             "/studio/api/prompts/optimize",
