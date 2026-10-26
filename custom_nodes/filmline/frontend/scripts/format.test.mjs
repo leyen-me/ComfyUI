@@ -4,7 +4,7 @@
  *   npm run test:logic
  */
 import assert from 'node:assert/strict'
-import { formatClock, formatSeconds } from '../src/lib/format.ts'
+import { formatClock, formatRelative, formatSeconds } from '../src/lib/format.ts'
 
 const seconds = [
   { input: 0, expected: '0 秒' },
@@ -46,3 +46,19 @@ for (const item of clocks) {
 
 if (failed > 0) process.exit(1)
 console.log('\n时长格式化正常')
+
+const NOW = Date.parse('2026-10-26T12:00:00Z')
+const relative = [
+  { input: '2026-10-26T11:59:40Z', expected: '刚刚' },
+  { input: '2026-10-26T11:15:00Z', expected: '45 分钟前' },
+  { input: '2026-10-26T02:00:00Z', expected: '10 小时前' },
+  { input: '2026-10-23T12:00:00Z', expected: '3 天前' },
+  { input: '2027-01-01T00:00:00Z', expected: '刚刚' },
+  { input: null, expected: '—' },
+  { input: 'bad', expected: 'bad' },
+]
+for (const { input, expected } of relative) {
+  assert.equal(formatRelative(input, NOW), expected, `formatRelative(${input})`)
+}
+assert.match(formatRelative('2026-09-01T00:00:00Z', NOW), /^2026-09-0[12]$/)
+console.log(`formatRelative: ${relative.length + 1} cases ok`)

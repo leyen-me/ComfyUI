@@ -32,6 +32,9 @@ class ProjectOut(BaseModel):
     description: str
     created_at: str
     updated_at: str
+    # 仅列表接口填充；详情接口为默认值
+    cover_asset_id: int | None = None
+    asset_count: int = 0
 
 
 class ProjectReorder(BaseModel):

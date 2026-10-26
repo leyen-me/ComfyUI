@@ -73,6 +73,7 @@ class AssetService:
         *,
         episode_id: int | None = None,
         kind: AssetKind | None = None,
+        source: AssetSource | None = None,
         limit: int = MAX_LIST,
         offset: int = 0,
     ) -> AssetList:
@@ -86,6 +87,8 @@ class AssetService:
         ]
         if kind is not None:
             conditions.append(Asset.kind == kind.value)
+        if source is not None:
+            conditions.append(Asset.source == source.value)
 
         with self._scope() as session:
             total = session.execute(

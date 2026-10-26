@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useState } from 'react'
-import { Loader2 } from 'lucide-react'
+import { ChevronRight, Loader2 } from 'lucide-react'
 import { Link, Navigate, Route, Routes, useLocation, useNavigate, useParams } from 'react-router-dom'
 
 import { ApiError, api, type Episode, type Project } from '@/lib/api'
 import { useEpisodes } from '@/hooks/use-episodes'
+import { AppHeader, BrandMark } from './app-header'
 import { AssetPanel } from './asset-panel'
 import { GenerationPanel } from './generation-panel'
 import { EpisodeDialog } from './episode-dialog'
@@ -109,8 +110,46 @@ export function ProjectPage() {
     )
   }
 
+  const currentEpisode = episodes.find((item) => item.code === episodeCode)
+
   return (
-    <div className="flex h-full">
+    <div className="flex h-full flex-col">
+      <AppHeader>
+        <BrandMark compact />
+        <nav aria-label="位置" className="flex min-w-0 items-center gap-1.5 text-[13px]">
+          <Link
+            to="/"
+            className="shrink-0 rounded-md px-1.5 py-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+          >
+            项目
+          </Link>
+          <ChevronRight className="size-3.5 shrink-0 text-muted-foreground/50" />
+          <Link
+            to={`/projects/${project.code}`}
+            className={
+              currentEpisode
+                ? 'min-w-0 truncate rounded-md px-1.5 py-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground'
+                : 'min-w-0 truncate rounded-md px-1.5 py-1 font-medium text-foreground'
+            }
+            title={project.name}
+          >
+            {project.name}
+          </Link>
+          {currentEpisode ? (
+            <>
+              <ChevronRight className="size-3.5 shrink-0 text-muted-foreground/50" />
+              <span className="min-w-0 truncate px-1.5 font-medium" title={currentEpisode.title}>
+                <span className="mr-1.5 font-mono text-[11px] text-primary">
+                  {currentEpisode.code}
+                </span>
+                {currentEpisode.title}
+              </span>
+            </>
+          ) : null}
+        </nav>
+      </AppHeader>
+
+      <div className="flex min-h-0 flex-1">
       <ProjectSidebar
         project={project}
         episodes={episodes}
@@ -119,7 +158,7 @@ export function ProjectPage() {
         onDeleteEpisode={setDeletingEpisode}
       />
 
-      <section className="flex w-80 shrink-0 flex-col border-r border-border">
+      <section className="flex w-[22rem] shrink-0 flex-col border-r border-border bg-card/40">
         <Routes>
           <Route index element={<Navigate to="assets/text" replace />} />
 
@@ -165,6 +204,7 @@ export function ProjectPage() {
       </section>
 
       <GenerationPanel project={project} episodeCode={episodeCode} />
+      </div>
 
       <ProjectDialog
         open={editingProject}

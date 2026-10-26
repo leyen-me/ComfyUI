@@ -39,6 +39,7 @@ import {
 import { emitAssetsChanged, REUSE_PROMPT, type ReusePromptDetail } from '@/lib/events'
 import { cn } from '@/lib/utils'
 import { formatClock } from '@/lib/format'
+import { GenerationStage } from './generation-stage'
 import { AssetPickerDialog } from './asset-picker-dialog'
 import { DurationSelect } from './duration-select'
 import { GenerationOptions } from './generation-options'
@@ -853,21 +854,28 @@ export function GenerationPanel({ project, episodeCode }: GenerationPanelProps) 
   }
 
   return (
-    <aside className="flex min-w-0 flex-1 flex-col border-l border-border">
-      <div className="flex flex-1 items-center justify-center px-6">
+    <aside className="flex min-w-0 flex-1 flex-col">
+      <GenerationStage
+        projectRef={project.code}
+        episodeCode={episodeCode}
+        running={running}
+        runningKind={mode}
+        elapsed={elapsed}
+      />
+      <div className="relative shrink-0 px-6 pt-2 pb-5 before:pointer-events-none before:absolute before:inset-x-0 before:-top-8 before:h-8 before:bg-gradient-to-t before:from-background before:to-transparent">
         <form
           onSubmit={(event) => {
             event.preventDefault()
             void handleSubmit()
           }}
-          className="w-full max-w-2xl"
+          className="mx-auto w-full max-w-3xl"
         >
-          <div className="rounded-2xl border border-border bg-card p-2.5 shadow-sm transition-shadow focus-within:border-ring focus-within:ring-2 focus-within:ring-ring/20">
+          <div className="rounded-[20px] border border-border bg-elevated p-3 shadow-[var(--shadow-soft)] transition-[border-color,box-shadow] focus-within:border-foreground/20 focus-within:shadow-[var(--shadow-pop)]">
             {mode === 'video' ? (
               <div className="flex flex-wrap items-center gap-2 px-1 pt-0.5 pb-2">
-                <span className="text-[11px] text-muted-foreground">视频方式</span>
+                <span className="text-[11px] font-medium text-muted-foreground">视频方式</span>
                 <div
-                  className="flex overflow-hidden rounded-lg border border-border"
+                  className="flex rounded-[10px] bg-muted p-0.5"
                   role="group"
                   aria-label="视频生成方式"
                 >
@@ -1006,7 +1014,7 @@ export function GenerationPanel({ project, episodeCode }: GenerationPanelProps) 
 
             <div className="flex flex-wrap items-center gap-1.5 px-1 pt-1">
               <div
-                className="flex overflow-hidden rounded-lg border border-border"
+                className="flex rounded-[10px] bg-muted p-0.5"
                 role="group"
                 aria-label="生成类型"
               >
@@ -1082,7 +1090,7 @@ export function GenerationPanel({ project, episodeCode }: GenerationPanelProps) 
                   type="submit"
                   size="sm"
                   variant="primary"
-                  className="rounded-lg"
+                  className="h-8 rounded-full px-4"
                   disabled={running || !value.text.trim() || missingReference || missingFrame}
                 >
                   {running ? (
@@ -1199,10 +1207,10 @@ function ModeButton({
       type="button"
       aria-pressed={active}
       className={cn(
-        'flex items-center gap-1 px-2.5 py-1 text-xs transition-colors',
+        'flex h-6 cursor-pointer items-center gap-1 rounded-lg px-2.5 text-xs transition-all',
         active
-          ? 'bg-accent font-medium text-foreground'
-          : 'text-muted-foreground hover:bg-muted hover:text-foreground',
+          ? 'bg-elevated font-medium text-foreground shadow-[0_1px_2px_rgb(0_0_0/0.15)] ring-1 ring-border'
+          : 'text-muted-foreground hover:text-foreground',
       )}
       onClick={onClick}
     >
@@ -1231,9 +1239,11 @@ function VideoModeTab({
       disabled={disabled}
       title={title}
       className={cn(
-        'cursor-pointer px-2.5 py-1 text-xs transition-colors',
-        active ? 'bg-accent font-medium text-foreground' : 'text-muted-foreground',
-        !disabled && 'hover:bg-muted hover:text-foreground',
+        'h-6 cursor-pointer rounded-lg px-2.5 text-xs transition-all',
+        active
+          ? 'bg-elevated font-medium text-foreground shadow-[0_1px_2px_rgb(0_0_0/0.15)] ring-1 ring-border'
+          : 'text-muted-foreground',
+        !disabled && !active && 'hover:text-foreground',
         disabled && 'cursor-not-allowed opacity-45',
       )}
       onClick={onClick}

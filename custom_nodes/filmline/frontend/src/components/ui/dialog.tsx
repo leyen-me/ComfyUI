@@ -40,7 +40,7 @@ export function Dialog({
     <dialog
       ref={ref}
       className={cn(
-        'w-[min(560px,92vw)] rounded-2xl border border-border bg-card p-0 text-foreground shadow-2xl',
+        'w-[min(560px,92vw)] overflow-hidden rounded-2xl border border-border bg-elevated p-0 text-foreground shadow-[var(--shadow-pop)]',
         className,
       )}
       onCancel={(event) => {
@@ -55,7 +55,7 @@ export function Dialog({
     >
       <div className="flex items-start justify-between gap-4 px-6 pt-5 pb-3">
         <div>
-          <h2 className="text-base font-semibold">{title}</h2>
+          <h2 className="text-[15px] font-semibold tracking-tight">{title}</h2>
           {description ? <p className="mt-1 text-xs text-muted-foreground">{description}</p> : null}
         </div>
         <Button variant="ghost" size="icon" aria-label="关闭" onClick={() => onOpenChange(false)}>
@@ -64,7 +64,7 @@ export function Dialog({
       </div>
       <div className="px-6 pb-2">{children}</div>
       {footer ? (
-        <div className="flex justify-end gap-2 border-t border-border px-6 py-4">{footer}</div>
+        <div className="flex justify-end gap-2 border-t border-border bg-muted/40 px-6 py-3.5">{footer}</div>
       ) : null}
     </dialog>
   )

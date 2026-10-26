@@ -1,6 +1,6 @@
 """资产接口。
 
-    GET    /studio/api/projects/{ref}/assets            列表（kind 过滤）
+    GET    /studio/api/projects/{ref}/assets            列表（kind / source 过滤）
     GET    /studio/api/projects/{ref}/assets/counts     各分类数量
     POST   /studio/api/projects/{ref}/assets            新建文本资产
     POST   /studio/api/projects/{ref}/assets/upload     上传图片/视频（source=user|ai）
@@ -126,6 +126,7 @@ def register_asset_routes(routes: web.RouteTableDef) -> None:
             project_id,
             episode_id=episode_id,
             kind=_parse_kind(request.query.get("kind")),
+            source=_parse_source(request.query["source"]) if "source" in request.query else None,
             limit=parse_int(request, "limit", default=200, minimum=1, maximum=200),
             offset=parse_int(request, "offset", default=0, minimum=0, maximum=10_000_000),
         )

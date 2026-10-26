@@ -11,14 +11,14 @@ export function SourceBadge({ source, kind }: { source: AssetSource; kind: Asset
   return (
     <span
       className={cn(
-        'inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium ring-1 ring-inset',
+        'inline-flex items-center gap-1 rounded-full px-1.5 py-px text-[10px] font-medium ring-1 ring-inset backdrop-blur-sm',
         isAi
-          ? 'bg-violet-500/12 text-violet-600 ring-violet-500/25 dark:text-violet-300'
-          : 'bg-muted text-muted-foreground ring-border',
+          ? 'bg-primary/15 text-primary ring-primary/30'
+          : 'bg-background/70 text-muted-foreground ring-border',
       )}
       title={isAi ? '由 ComfyUI 生成' : '由用户创建或上传'}
     >
-      {isAi ? <Sparkles className="size-3" /> : <Upload className="size-3" />}
+      {isAi ? <Sparkles className="size-2.5" /> : <Upload className="size-2.5" />}
       {label}
     </span>
   )

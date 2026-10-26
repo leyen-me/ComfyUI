@@ -26,6 +26,21 @@ export function formatSize(bytes: number | null | undefined): string {
   return `${value < 10 && index > 0 ? value.toFixed(1) : Math.round(value)} ${units[index]}`
 }
 
+/** 相对时间：一周内用「刚刚 / N 分钟前 / N 小时前 / N 天前」，更久显示日期。 */
+export function formatRelative(iso: string | null | undefined, now: number = Date.now()): string {
+  if (!iso) return '—'
+  const time = new Date(iso).getTime()
+  if (Number.isNaN(time)) return iso
+  const minutes = Math.floor(Math.max(0, now - time) / 60_000)
+  if (minutes < 1) return '刚刚'
+  if (minutes < 60) return `${minutes} 分钟前`
+  const hours = Math.floor(minutes / 60)
+  if (hours < 24) return `${hours} 小时前`
+  const days = Math.floor(hours / 24)
+  if (days < 7) return `${days} 天前`
+  return formatTime(iso).slice(0, 10)
+}
+
 /** 人类可读时长：45 秒 / 1 分 41 秒 / 1 时 05 分 */
 export function formatSeconds(totalSeconds: number): string {
   if (!Number.isFinite(totalSeconds) || totalSeconds < 0) return '—'

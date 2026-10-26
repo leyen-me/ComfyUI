@@ -59,6 +59,34 @@ class AssetApiTest(ApiTestCase):
         counts = (await res.json())["data"]
         self.assertEqual(counts, {"text": 1, "image": 1, "video": 1, "audio": 0})
 
+    async def test_project_list_exposes_cover_and_asset_count(self) -> None:
+        project = await self._project()
+        ref = project["code"]
+        await self._upload(ref, "a.png", PNG_BYTES)
+        latest = (await (await self._upload(ref, "b.png", PNG_BYTES)).json())["data"]
+        await self._upload(ref, "c.mp4", MP4_BYTES)
+        empty = await self._project("空项目")
+
+        res = await self.client.get("/studio/api/projects")
+        items = {item["code"]: item for item in (await res.json())["data"]["items"]}
+        self.assertEqual(items[ref]["cover_asset_id"], latest["id"])
+        self.assertEqual(items[ref]["asset_count"], 3)
+        self.assertIsNone(items[empty["code"]]["cover_asset_id"])
+        self.assertEqual(items[empty["code"]]["asset_count"], 0)
+
+    async def test_list_filters_by_source(self) -> None:
+        project = await self._project()
+        ref = project["code"]
+        await self._upload(ref, "user.png", PNG_BYTES)
+        ai = (await (await self._upload(ref, "ai.mp4", MP4_BYTES, source="ai")).json())["data"]
+
+        res = await self.client.get(f"/studio/api/projects/{ref}/assets?source=ai")
+        items = (await res.json())["data"]["items"]
+        self.assertEqual([item["id"] for item in items], [ai["id"]])
+
+        res = await self.client.get(f"/studio/api/projects/{ref}/assets?source=bogus")
+        self.assertEqual(res.status, 400)
+
     async def test_upload_marks_source(self) -> None:
         project = await self._project()
         ref = project["code"]

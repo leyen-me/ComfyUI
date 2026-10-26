@@ -4,7 +4,8 @@ import { Maximize2 } from 'lucide-react'
 import type { Asset, AssetKind } from '@/lib/api'
 import { assetDimensions, assetPrompt } from '@/lib/asset-meta'
 import { setAssetDrag } from '@/lib/asset-drag'
-import { formatSize, formatTime } from '@/lib/format'
+import { formatRelative, formatSize, formatTime } from '@/lib/format'
+import { cn } from '@/lib/utils'
 import { MoreMenu, type MenuAction } from './ui/more-menu'
 import { SourceBadge } from './source-badge'
 
@@ -18,7 +19,7 @@ interface AssetListProps {
   onReusePrompt: (asset: Asset) => void
 }
 
-function startAssetDrag(event: DragEvent<HTMLElement>, asset: Asset) {
+export function startAssetDrag(event: DragEvent<HTMLElement>, asset: Asset) {
   if (asset.kind === 'text') {
     const text = asset.text_content ?? ''
     if (!text.trim()) {
@@ -98,7 +99,7 @@ export function AssetList({
 
   if (kind === 'text') {
     return (
-      <div className="divide-y divide-border overflow-hidden rounded-xl border border-border bg-card">
+      <div className="divide-y divide-border overflow-hidden rounded-xl border border-border bg-card shadow-[0_1px_1px_rgb(0_0_0/0.04)]">
         {assets.map((asset) => (
           <article
             key={asset.id}
@@ -176,16 +177,16 @@ export function AssetList({
   }
 
   return (
-    <div className="flex flex-col gap-3">
+    <div className={kind === 'image' ? 'grid grid-cols-2 gap-2.5' : 'flex flex-col gap-3'}>
       {assets.map((asset) => (
         <article
           key={asset.id}
           draggable
           title="可拖到右侧首帧/尾帧或参考素材区"
           onDragStart={(event) => startAssetDrag(event, asset)}
-          className="group cursor-grab overflow-hidden rounded-xl border border-border bg-card transition-colors hover:border-primary/40 active:cursor-grabbing"
+          className="group cursor-grab overflow-hidden rounded-xl border border-border bg-card transition-[border-color,box-shadow] hover:border-foreground/20 hover:shadow-[var(--shadow-soft)] active:cursor-grabbing"
         >
-          <div className="group/vid relative aspect-video bg-muted">
+          <div className={cn('group/vid relative bg-muted', 'aspect-video')}>
             {kind === 'image' ? (
               <button
                 type="button"
@@ -227,7 +228,7 @@ export function AssetList({
             <div className="absolute top-1.5 left-1.5">
               <SourceBadge source={asset.source} kind={asset.kind} />
             </div>
-            <div className="absolute top-1.5 right-1.5 rounded-md bg-background/70 backdrop-blur-sm">
+            <div className="absolute top-1.5 right-1.5 rounded-md bg-background/70 opacity-0 backdrop-blur-sm transition-opacity group-hover:opacity-100 focus-within:opacity-100">
               <MoreMenu actions={buildActions(asset, handlers)} label={`${asset.name} 的操作`} />
             </div>
           </div>
@@ -244,8 +245,10 @@ export function AssetList({
                 {asset.name}
               </span>
               <span className="mt-1 flex items-center justify-between gap-2 font-mono text-[11px] text-muted-foreground">
-                <span>{formatTime(asset.created_at)}</span>
-                <span>{formatSize(asset.size_bytes)}</span>
+                <span title={formatTime(asset.created_at)}>
+                  {kind === 'image' ? formatRelative(asset.created_at) : formatTime(asset.created_at)}
+                </span>
+                {kind === 'image' ? null : <span>{formatSize(asset.size_bytes)}</span>}
               </span>
               <AssetDimensions asset={asset} />
             </span>

@@ -5,7 +5,7 @@ import { ApiError, api, type Asset, type AssetKind, type Episode, type Project }
 import { assetKindMeta } from '@/lib/asset-kinds'
 import { useAssetCounts, useAssets } from '@/hooks/use-assets'
 import { ASSETS_CHANGED, emitReusePrompt } from '@/lib/events'
-import { assetPrompt, generationMeta } from '@/lib/asset-meta'
+import { reuseDetailFor } from '@/lib/reuse'
 import { copyText } from '@/lib/clipboard'
 import { AssetDialog } from './asset-dialog'
 import { AssetPreview } from './asset-preview'
@@ -104,40 +104,8 @@ export function AssetPanel({
   }
 
   function reusePrompt(asset: Asset) {
-    const prompt = assetPrompt(asset)
-    if (!prompt) return
-    const meta = generationMeta(asset)
-    const isVideo = asset.kind === 'video'
-    emitReusePrompt({
-      prompt,
-      kind: isVideo ? 'video' : 'image',
-      size: meta.size,
-      tier: meta.tier,
-      count: meta.count ?? 1,
-      duration: meta.duration ?? 5,
-      refIds: meta.ref_ids ?? [],
-      ...(isVideo
-        ? {
-            videoMode:
-              meta.video_mode === 'hybrid'
-                ? 'hybrid'
-                : meta.video_mode === 'reference'
-                  ? 'reference'
-                  : 'keyframes',
-            // hybrid 与 keyframes 都有显式首尾帧字段；只有旧资产才从 ref_ids 回退
-            firstFrameId:
-              meta.first_frame_id ??
-              (meta.video_mode === 'reference' || meta.video_mode === 'hybrid'
-                ? undefined
-                : meta.ref_ids?.[0]) ??
-              undefined,
-            lastFrameId: meta.last_frame_id ?? undefined,
-            videoRefIds: meta.ref_video_ids ?? [],
-            videoUseAudio: meta.ref_video_use_audio ?? [],
-            audioRefIds: meta.ref_audio_ids ?? [],
-          }
-        : {}),
-    })
+    const detail = reuseDetailFor(asset)
+    if (detail) emitReusePrompt(detail)
     setPreview(null)
     notify('已填入生成面板')
   }
@@ -159,15 +127,15 @@ export function AssetPanel({
 
   return (
     <div className="flex h-full flex-col">
-      <header className="border-b border-border px-4 py-3">
-        <div className="flex items-start gap-2">
+      <header className="px-4 pt-4 pb-3">
+        <div className="flex items-center gap-2">
           <div className="min-w-0 flex-1">
-            <div className="truncate text-sm font-medium" title={episode?.title ?? project.name}>
-              {episode ? `${episode.code} · ${episode.title}` : '项目资产'}
-            </div>
-            <div className="font-mono text-[11px] text-muted-foreground">
-              {episode ? project.code : project.code}
-            </div>
+            <h2 className="truncate text-[15px] font-semibold tracking-tight" title={episode?.title ?? project.name}>
+              {episode ? episode.title : '项目资产'}
+            </h2>
+            <p className="mt-0.5 text-[11px] text-muted-foreground">
+              {episode ? `${episode.code} · 本集素材` : '跨分集共享的设定、角色与素材'}
+            </p>
           </div>
           <MoreMenu
             label={episode ? '分集操作' : '项目操作'}
@@ -181,7 +149,7 @@ export function AssetPanel({
         </div>
         {(episode?.synopsis || project.description) ? (
           <p
-            className="mt-1.5 line-clamp-2 text-xs leading-relaxed text-muted-foreground"
+            className="mt-2 line-clamp-2 text-xs leading-relaxed text-muted-foreground"
             title={episode?.synopsis || project.description}
           >
             {episode?.synopsis || project.description}
@@ -191,8 +159,10 @@ export function AssetPanel({
 
       <KindTabs basePath={basePath} counts={counts} />
 
-      <div className="flex items-center gap-2 px-4 py-2">
-        <span className="font-mono text-[11px] text-muted-foreground">{total}</span>
+      <div className="flex items-center gap-2 px-4 pt-3 pb-2">
+        <span className="text-[11px] text-muted-foreground">
+          <span className="font-mono tabular-nums">{total}</span> 个{meta.label}
+        </span>
         <div className="ml-auto">
           {kind === 'text' ? (
             <Button size="sm" variant="secondary" onClick={() => setCreating(true)}>
@@ -248,8 +218,16 @@ export function AssetPanel({
         ) : null}
 
         {!loading && !error && assets.length === 0 ? (
-          <div className="rounded-xl border border-dashed border-border px-4 py-16 text-center text-xs text-muted-foreground">
-            还没有{meta.label}资产
+          <div className="flex flex-col items-center rounded-xl border border-dashed border-border px-4 py-14 text-center">
+            <meta.icon className="size-5 text-muted-foreground/60" />
+            <p className="mt-3 text-xs text-muted-foreground">还没有{meta.label}</p>
+            <p className="mt-1 text-[11px] text-muted-foreground/70">
+              {kind === 'text'
+                ? '新建剧本、角色设定或分镜说明'
+                : kind === 'audio'
+                  ? '上传配乐、对白或音效'
+                  : `在右侧生成，或上传已有${meta.label}`}
+            </p>
           </div>
         ) : null}
 

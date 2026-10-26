@@ -9,7 +9,7 @@ import type {
 import { cn } from '@/lib/utils'
 
 const fieldBase =
-  'w-full rounded-lg border border-border bg-input px-3 text-sm text-foreground transition-shadow placeholder:text-muted-foreground/70 focus-visible:border-ring focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/25 disabled:opacity-50'
+  'w-full rounded-lg border border-border bg-input px-3 text-sm text-foreground transition-shadow placeholder:text-muted-foreground/70 hover:border-foreground/15 focus-visible:border-ring/70 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/15 disabled:opacity-50'
 
 export function Input({ className, ...props }: InputHTMLAttributes<HTMLInputElement>) {
   return <input className={cn(fieldBase, 'h-9', className)} {...props} />

@@ -25,12 +25,14 @@ React 19 + Vite 7 + TypeScript + Tailwind CSS v4，组件按 shadcn/ui 的写法
 （`cva` + `cn` + CSS 变量），不依赖 Radix 等运行时库；模态框用原生 `<dialog>`。
 
 - **默认深色**：`<html class="dark">`，首屏前用内联脚本读 `localStorage`，无闪烁；
-  侧边栏可切换浅色，偏好持久化。
+  顶栏可切换浅色，偏好持久化。
 - **路由**：`/studio` 项目列表，`/studio/projects/{编号}` 项目详情。后端对
   `/studio/*` 做 SPA 回落（`/studio/api/*`、`/studio/static/*` 除外）。
+- **全局顶栏**：56px 统一顶栏（品牌 / 面包屑 / 主题切换），右上角预留任务队列按钮。
+- **项目列表**：卡片墙，封面取项目最新一张图片，无图时按 id 生成稳定的渐变占位。
 - **项目内布局**：左侧项目导航（项目资产 + 分集列表），中间资产面板
-  （分类用顶部标签页：文本 / 图片 / 视频 / 音频），右侧对话输入框。
-  项目页不套全局侧边栏。
+  （分类用分段控件：文本 / 图片 / 视频 / 音频），右侧上方是「近期生成」舞台
+  （当前作用域的 AI 产物，可点开复用参数、可拖回输入区迭代），下方固定提示词输入框。
 - **资产来源标记**：`source=user`（用户创建或上传）与 `source=ai`（ComfyUI 生成），
   界面上以徽章区分。文本资产由用户创建；图片/视频支持上传并指定来源。
 - **拖拽排序**：HTML5 原生拖拽，松手即保存；菜单里另有「上移/下移」作为键盘替代。
@@ -52,7 +54,7 @@ npm run test:logic   # 纯函数单测（页码、提示词、拖拽载荷等）
 
 | 方法 | 路径 | 说明 |
 |---|---|---|
-| GET | `/studio/api/projects` | 列表，支持 `q` / `limit` / `offset`，按手动排序返回 |
+| GET | `/studio/api/projects` | 列表，支持 `q` / `limit` / `offset`，按手动排序返回；每项附 `cover_asset_id`（最新图片）与 `asset_count` |
 | POST | `/studio/api/projects` | 新建，`{name, description?}`，编号由系统生成，排在最前 |
 | PUT | `/studio/api/projects/order` | 拖拽排序，`{ids: [...]}` 必须覆盖全部项目 |
 | GET | `/studio/api/projects/{ref}` | 详情，`ref` 可为数字 id 或项目编号 |
@@ -63,7 +65,7 @@ npm run test:logic   # 纯函数单测（页码、提示词、拖拽载荷等）
 | PUT | `/studio/api/projects/{ref}/episodes/order` | 分集排序（需覆盖全部） |
 | GET | `/studio/api/projects/{ref}/episodes/{code}` | 按编号查分集 |
 | PATCH / DELETE | `/studio/api/episodes/{id}` | 改名/改简介、软删除 |
-| GET | `/studio/api/projects/{ref}/assets` | 资产列表，`kind=text\|image\|video\|audio`，`episode=EP01` 限定分集 |
+| GET | `/studio/api/projects/{ref}/assets` | 资产列表，`kind=text\|image\|video\|audio`、`source=user\|ai`，`episode=EP01` 限定分集 |
 | GET | `/studio/api/projects/{ref}/assets/counts` | 各分类数量（同样支持 `episode`） |
 | POST | `/studio/api/projects/{ref}/assets` | 新建文本资产 `{name, content?}` |
 | POST | `/studio/api/projects/{ref}/assets/upload` | 上传图片/视频/音频，`?source=user\|ai&episode=EP01` |

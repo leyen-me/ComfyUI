@@ -67,8 +67,8 @@ export function Select({
         title={title}
         disabled={disabled}
         className={cn(
-          'flex h-7 cursor-pointer items-center gap-1 rounded-lg border border-border bg-input px-2 text-xs text-foreground transition-colors hover:border-ring/60 focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/25 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50',
-          open && 'border-ring/60',
+          'flex h-7 cursor-pointer items-center gap-1 rounded-lg border border-border bg-input px-2.5 text-xs text-foreground transition-colors hover:border-foreground/20 focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/25 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50',
+          open && 'border-foreground/25 bg-muted',
         )}
         onClick={() => setOpen(!open)}
         onKeyDown={(event) => {

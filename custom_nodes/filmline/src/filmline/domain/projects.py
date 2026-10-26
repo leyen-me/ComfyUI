@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 
 from ..clock import to_iso, utcnow
 from ..db import session_scope
-from ..db.models import Project
+from ..db.models import Asset, Project
 from ..errors import InvalidArgument, NotFound
 from .schemas import ProjectCreate, ProjectList, ProjectOut, ProjectUpdate
 
@@ -25,8 +25,10 @@ def _escape_like(term: str) -> str:
     return term.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
 
 
-def _to_out(row: Project) -> ProjectOut:
+def _to_out(row: Project, cover: int | None = None, assets: int = 0) -> ProjectOut:
     return ProjectOut(
+        cover_asset_id=cover,
+        asset_count=assets,
         id=row.id,
         code=row.code,
         name=row.name,
@@ -78,12 +80,35 @@ class ProjectService:
                 .scalars()
                 .all()
             )
+            covers, counts = self._overview(session, [row.id for row in rows])
             return ProjectList(
-                items=[_to_out(row) for row in rows],
+                items=[
+                    _to_out(row, covers.get(row.id), counts.get(row.id, 0)) for row in rows
+                ],
                 total=int(total),
                 limit=limit,
                 offset=offset,
             )
+
+    @staticmethod
+    def _overview(session: Session, ids: list[int]) -> tuple[dict[int, int], dict[int, int]]:
+        """列表卡片用：每个项目最新一张图片作封面，以及资产总数。一次聚合，避免 N+1。"""
+        if not ids:
+            return {}, {}
+        live = (Asset.deleted_at.is_(None), Asset.project_id.in_(ids))
+        counts = dict(
+            session.execute(
+                select(Asset.project_id, func.count()).where(*live).group_by(Asset.project_id)
+            ).all()
+        )
+        covers = dict(
+            session.execute(
+                select(Asset.project_id, func.max(Asset.id))
+                .where(*live, Asset.kind == "image")
+                .group_by(Asset.project_id)
+            ).all()
+        )
+        return covers, counts
 
     def get(self, ref: str | int) -> ProjectOut:
         with self._scope() as session:

@@ -10,6 +10,8 @@ export interface Project {
   description: string
   created_at: string
   updated_at: string
+  cover_asset_id: number | null
+  asset_count: number
 }
 
 export interface ProjectList {
@@ -266,9 +268,17 @@ export const api = {
     assets: {
       list: (
         ref: string | number,
-        params: { kind: AssetKind; episode?: string; signal?: AbortSignal },
+        params: {
+          kind?: AssetKind
+          source?: AssetSource
+          limit?: number
+          episode?: string
+          signal?: AbortSignal
+        },
       ) => {
-        const query = new URLSearchParams({ kind: params.kind, limit: '200' })
+        const query = new URLSearchParams({ limit: String(params.limit ?? 200) })
+        if (params.kind) query.set('kind', params.kind)
+        if (params.source) query.set('source', params.source)
         if (params.episode) query.set('episode', params.episode)
         return request<AssetList>(
           `/projects/${encodeURIComponent(ref)}/assets?${query.toString()}`,

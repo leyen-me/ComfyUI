@@ -87,10 +87,21 @@ export function ProjectWorkspace() {
   }
 
   return (
-    <div className="flex flex-col gap-5">
-      <div className="flex flex-wrap items-center gap-3 pr-24">
+    <div className="flex flex-col gap-8">
+      <div className="flex flex-wrap items-end gap-4">
+        <div className="mr-auto">
+          <h1 className="text-2xl font-semibold tracking-tight">项目</h1>
+          <p className="mt-1 text-[13px] text-muted-foreground">
+            {data ? `${total} 个项目 · 拖动卡片调整顺序` : '\u00a0'}
+          </p>
+        </div>
+
         <div className="relative">
-          <Search className="pointer-events-none absolute top-1/2 left-3 size-3.5 -translate-y-1/2 text-muted-foreground" />
+          {loading ? (
+            <Loader2 className="pointer-events-none absolute top-1/2 left-3 size-3.5 -translate-y-1/2 animate-spin text-muted-foreground" />
+          ) : (
+            <Search className="pointer-events-none absolute top-1/2 left-3 size-3.5 -translate-y-1/2 text-muted-foreground" />
+          )}
           <Input
             type="search"
             value={keyword}
@@ -101,22 +112,16 @@ export function ProjectWorkspace() {
           />
         </div>
 
-        {loading ? (
-          <Loader2 className="size-4 animate-spin text-muted-foreground" aria-label="加载中" />
-        ) : null}
-
-        <div className="ml-auto">
-          <Button
-            variant="primary"
-            onClick={() => {
-              setEditing(null)
-              setDialogOpen(true)
-            }}
-          >
-            <Plus className="size-4" />
-            新建项目
-          </Button>
-        </div>
+        <Button
+          variant="primary"
+          onClick={() => {
+            setEditing(null)
+            setDialogOpen(true)
+          }}
+        >
+          <Plus className="size-4" />
+          新建项目
+        </Button>
       </div>
 
       {error ? (
@@ -133,6 +138,11 @@ export function ProjectWorkspace() {
         projects={projects}
         loading={loading}
         empty={!loading && !error && projects.length === 0}
+        searching={query.q !== ''}
+        onCreate={() => {
+          setEditing(null)
+          setDialogOpen(true)
+        }}
         actionsFor={actionsFor}
         onOpen={(project) => navigate(`/projects/${project.code}`)}
         onReorder={handleReorder}

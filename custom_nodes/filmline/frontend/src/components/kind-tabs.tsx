@@ -12,7 +12,10 @@ interface KindTabsProps {
 
 export function KindTabs({ basePath, counts }: KindTabsProps) {
   return (
-    <nav className="flex gap-0.5 border-b border-border px-2 py-1.5" aria-label="资产分类">
+    <nav
+      className="mx-3 flex gap-0.5 rounded-xl bg-muted/70 p-0.5"
+      aria-label="资产分类"
+    >
       {ASSET_KINDS.map((kind) => {
         const Icon = kind.icon
         return (
@@ -21,16 +24,16 @@ export function KindTabs({ basePath, counts }: KindTabsProps) {
             to={`${basePath}/${kind.value}`}
             className={({ isActive }) =>
               cn(
-                'flex flex-1 items-center justify-center gap-1 rounded-md px-1 py-1.5 text-[11px] transition-colors',
+                'flex h-7 flex-1 items-center justify-center gap-1 rounded-[10px] px-1 text-[12px] transition-all',
                 isActive
-                  ? 'bg-accent font-medium text-foreground'
-                  : 'text-muted-foreground hover:bg-muted hover:text-foreground',
+                  ? 'bg-elevated font-medium text-foreground shadow-[0_1px_2px_rgb(0_0_0/0.15)] ring-1 ring-border'
+                  : 'text-muted-foreground hover:text-foreground',
               )
             }
           >
             <Icon className="size-3.5 shrink-0" />
             {kind.label}
-            <span className="font-mono text-[10px] opacity-70">{counts[kind.value]}</span>
+            <span className="font-mono text-[10px] tabular-nums opacity-55">{counts[kind.value]}</span>
           </NavLink>
         )
       })}

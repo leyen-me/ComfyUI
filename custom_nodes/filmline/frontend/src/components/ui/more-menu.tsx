@@ -17,7 +17,7 @@ interface MoreMenuProps {
   label?: string
 }
 
-const PANEL_WIDTH = 112
+const PANEL_WIDTH = 128
 const GAP = 4
 const EDGE = 8
 
@@ -110,7 +110,7 @@ export function MoreMenu({ actions, label = '更多操作' }: MoreMenuProps) {
                 width: PANEL_WIDTH,
                 visibility: position ? 'visible' : 'hidden',
               }}
-              className="z-50 rounded-lg border border-border bg-card p-1 shadow-xl"
+              className="animate-rise z-50 rounded-xl border border-border bg-elevated p-1 shadow-[var(--shadow-pop)]"
             >
               {actions.map((action) => (
                 <button
@@ -119,7 +119,7 @@ export function MoreMenu({ actions, label = '更多操作' }: MoreMenuProps) {
                   role="menuitem"
                   disabled={action.disabled}
                   className={cn(
-                    'flex w-full cursor-pointer items-center rounded-md px-2.5 py-1.5 text-left text-xs transition-colors disabled:pointer-events-none disabled:opacity-40',
+                    'flex w-full cursor-pointer items-center rounded-lg px-2.5 py-1.5 text-left text-[13px] transition-colors disabled:pointer-events-none disabled:opacity-40',
                     action.destructive
                       ? 'text-destructive hover:bg-destructive/10'
                       : 'text-foreground hover:bg-muted',

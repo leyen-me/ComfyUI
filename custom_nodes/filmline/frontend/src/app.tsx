@@ -1,43 +1,16 @@
 import { useEffect, useState } from 'react'
-import { Navigate, Outlet, Route, Routes } from 'react-router-dom'
+import { Navigate, Route, Routes } from 'react-router-dom'
 
 import { api, type HealthInfo } from '@/lib/api'
-import { applyTheme, readTheme, type Theme } from '@/lib/theme'
-import { AppSidebar } from './components/app-sidebar'
+import { cn } from '@/lib/utils'
+import { AppHeader, BrandMark } from './components/app-header'
 import { ProjectPage } from './components/project-page'
 import { ProjectWorkspace } from './components/project-workspace'
 import { TaskQueue } from './components/task-queue'
 
-interface LayoutProps {
-  theme: Theme
-  onToggleTheme: () => void
-  health: HealthInfo | null
-  healthFailed: boolean
-}
-
-/** 全局布局：项目列表用。项目内部另有自己的导航，不套这一层。 */
-function GlobalLayout({ theme, onToggleTheme, health, healthFailed }: LayoutProps) {
-  return (
-    <div className="flex h-full">
-      <AppSidebar
-        theme={theme}
-        onToggleTheme={onToggleTheme}
-        health={health}
-        healthFailed={healthFailed}
-      />
-      <main className="flex-1 overflow-y-auto">
-        <div className="mx-auto max-w-5xl px-8 py-8">
-          <Outlet />
-        </div>
-      </main>
-    </div>
-  )
-}
-
-export default function App() {
-  const [theme, setTheme] = useState<Theme>(() => readTheme())
+function ConnectionStatus() {
   const [health, setHealth] = useState<HealthInfo | null>(null)
-  const [healthFailed, setHealthFailed] = useState(false)
+  const [failed, setFailed] = useState(false)
 
   useEffect(() => {
     const controller = new AbortController()
@@ -46,41 +19,45 @@ export default function App() {
         if (!controller.signal.aborted) setHealth(info)
       })
       .catch(() => {
-        if (!controller.signal.aborted) setHealthFailed(true)
+        if (!controller.signal.aborted) setFailed(true)
       })
     return () => controller.abort()
   }, [])
 
-  function toggleTheme() {
-    const next: Theme = theme === 'dark' ? 'light' : 'dark'
-    setTheme(next)
-    applyTheme(next)
-  }
+  const label = failed ? '后端未连接' : health ? 'ComfyUI 已连接' : '连接中'
+  return (
+    <span className="mr-2 hidden items-center gap-1.5 text-[11px] text-muted-foreground sm:flex">
+      <span
+        className={cn(
+          'size-1.5 rounded-full',
+          failed ? 'bg-destructive' : health ? 'bg-emerald-500' : 'animate-pulse bg-amber-500',
+        )}
+      />
+      {label}
+    </span>
+  )
+}
 
+function HomePage() {
+  return (
+    <div className="flex h-full flex-col">
+      <AppHeader actions={<ConnectionStatus />}>
+        <BrandMark />
+      </AppHeader>
+      <main className="flex-1 overflow-y-auto">
+        <div className="mx-auto w-full max-w-6xl px-8 pt-10 pb-16">
+          <ProjectWorkspace />
+        </div>
+      </main>
+    </div>
+  )
+}
+
+export default function App() {
   return (
     <>
       <Routes>
-        <Route
-          element={
-            <GlobalLayout
-              theme={theme}
-              onToggleTheme={toggleTheme}
-              health={health}
-              healthFailed={healthFailed}
-            />
-          }
-        >
-          <Route
-            path="/"
-            element={
-              <>
-                <h1 className="mb-6 text-xl font-semibold tracking-tight">项目</h1>
-                <ProjectWorkspace />
-              </>
-            }
-          />
-        </Route>
-
+        <Route path="/" element={<HomePage />} />
         <Route path="/projects/:ref/*" element={<ProjectPage />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>

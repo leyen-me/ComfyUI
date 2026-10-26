@@ -94,7 +94,7 @@ export function Popover({
         width,
         visibility: position ? 'visible' : 'hidden',
       }}
-      className="z-50 rounded-xl border border-border bg-card p-2 shadow-xl"
+      className="animate-rise z-50 rounded-xl border border-border bg-elevated p-1.5 shadow-[var(--shadow-pop)]"
     >
       {children}
     </div>,
