@@ -202,6 +202,14 @@ export interface TaskInfo {
   asset_ids: number[]
   queue_position: number | null
   external: boolean
+  progress: {
+    value: number
+    max: number
+    percent: number | null
+    node: string | null
+    stage: string | null
+    updated_at: number
+  } | null
 }
 
 export interface TaskList {

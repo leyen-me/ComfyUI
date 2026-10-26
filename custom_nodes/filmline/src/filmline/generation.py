@@ -933,7 +933,10 @@ async def collect(
 
 
 def timeout_for(kind: str) -> float:
-    return 1800.0 if kind == "video" else 900.0
+    if kind == "video":
+        # 20 步、长视频在 48G 卡上可能接近 1 小时；默认给 2 小时
+        return float(os.environ.get("FILMLINE_VIDEO_TIMEOUT", "7200"))
+    return 900.0
 
 
 def ratio_label(width: int, height: int) -> str:

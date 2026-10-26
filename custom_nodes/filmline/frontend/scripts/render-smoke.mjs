@@ -191,6 +191,14 @@ const runningTask = {
   asset_ids: [],
   queue_position: 0,
   external: false,
+  progress: {
+    value: 13,
+    max: 20,
+    percent: 65,
+    node: '9',
+    stage: '采样',
+    updated_at: 1792995845,
+  },
 }
 
 const doneTask = {
@@ -203,6 +211,7 @@ const doneTask = {
   elapsed_ms: 51200,
   asset_ids: [11],
   queue_position: null,
+  progress: null,
 }
 
 let queueTask = { ...runningTask }
@@ -765,13 +774,14 @@ await wait(150)
 
 // —— 全局任务队列：右上角入口，显示进行中与最近完成 ——
 byLabel('任务队列')?.click()
-await wait(250)
+await wait(500)
 const queueText = document.querySelector('[role="dialog"]')?.textContent ?? ''
 const taskQueueVisible =
   queueText.includes('任务队列') &&
   queueText.includes('运行中') &&
   queueText.includes('已完成') &&
   queueText.includes('冒烟测试项目')
+const taskProgressVisible = queueText.includes('采样') && queueText.includes('13/20')
 // 面板内部滚动不能关闭面板（scroll 事件不冒泡，但捕获阶段会经过 window）
 document
   .querySelector('[role="dialog"] [data-scroll-region]')
@@ -848,6 +858,7 @@ const checks = [
   ['视频卡片下半部分可打开预览', videoPreviewOpened],
   ['视频列表为无控制条的缩略预览', videoListNoControls],
   ['右上角任务队列显示进行中/完成', taskQueueVisible],
+  ['任务队列显示采样进度', taskProgressVisible],
   ['任务队列可取消进行中任务', cancelUpdated],
   ['任务队列内部滚动不关闭面板', queueSurvivesInnerScroll],
   ['无控制台错误', errors.length === 0],

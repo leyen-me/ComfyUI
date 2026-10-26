@@ -8,7 +8,7 @@ from typing import Any
 
 from aiohttp import web
 
-from .. import generation
+from .. import generation, progress
 from ..domain.tasks import ACTIVE_STATUSES, TaskOut, TaskService
 from ..errors import InvalidArgument
 from ..runner import RUNNER_KEY
@@ -44,6 +44,9 @@ def _task_payload(task: TaskOut, position: int | None) -> dict[str, Any]:
     data = asdict(task)
     data["queue_position"] = position
     data["external"] = False
+    data["progress"] = (
+        progress.snapshot(task.id) if task.status in ACTIVE_STATUSES else None
+    )
     return data
 
 
@@ -71,6 +74,7 @@ def _external_payload(
         "asset_ids": [],
         "queue_position": position,
         "external": True,
+        "progress": None,
     }
 
 

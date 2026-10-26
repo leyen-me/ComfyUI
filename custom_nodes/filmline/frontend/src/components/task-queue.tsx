@@ -313,6 +313,25 @@ function TaskRow({
           </span>
         ) : null}
 
+        {effectiveStatus === 'running' && task.progress ? (
+          <span className="mt-1 block">
+            <span className="flex items-center justify-between font-mono text-[10px] text-muted-foreground">
+              <span>{task.progress.stage ?? '运行中'}</span>
+              <span>
+                {task.progress.max > 0
+                  ? `${task.progress.value}/${task.progress.max}`
+                  : `${task.progress.percent ?? 0}%`}
+              </span>
+            </span>
+            <span className="mt-0.5 block h-1 overflow-hidden rounded-full bg-muted">
+              <span
+                className="block h-full rounded-full bg-primary transition-[width] duration-500"
+                style={{ width: `${task.progress.percent ?? 0}%` }}
+              />
+            </span>
+          </span>
+        ) : null}
+
         <span className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 font-mono text-[10px] text-muted-foreground">
           <span
             className={cn(

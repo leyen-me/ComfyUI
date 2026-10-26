@@ -11,7 +11,7 @@ import logging
 
 from aiohttp import web
 
-from . import generation, pipeline
+from . import generation, pipeline, progress
 from .clock import utcnow
 from .domain.tasks import ACTIVE_STATUSES, TaskService
 from .generation import Workflow
@@ -111,6 +111,15 @@ class TaskRunner:
 
         workflow = Workflow(prompt=graph, kind=record.kind, meta=meta)
         started_at = record.started_at
+        node_types = {
+            str(node_id): str(node.get("class_type") or "")
+            for node_id, node in graph.items()
+            if isinstance(node, dict)
+        }
+        watcher = asyncio.create_task(
+            progress.watch(task_id, record.client_id, node_types),
+            name=f"filmline-progress-{task_id}",
+        )
 
         try:
             prompt_id = record.prompt_id
@@ -205,6 +214,8 @@ class TaskRunner:
             _LOG.exception("生成任务失败: %s", task_id)
             message = str(exc) or exc.__class__.__name__
             await asyncio.to_thread(service.mark_failed, task_id, error=message)
+        finally:
+            await progress.stop(watcher, task_id)
 
 
 RUNNER_KEY: web.AppKey[TaskRunner] = web.AppKey("filmline_task_runner", TaskRunner)

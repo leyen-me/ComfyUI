@@ -108,6 +108,7 @@ ComfyUI/user/filmline/
 | `FILMLINE_REF_SHORT_EDGE` | 参考视频解码短边（默认 768；显存不足可设 512） |
 | `FILMLINE_REF_SCHEDULER` | 参考生成默认调度器（simple / beta / normal） |
 | `FILMLINE_COMFY_URL` | 本机 ComfyUI 地址 |
+| `FILMLINE_VIDEO_TIMEOUT` | 视频任务超时秒数（默认 7200，即 2 小时） |
 
 ## 视频生成参数（对齐官方）
 
@@ -217,6 +218,8 @@ DEEPSEEK_MAX_TOKENS=4096
   刷新页面不会中断任务。
 - 任务持久化在 `generation_tasks` 表，记录 ComfyUI `prompt_id`、项目/分集、参数、产物 id、错误与耗时。
 - 右上角任务队列每 3 秒轮询 `/studio/api/tasks`，显示进行中/最近完成；所有打开页面的同事共享同一份状态。
+- 运行中的任务显示实时进度：阶段（加载模型/编码参考/采样/解码/保存）+ `13/20` 进度条；
+  进度通过 ComfyUI WebSocket（按任务 `client_id`）采集，只保存在内存，任务结束即清理。
 - 任务列表会合并 ComfyUI `/queue` 中不属于 Filmline 的 prompt，显示为「ComfyUI 外部任务」。
 - 可取消进行中的 Filmline 任务：优先调用 ComfyUI 原子取消接口，运行中的会 interrupt，排队中的会 dequeue；
   外部 ComfyUI 任务目前只读。
