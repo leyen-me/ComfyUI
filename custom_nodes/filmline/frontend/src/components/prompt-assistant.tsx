@@ -20,6 +20,8 @@ interface PromptAssistantProps {
   videoMode: AssistantVideoMode
   keyframes: AssistantKeyframes
   counts: AssistantCounts
+  /** 帧对齐后的真实时长（秒），用于生成两位小数的首尾帧对齐句 */
+  duration: number
   prompt: string
   disabled?: boolean
   canOptimize: boolean
@@ -43,6 +45,7 @@ export function PromptAssistant({
   videoMode,
   keyframes,
   counts,
+  duration,
   prompt,
   disabled = false,
   canOptimize,
@@ -52,9 +55,9 @@ export function PromptAssistant({
   onInsert,
   onInsertTemplate,
 }: PromptAssistantProps) {
-  const sections = sectionsFor(mode, videoMode, keyframes, counts)
+  const sections = sectionsFor(mode, videoMode, keyframes, counts, duration)
   const snippets = snippetsFor(mode, videoMode, counts)
-  const warnings = lintPrompt({ mode, videoMode, prompt, counts })
+  const warnings = lintPrompt({ mode, videoMode, prompt, counts, duration, keyframes })
   const hint = modeHint(mode, videoMode, keyframes)
   const [tab, setTab] = useState<Tab>('build')
 
@@ -80,7 +83,7 @@ export function PromptAssistant({
           title="完整模板"
           caption="插入全部段落骨架"
           disabled={disabled}
-          onClick={() => onInsertTemplate(fullTemplate(mode, videoMode, keyframes, counts))}
+          onClick={() => onInsertTemplate(fullTemplate(mode, videoMode, keyframes, counts, duration))}
         />
       </div>
 

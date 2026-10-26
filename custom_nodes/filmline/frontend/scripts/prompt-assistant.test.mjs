@@ -5,6 +5,7 @@
  */
 import assert from 'node:assert/strict'
 import {
+  alignmentInstruction,
   fullTemplate,
   lintPrompt,
   modeHint,
@@ -144,3 +145,164 @@ const long = lintPrompt({
 assert.ok(long.some((item) => item.level === 'warn' && item.id === 'length'))
 
 console.log('提示词结构助手正常')
+
+// ── 官方规范：对齐句用真实时长、两位小数 ──────────────────────────────────
+assert.ok(alignmentInstruction({ first: true, last: true }, 12).includes('12.00-second mark'))
+assert.ok(alignmentInstruction({ first: false, last: true }, 5.17).includes('5.17-second mark'))
+assert.ok(alignmentInstruction({ first: true, last: false }, 12).includes('(from [Shot 1]) is fully referenced'))
+assert.equal(alignmentInstruction({ first: false, last: false }, 12), '')
+
+// 模板必须吃真实时长，不能硬编码 5.00
+const longTemplate = fullTemplate('video', 'keyframes', { first: true, last: true }, noCounts, 12)
+assert.ok(longTemplate.includes('12.00-second mark'))
+assert.ok(!longTemplate.includes('5.00-second mark'))
+assert.ok(longTemplate.startsWith(alignmentInstruction({ first: true, last: true }, 12)))
+// 对齐句与主体字段之间必须空一行
+assert.ok(longTemplate.includes('target video.\n\nintegrated_multimodal_description:'))
+
+// 参考模式不提供「不要字幕」片段（否则会多出第七段）
+assert.ok(!snippetsFor('video', 'reference', counts).some((item) => item.id === 'no-sub'))
+assert.ok(snippetsFor('video', 'keyframes', noCounts).some((item) => item.id === 'no-sub'))
+
+// 参考模板带全局风格句
+assert.ok(refTemplate.includes('slightly desaturated'))
+
+// ── Lint 新规则 ──────────────────────────────────────────────────────────
+const refPrompt = (body) =>
+  'subject_definitions:\n<Subject 1> is the woman in <Picture 1>.\nsummary:\n[reference generation] ...\nretention_analysis:\n<Subject 1> (appears in [Shot 1]): fully_preserved - identity kept.\ndetailed_description:\n' +
+  body +
+  '\noverall_soundscape: Rain.\nnon_diegetic_music: N/A'
+
+// 逐秒列表
+assert.ok(
+  lintPrompt({
+    mode: 'video',
+    videoMode: 'reference',
+    prompt: refPrompt('[Shot 1] The woman stands.\n00:01.0 — she raises her hand.'),
+    counts,
+  }).some((item) => item.id === 'per-second'),
+)
+
+// summary 缺方括号任务类型
+assert.ok(
+  lintPrompt({
+    mode: 'video',
+    videoMode: 'reference',
+    prompt: refPrompt('[Shot 1] The woman stands in the rain.').replace(
+      '[reference generation] ...',
+      'A short vertical shot.',
+    ),
+    counts,
+  }).some((item) => item.id === 'summary-type'),
+)
+
+// 参考模式出现禁止字幕段
+assert.ok(
+  lintPrompt({
+    mode: 'video',
+    videoMode: 'reference',
+    prompt: refPrompt('[Shot 1] The woman stands.') + '\nNo subtitles, no captions, no on-screen text.',
+    counts,
+  }).some((item) => item.id === 'ref-subtitle'),
+)
+
+// retention_analysis 行格式 / 不写 (Sx)
+assert.ok(
+  lintPrompt({
+    mode: 'video',
+    videoMode: 'reference',
+    prompt: refPrompt('[Shot 1] x').replace(
+      '<Subject 1> (appears in [Shot 1]): fully_preserved - identity kept.',
+      '<Subject 1> (S1) — identity: fully_preserved from <Picture 1>.',
+    ),
+    counts,
+  }).some((item) => item.id === 'retention-line'),
+)
+
+// 正文不点名 Subject / Picture
+const noSubject = lintPrompt({
+  mode: 'video',
+  videoMode: 'reference',
+  prompt: refPrompt('[Shot 1] The woman stands in the rain and lifts her hand.'),
+  counts,
+})
+assert.ok(noSubject.some((item) => item.id === 'subject-density'))
+// 图片只作外观来源时，正文不引用 <Picture N> 是正常写法，不应误报
+assert.ok(!noSubject.some((item) => item.id === 'picture-in-body'))
+
+// 图片被声明为帧锚点却不在正文引用 → 提示
+const anchorNotUsed = lintPrompt({
+  mode: 'video',
+  videoMode: 'reference',
+  prompt: refPrompt('[Shot 1] The woman stands in the rain.').replace(
+    '<Subject 1> is the woman in <Picture 1>.',
+    '<Subject 1> is the woman in <Picture 1>.\n<Picture 2> is the first frame of [Shot 1].',
+  ),
+  counts,
+})
+assert.ok(anchorNotUsed.some((item) => item.id === 'picture-in-body'))
+
+// 对齐句占位符与时长不一致
+assert.ok(
+  lintPrompt({
+    mode: 'video',
+    videoMode: 'keyframes',
+    prompt: 'How the reference pictures align with the target video — <Picture 1> (from [Shot N]) aligns with the S.SS-second mark of the target video.\n\nintegrated_multimodal_description: [Shot 1] x',
+    counts: noCounts,
+    duration: 5.17,
+  }).some((item) => item.id === 'alignment-placeholder'),
+)
+assert.ok(
+  lintPrompt({
+    mode: 'video',
+    videoMode: 'keyframes',
+    prompt: 'How the reference pictures align with the target video — Picture 2 aligns with the 5.00-second mark of the target video.\n\nintegrated_multimodal_description: [Shot 1] x',
+    counts: noCounts,
+    duration: 5.17,
+  }).some((item) => item.id === 'alignment-duration'),
+)
+
+// 台词按镜头时长估算
+assert.ok(
+  lintPrompt({
+    mode: 'video',
+    videoMode: 'keyframes',
+    prompt:
+      'integrated_multimodal_description: [Shot 1] <d>[Chinese] 我们今天必须把所有事情都做完然后再回家吃饭</d> (S1) says\nNo subtitles',
+    counts: noCounts,
+    duration: 2,
+  }).some((item) => item.id === 'dialogue-length'),
+)
+
+// 一镜到底却又写多镜头
+assert.ok(
+  lintPrompt({
+    mode: 'video',
+    videoMode: 'keyframes',
+    prompt: 'one continuous shot, no cut\n[Shot 1] ...\n[Shot 2] At 00:02.000, the camera cuts to ...',
+    counts: noCounts,
+  }).some((item) => item.id === 'cut-conflict'),
+)
+
+// 首尾帧缺「不要切镜」
+assert.ok(
+  lintPrompt({
+    mode: 'video',
+    videoMode: 'keyframes',
+    prompt: 'integrated_multimodal_description: [Shot 1] A cyclist opens an umbrella.',
+    counts: noCounts,
+    keyframes: { first: true, last: true },
+  }).some((item) => item.id === 'keyframe-no-cut'),
+)
+
+// 超过官方 7000 字符上限
+assert.ok(
+  lintPrompt({
+    mode: 'video',
+    videoMode: 'keyframes',
+    prompt: 'x'.repeat(7001),
+    counts: noCounts,
+  }).some((item) => item.id === 'length-hard'),
+)
+
+console.log('提示词规范校验通过')

@@ -175,6 +175,37 @@ class PromptOptimizeApiTest(ApiTestCase):
         body = await res.json()
         self.assertEqual(res.status, 400, body)
 
+
+    async def test_passes_aligned_duration_to_llm(self) -> None:
+        fake = AsyncMock(
+            return_value={
+                "enhanced_prompt": "x",
+                "warnings": [],
+                "notes": "",
+                "model": "deepseek-chat",
+            }
+        )
+        with patch("filmline.llm.optimize_prompt", new=fake):
+            res = await self.client.post(
+                "/studio/api/prompts/optimize",
+                json={
+                    "mode": "video",
+                    "video_mode": "keyframes",
+                    "prompt": "雨夜",
+                    "keyframes": {"first": True, "last": True},
+                    "duration": 5.17,
+                    "no_subtitles": True,
+                },
+            )
+        body = await res.json()
+        self.assertEqual(res.status, 200, body)
+        _args, kwargs = fake.await_args
+        payload = fake.await_args.args[0]
+        self.assertAlmostEqual(payload["duration"], 5.17)
+        self.assertTrue(payload["no_subtitles"])
+        # 对齐句由 llm.optimize_prompt 侧补全，这里只校验入参透传
+        self.assertEqual(kwargs.get("images"), [])
+
     async def test_rejects_image_mode(self) -> None:
         res = await self.client.post(
             "/studio/api/prompts/optimize",

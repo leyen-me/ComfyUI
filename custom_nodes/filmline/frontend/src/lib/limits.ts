@@ -5,5 +5,8 @@
  */
 export const PROMPT_SOFT_HINT_CHARS = 4000
 
+/** H3 官方提示词上限：超过这个长度不再只是提醒，可能被模型侧截断 */
+export const PROMPT_HARD_LIMIT_CHARS = 7000
+
 /** 一次拖入输入框的文本上限：与 AI 优化允许的草稿长度一致 */
 export const TEXT_DROP_MAX_CHARS = 12000

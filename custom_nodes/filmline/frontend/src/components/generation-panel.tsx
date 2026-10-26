@@ -14,7 +14,7 @@ import {
   type TaskInfo,
 } from '@/lib/api'
 import type { AssetDragPayload } from '@/lib/asset-drag'
-import { isValidDuration } from '@/lib/duration'
+import { actualSeconds, isValidDuration } from '@/lib/duration'
 import type { KeyframeSlot } from '@/lib/keyframes'
 import { buildPromptDoc, type RefAsset } from '@/lib/prompt'
 import { readClientName } from '@/lib/client-name'
@@ -789,7 +789,7 @@ export function GenerationPanel({ project, episodeCode }: GenerationPanelProps) 
         images: optimizeImages(),
         video_frames: optimizeVideoFrames(),
         size: videoSize,
-        duration,
+        duration: actualSeconds(duration),
         no_subtitles: true,
       })
       setOptimizeOriginal(prompt)
@@ -1195,6 +1195,7 @@ export function GenerationPanel({ project, episodeCode }: GenerationPanelProps) 
                     videoMode={videoMode}
                     keyframes={assistantKeyframes}
                     counts={assistantCounts}
+                    duration={actualSeconds(duration)}
                     prompt={value.text}
                     disabled={running}
                     canOptimize={mode === 'video'}
