@@ -7,9 +7,20 @@ from unittest.mock import AsyncMock, patch
 
 from aiohttp import FormData
 
+import io
+
+from PIL import Image
+
 from base import ApiTestCase
 
-PNG_BYTES = b"\x89PNG\r\n\x1a\n" + b"\x00" * 32
+
+def _png_bytes() -> bytes:
+    buffer = io.BytesIO()
+    Image.new("RGB", (8, 8), (255, 0, 0)).save(buffer, format="PNG")
+    return buffer.getvalue()
+
+
+PNG_BYTES = _png_bytes()
 
 
 class PromptOptimizeApiTest(ApiTestCase):

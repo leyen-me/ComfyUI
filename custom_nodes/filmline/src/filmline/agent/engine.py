@@ -16,6 +16,7 @@ import json
 import logging
 import time
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from typing import Any
 
 from aiohttp import web
@@ -35,6 +36,9 @@ MAX_STEPS = 32
 DELTA_FLUSH_CHARS = 1200
 DELTA_FLUSH_SECONDS = 0.12
 ENGINE_KEY = "filmline_agent_engine"
+# 官方单请求 600 张 / 64 MiB；Agent 侧收得更紧，避免长会话无限膨胀
+MAX_CONTEXT_IMAGES = 24
+MAX_CONTEXT_IMAGE_BYTES = 24 * 1024 * 1024
 
 
 class _Paused(Exception):
@@ -60,6 +64,49 @@ class _Delta:
     content: list[str] = field(default_factory=list)
     reasoning: list[str] = field(default_factory=list)
     last_flush: float = field(default_factory=time.monotonic)
+
+
+def _file_block_valid(image: dict) -> bool:
+    file_id = image.get("file_id")
+    if not isinstance(file_id, str) or not file_id:
+        return False
+    expires = image.get("file_expires_at")
+    if not expires:
+        return True
+    try:
+        value = datetime.fromisoformat(str(expires).replace("Z", "+00:00"))
+    except ValueError:
+        return False
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=timezone.utc)
+    return value > datetime.now(timezone.utc)
+
+
+def _image_messages_to_keep(rows: list[store.StoredMessage]) -> set[int]:
+    """从最新往回保留图片观察，控制张数与内联字节数；旧图片降级为文本提示。"""
+    keep: set[int] = set()
+    count = 0
+    total_bytes = 0
+    for row in reversed(rows):
+        if row.role != "user":
+            continue
+        images = (row.meta or {}).get("images") or []
+        if not images:
+            continue
+        inline_bytes = sum(
+            len(image.get("data_url") or "")
+            for image in images
+            if not _file_block_valid(image)
+        )
+        if (
+            count + len(images) > MAX_CONTEXT_IMAGES
+            or total_bytes + inline_bytes > MAX_CONTEXT_IMAGE_BYTES
+        ):
+            continue
+        keep.add(row.seq)
+        count += len(images)
+        total_bytes += inline_bytes
+    return keep
 
 
 def _canonical_rows(rows: list[store.StoredMessage]) -> list[store.StoredMessage]:
@@ -255,7 +302,9 @@ class AgentEngine:
 
     def _build_messages(self, session_id: int) -> list[dict[str, Any]]:
         messages: list[dict[str, Any]] = [{"role": "system", "content": SYSTEM_PROMPT}]
-        for row in _canonical_rows(store.list_messages(session_id)):
+        rows = _canonical_rows(store.list_messages(session_id))
+        keep_images = _image_messages_to_keep(rows)
+        for row in rows:
             if row.role == "assistant":
                 item: dict[str, Any] = {
                     "role": "assistant",
@@ -280,16 +329,33 @@ class AgentEngine:
             elif row.role == "user":
                 images = (row.meta or {}).get("images") or []
                 if images:
+                    if row.seq not in keep_images:
+                        messages.append(
+                            {
+                                "role": "user",
+                                "content": (
+                                    f"{row.content}\n\n"
+                                    "[较早的图片已从上下文移除以控制请求体]"
+                                ).strip(),
+                            }
+                        )
+                        continue
                     parts: list[dict[str, Any]] = [
                         {"type": "text", "text": row.content or "请查看以下图片。"}
                     ]
                     for image in images:
-                        parts.append(
-                            {
-                                "type": "image_url",
-                                "image_url": {"url": image["data_url"], "detail": "high"},
-                            }
-                        )
+                        if _file_block_valid(image):
+                            parts.append({"type": "file", "file_id": image["file_id"]})
+                        elif image.get("data_url"):
+                            parts.append(
+                                {
+                                    "type": "image_url",
+                                    "image_url": {
+                                        "url": image["data_url"],
+                                        "detail": image.get("detail") or "high",
+                                    },
+                                }
+                            )
                     messages.append({"role": "user", "content": parts})
                 else:
                     messages.append({"role": "user", "content": row.content})

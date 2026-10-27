@@ -134,6 +134,8 @@ ComfyUI/user/filmline/
 | `FILMLINE_AGENT_MAX_TOKENS` | 单次输出预算（含思考），默认 `8192` |
 | `FILMLINE_AGENT_TIMEOUT` | 流式读取空闲超时秒数，默认 `300` |
 | `FILMLINE_AGENT_TICK_SECONDS` | 未完成任务的定时自检间隔，默认 `300` |
+| `FILMLINE_AGENT_IMAGE_MODE` | `auto`（优先 Files API）/ `inline` / `files`，默认 `auto` |
+| `FILMLINE_AGENT_FILE_EXPIRY_DAYS` | Files API 文件有效期，1–30 天，默认 `30` |
 
 ## 视频生成参数（对齐官方）
 
@@ -296,6 +298,11 @@ DEEPSEEK_MAX_TOKENS=4096
   `已用/窗口（百分比）`。
 - **附件**：左侧资产拖入输入框生成附件 chip，发送时只传资产 id；模型按需调用
   `read_image` / `read_video` / `read_text_asset` 读取，避免把大文件塞进每条消息。
+- **图像传输对齐官方**：默认 `auto`，优先走 DeepSeek Files API（`file_id` 复用、
+  内容哈希缓存、30 天有效期），失败自动回退 base64；单边超过 4096px 的图片会重编码，
+  单图 1600px 上限。请求上下文最多保留最近 24 张图 / 24 MiB 内联数据，更早的图片
+  降级为文字提示，避免长会话撞上官方 48 MiB 请求体限制。`read_image` 可选
+  `detail=low/high/original/auto`，`read_video` 的网格图不允许 `low`。
 - **问答**：模型调用 `ask_question` 时，在**输入框上方**出现内联面板（单选/多选/自由输入），
   不是模态弹窗，左侧素材仍可查看和拖拽；面板可收起成一条“待回答”提示，看完素材再展开回答。
   问题以 `question` 事件入库，刷新浏览器会原样恢复；回答作为工具结果继续同一条推理链，

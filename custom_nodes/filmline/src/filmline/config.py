@@ -111,10 +111,18 @@ class AgentSettings:
     max_tokens: int
     timeout: float
     tick_seconds: int
+    # inline：只走 base64；files：优先 Files API；auto：优先 Files，失败回退 inline
+    image_mode: str = "auto"
+    file_expiry_seconds: int = 2_592_000
 
     @property
     def configured(self) -> bool:
         return bool(self.api_key)
+
+
+def _env_image_mode() -> str:
+    raw = _env("FILMLINE_AGENT_IMAGE_MODE").lower()
+    return raw if raw in ("auto", "inline", "files") else "auto"
 
 
 def agent_settings() -> AgentSettings:
@@ -139,6 +147,11 @@ def agent_settings() -> AgentSettings:
         ),
         timeout=_env_int(("FILMLINE_AGENT_TIMEOUT", "DEEPSEEK_TIMEOUT"), 300, 30, 3600),
         tick_seconds=_env_int(("FILMLINE_AGENT_TICK_SECONDS",), 300, 60, 3600),
+        image_mode=_env_image_mode(),
+        file_expiry_seconds=_env_int(
+            ("FILMLINE_AGENT_FILE_EXPIRY_DAYS",), 30, 1, 30
+        )
+        * 86400,
     )
 
 

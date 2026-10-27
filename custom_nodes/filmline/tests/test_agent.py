@@ -209,6 +209,41 @@ class AgentStoreTest(DbTestCase):
         tool = next(item for item in messages if item["role"] == "tool")
         self.assertEqual(tool["tool_call_id"], "call_1")
 
+    def test_build_messages_uses_file_block_and_trims_old_images(self) -> None:
+        for index in range(30):
+            image: dict = {
+                "label": f"img{index}",
+                "data_url": "data:image/jpeg;base64,AA",
+            }
+            if index == 29:
+                image.update(
+                    file_id="file-api-test",
+                    file_expires_at="2099-01-01T00:00:00Z",
+                )
+            store.append_message(
+                self.session.id,
+                turn=1,
+                role="user",
+                content=f"图片 {index}",
+                meta={"synthetic": "tool_images", "images": [image]},
+            )
+
+        engine = AgentEngine(settings=_settings())
+        messages = engine._build_messages(self.session.id)
+        user_messages = [item for item in messages if item["role"] == "user"]
+        self.assertEqual(len(user_messages), 30)
+        self.assertIn("移除以控制请求体", user_messages[0]["content"])
+        self.assertEqual(len(user_messages[-1]["content"]), 2)
+        self.assertEqual(user_messages[-1]["content"][1], {"type": "file", "file_id": "file-api-test"})
+        image_parts = sum(
+            1
+            for item in user_messages
+            if isinstance(item["content"], list)
+            for part in item["content"]
+            if part.get("type") in ("image_url", "file")
+        )
+        self.assertEqual(image_parts, 24)
+
     def test_build_messages_moves_tool_results_before_image_observation(self) -> None:
         """历史里被图片 user 消息插开的 tool 结果，重建时必须前移成连续块。"""
         store.append_message(

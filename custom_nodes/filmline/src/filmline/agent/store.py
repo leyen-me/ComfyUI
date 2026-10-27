@@ -18,6 +18,7 @@ from ..clock import to_iso, utcnow
 from ..db import session_scope
 from ..db.models import (
     AgentEvent,
+    AgentFile,
     AgentMessage,
     AgentSession,
     AgentTaskWatch,
@@ -413,6 +414,52 @@ def sessions_with_pending_watch() -> list[int]:
             .distinct()
         ).all()
         return [int(row[0]) for row in rows]
+
+
+# ---------------------------------------------------------------------------
+# Files API 缓存
+# ---------------------------------------------------------------------------
+
+
+def get_agent_file(content_hash: str) -> tuple[str, datetime | None] | None:
+    with session_scope() as session:
+        row = session.execute(
+            select(AgentFile).where(AgentFile.content_hash == content_hash)
+        ).scalar_one_or_none()
+        if row is None:
+            return None
+        return row.file_id, row.expires_at
+
+
+def save_agent_file(
+    content_hash: str,
+    *,
+    file_id: str,
+    filename: str,
+    size_bytes: int,
+    expires_at: datetime | None,
+) -> None:
+    with _lock, session_scope() as session:
+        row = session.execute(
+            select(AgentFile).where(AgentFile.content_hash == content_hash)
+        ).scalar_one_or_none()
+        if row is None:
+            row = AgentFile(content_hash=content_hash)
+            session.add(row)
+        row.file_id = file_id
+        row.filename = filename[:512]
+        row.size_bytes = size_bytes
+        row.expires_at = expires_at
+        row.last_used_at = utcnow()
+
+
+def touch_agent_file(content_hash: str) -> None:
+    with _lock, session_scope() as session:
+        row = session.execute(
+            select(AgentFile).where(AgentFile.content_hash == content_hash)
+        ).scalar_one_or_none()
+        if row is not None:
+            row.last_used_at = utcnow()
 
 
 # ---------------------------------------------------------------------------

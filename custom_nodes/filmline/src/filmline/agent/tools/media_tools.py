@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 
 from ... import media, storage
+from ...agent.files import ensure_file
 from ...domain.assets import AssetService
 from ...domain.episodes import EpisodeService
 from ...domain.schemas import AssetKind, AssetSource
@@ -47,10 +48,24 @@ async def _read_image(ctx: ToolContext, args: dict) -> ToolOutcome:
         raise NotFound("图片文件已丢失")
     data_url = await asyncio.to_thread(media.image_data_url, target)
     await ctx.notify("读取图片")
+    uploaded = await ensure_file(data_url, asset.name)
     return ToolOutcome(
         summary=f"已读取图片「{asset.name}」",
-        data={"asset_id": asset.id, "name": asset.name},
-        images=[{"label": asset.name, "data_url": data_url}],
+        data={
+            "asset_id": asset.id,
+            "name": asset.name,
+            "transport": "files" if uploaded else "inline",
+            "detail": args.get("detail", "high"),
+        },
+        images=[
+            {
+                "label": asset.name,
+                "data_url": data_url,
+                "detail": args.get("detail", "high"),
+                "file_id": uploaded.file_id if uploaded else None,
+                "file_expires_at": uploaded.expires_at if uploaded else None,
+            }
+        ],
         meta={"image_count": 1},
     )
 
@@ -74,6 +89,7 @@ async def _read_video(ctx: ToolContext, args: dict) -> ToolOutcome:
         stamps = [start + span * index / (frames - 1) for index in range(frames)]
     await ctx.notify(f"抽取 {frames} 帧并拼图", 20)
     data_url = await asyncio.to_thread(media.video_contact_sheet_data_url, target, stamps)
+    uploaded = await ensure_file(data_url, f"{asset.name} 帧拼图.jpg")
     return ToolOutcome(
         summary=f"「{asset.name}」{start:.2f}–{end:.2f}s，已按 {frames} 帧拼成一张网格图",
         data={
@@ -87,7 +103,15 @@ async def _read_video(ctx: ToolContext, args: dict) -> ToolOutcome:
             "timestamps": [round(value, 3) for value in stamps],
             "layout": "从左到右、从上到下按时间递增",
         },
-        images=[{"label": f"{asset.name} 帧拼图", "data_url": data_url}],
+        images=[
+            {
+                "label": f"{asset.name} 帧拼图",
+                "data_url": data_url,
+                "detail": args.get("detail", "high"),
+                "file_id": uploaded.file_id if uploaded else None,
+                "file_expires_at": uploaded.expires_at if uploaded else None,
+            }
+        ],
         meta={"image_count": 1},
     )
 
@@ -177,7 +201,15 @@ def register_tools() -> None:
             ),
             parameters={
                 "type": "object",
-                "properties": {"asset_id": {"type": "integer", "minimum": 1}},
+                "properties": {
+                    "asset_id": {"type": "integer", "minimum": 1},
+                    "detail": {
+                        "type": "string",
+                        "enum": ["low", "high", "original", "auto"],
+                        "default": "high",
+                        "description": "low 缩到 512×512 更省 token；看细节/口型用 high",
+                    },
+                },
                 "required": ["asset_id"],
                 "additionalProperties": False,
             },
@@ -199,6 +231,12 @@ def register_tools() -> None:
                     "start": {"type": "number", "minimum": 0},
                     "end": {"type": "number", "minimum": 0},
                     "frames": {"type": "integer", "minimum": 1, "maximum": MAX_FRAMES, "default": 6},
+                    "detail": {
+                        "type": "string",
+                        "enum": ["high", "original", "auto"],
+                        "default": "high",
+                        "description": "网格图不要用 low，否则每格会小到看不清",
+                    },
                 },
                 "required": ["asset_id"],
                 "additionalProperties": False,

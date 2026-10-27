@@ -213,6 +213,21 @@ class AgentToolLedger(Base):
     )
 
 
+class AgentFile(Base):
+    """DeepSeek Files API 缓存：同一份内容只上传一次，多会话复用 file_id。"""
+
+    __tablename__ = "agent_files"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    content_hash: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
+    file_id: Mapped[str] = mapped_column(String(80), nullable=False, index=True)
+    filename: Mapped[str] = mapped_column(String(512), default="", server_default="")
+    size_bytes: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    last_used_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+
 class AgentTaskWatch(Base):
     """Agent 关注的生成任务：完成通知与定时自检都从这里取。"""
 

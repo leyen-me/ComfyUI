@@ -1,6 +1,6 @@
 # Agent 设计说明（ADR）
 
-状态：已实现（schema v9）。
+状态：已实现（schema v10）。
 
 ## 背景
 
@@ -179,6 +179,25 @@ DeepSeek 要求 assistant 的 `tool_calls` 后紧跟对应的全部 tool 消息�
 每轮 `run.finished` 后各刷新一次，金额用 `requestAnimationFrame` 做滚动动画，
 并尊重 `prefers-reduced-motion`。余额是账户级数据，所有会话共享；新建对话入口
 保留在会话下拉菜单里。
+
+## 图像输入
+
+对齐官方 Vision / Files API：
+
+- **尺寸**：单边超过 4096px（官方在 ≥15 张时的上限）一律用 Pillow 重编码到长边 1600；
+  支持 JPEG/PNG/GIF/WebP，BMP/AVIF 转 JPEG。
+- **传输**：`FILMLINE_AGENT_IMAGE_MODE=auto` 时优先上传 Files API，按文件内容 sha256
+  缓存 `file_id`，有效期 `FILMLINE_AGENT_FILE_EXPIRY_DAYS`（1–30 天）；上传失败且
+  内容 ≤32 MiB 时回退 base64，超过 32 MiB 则报错。
+- **消息结构**：Files 模式使用 `{"type":"file","file_id":...}`；inline 模式使用
+  `{"type":"image_url","image_url":{"url":"data:...","detail":...}}`。图片始终只出现在
+  user 消息里，符合官方限制。
+- **上下文预算**：每次请求最多保留最近 24 张图片；inline 数据总量 ≤24 MiB。更早的图片
+  消息降级为“已从上下文移除”的文字提示，既避免 48 MiB 请求体上限，也控制 token。
+- **detail**：`read_image` 支持 `low/high/original/auto`；`read_video` 网格图只允许
+  `high/original/auto`，避免 `low` 把每格缩到看不清。
+- **缓存表**：`agent_files(content_hash, file_id, expires_at)`；同一张图在多个会话/多轮
+  中复用同一个 `file_id`。过期后自动重新上传。
 
 ## 系统提示可见
 

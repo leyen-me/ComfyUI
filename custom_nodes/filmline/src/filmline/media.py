@@ -21,6 +21,8 @@ SUPPORTED_IMAGE_MIME = {
 }
 MAX_INLINE_IMAGE_BYTES = 6 * 1024 * 1024
 MAX_INLINE_IMAGE_PIXELS = 1600
+# 官方单边上限 8192；单请求 >=15 张时降为 4096，这里按更严格的一档处理
+MAX_INLINE_IMAGE_EDGE = 4096
 
 
 @dataclass(frozen=True)
@@ -52,18 +54,26 @@ def _image_payload(raw: bytes, mime: str) -> str:
 def image_data_url(path: Path) -> str:
     """把资产图片转成 DeepSeek 可接受的 data URL。
 
-    原生支持的格式直接发送；BMP/AVIF 或过大的图片用 Pillow 转成压缩 JPEG。
+    原生支持、体积和像素都在官方限制内时直接发送；否则用 Pillow 转成
+    长边 1600 的 JPEG。无论走哪条路径，都不会把单边超过 4096px 的图片
+    原样发出去（官方在 >=15 张时就是 4096 上限）。
     """
     suffix = path.suffix.lower()
     raw = path.read_bytes()
     mime = SUPPORTED_IMAGE_MIME.get(suffix)
-    if mime and len(raw) <= MAX_INLINE_IMAGE_BYTES:
-        return _image_payload(raw, mime)
 
     try:
         from PIL import Image, ImageOps
 
         with Image.open(path) as source:
+            width, height = source.size
+            if (
+                mime
+                and len(raw) <= MAX_INLINE_IMAGE_BYTES
+                and max(width, height) <= MAX_INLINE_IMAGE_EDGE
+            ):
+                return _image_payload(raw, mime)
+
             image = ImageOps.exif_transpose(source).convert("RGB")
             image.thumbnail((MAX_INLINE_IMAGE_PIXELS, MAX_INLINE_IMAGE_PIXELS))
             buffer = io.BytesIO()

@@ -318,6 +318,30 @@ def _migration_009_agent_thinking(conn: Connection) -> None:
     )
 
 
+def _migration_010_agent_files(conn: Connection) -> None:
+    """Files API 缓存：内容哈希 -> file_id，带有效期。"""
+    conn.exec_driver_sql(
+        """
+        CREATE TABLE agent_files (
+            id INTEGER NOT NULL,
+            content_hash VARCHAR(64) NOT NULL,
+            file_id VARCHAR(80) NOT NULL,
+            filename VARCHAR(512) DEFAULT '' NOT NULL,
+            size_bytes INTEGER DEFAULT 0 NOT NULL,
+            expires_at DATETIME,
+            created_at DATETIME NOT NULL,
+            last_used_at DATETIME,
+            PRIMARY KEY (id)
+        )
+        """
+    )
+    conn.exec_driver_sql(
+        "CREATE UNIQUE INDEX ux_agent_files_hash ON agent_files (content_hash)"
+    )
+    conn.exec_driver_sql("CREATE INDEX ix_agent_files_file_id ON agent_files (file_id)")
+    conn.exec_driver_sql("CREATE INDEX ix_agent_files_expires_at ON agent_files (expires_at)")
+
+
 MIGRATIONS: list[tuple[int, object]] = [
     (1, _migration_001_initial),
     (2, _migration_002_drop_project_status),
@@ -328,6 +352,7 @@ MIGRATIONS: list[tuple[int, object]] = [
     (7, _migration_007_generation_tasks),
     (8, _migration_008_agent),
     (9, _migration_009_agent_thinking),
+    (10, _migration_010_agent_files),
 ]
 
 
