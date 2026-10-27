@@ -225,8 +225,13 @@ class SystemPromptTest(unittest.TestCase):
     def test_reframed_location_is_partially_preserved(self) -> None:
         self.assertIn("a location reference that gets reframed", llm.SYSTEM_PROMPT)
 
+
+    def test_no_subtitles_is_last_line(self) -> None:
+        self.assertIn("as the LAST line of the whole prompt", llm.SYSTEM_PROMPT)
+        self.assertIn("Never place it before overall_soundscape", llm.SYSTEM_PROMPT)
+
     def test_no_subtitles_is_conditional(self) -> None:
-        self.assertIn("only when the metadata field `no_subtitles` is true", llm.SYSTEM_PROMPT)
+        self.assertIn("When `no_subtitles` is false, omit the line entirely", llm.SYSTEM_PROMPT)
 
 
 if __name__ == "__main__":

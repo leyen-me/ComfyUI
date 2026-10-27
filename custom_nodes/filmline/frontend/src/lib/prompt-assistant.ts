@@ -494,6 +494,18 @@ export function lintPrompt({
       message: '有对白但没有明确禁止字幕；如果不要字幕，补 No subtitles, no captions, no on-screen text.',
     })
   }
+  // 三段式里禁止字幕句必须是最后一行（在 non_diegetic_music 之后）
+  if (videoMode !== 'reference' && NO_SUBTITLE.test(text)) {
+    const subtitleAt = text.search(NO_SUBTITLE)
+    const musicAt = text.search(/non_diegetic_music\s*:/i)
+    if (musicAt >= 0 && subtitleAt < musicAt) {
+      warnings.push({
+        id: 'subtitle-position',
+        level: 'warn',
+        message: '禁止字幕那句要放在最后一行（non_diegetic_music 之后），不要插在 overall_soundscape 前面。',
+      })
+    }
+  }
   if (videoMode === 'reference' && /(^|\n)[ \t]*no subtitles[^\n]*$/im.test(text)) {
     warnings.push({
       id: 'ref-subtitle',

@@ -284,6 +284,27 @@ assert.ok(
   }).some((item) => item.id === 'alignment-duration'),
 )
 
+// 禁止字幕句插在 non_diegetic_music 之前
+assert.ok(
+  lintPrompt({
+    mode: 'video',
+    videoMode: 'keyframes',
+    prompt:
+      'integrated_multimodal_description: [Shot 1] A storefront in the rain.\nNo subtitles, no captions, no on-screen text.\noverall_soundscape: Rain.\nnon_diegetic_music: N/A',
+    counts: noCounts,
+  }).some((item) => item.id === 'subtitle-position'),
+)
+// 放在最后一行不报
+assert.ok(
+  !lintPrompt({
+    mode: 'video',
+    videoMode: 'keyframes',
+    prompt:
+      'integrated_multimodal_description: [Shot 1] A storefront in the rain.\noverall_soundscape: Rain.\nnon_diegetic_music: N/A\nNo subtitles, no captions, no on-screen text.',
+    counts: noCounts,
+  }).some((item) => item.id === 'subtitle-position'),
+)
+
 // 台词按镜头时长估算
 assert.ok(
   lintPrompt({

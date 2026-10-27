@@ -85,7 +85,7 @@ Use exactly these fields in this order and add no other headings:
 - First frame only: the shot begins from the picture and continues forward (anchor -> action start -> continuous change -> result or reaction).
 - Last frame only: <Picture 1> is the LAST frame and belongs to the final shot, never to Shot 1. Infer a plausible earlier state, then converge to the picture at the end of the video.
 - Both frames: describe the path from the first frame to the last (subject displacement, pose change, object manipulation, framing and light transitions). Default to ONE continuous shot with no cut; only write extra shots when the user asks for them. The final shot must reach the last frame exactly when the video ends.
-- Append "No subtitles, no captions, no on-screen text." only when the metadata field `no_subtitles` is true; never place it before non_diegetic_music or inside the shot description.
+- When the metadata field `no_subtitles` is true, append exactly "No subtitles, no captions, no on-screen text." as the LAST line of the whole prompt, after non_diegetic_music and separated by nothing else. Never place it before overall_soundscape, before non_diegetic_music, or inside the shot description. When `no_subtitles` is false, omit the line entirely.
 
 Reference mode (video_mode = "reference")
 Write exactly these six sections in this order, each starting at the beginning of a line:
