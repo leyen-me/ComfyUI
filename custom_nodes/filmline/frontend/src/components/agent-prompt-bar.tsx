@@ -7,7 +7,7 @@ import { cn } from '@/lib/utils'
 import { Button } from './ui/button'
 
 const THINKING_LABEL: Record<string, string> = {
-  auto: '默认（由 provider 决定）',
+  auto: '默认',
   enabled: '开启',
   disabled: '关闭',
 }

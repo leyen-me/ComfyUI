@@ -727,7 +727,7 @@ export function AgentPanel({
           />
           <div className="flex items-center gap-2 px-1 pt-1">
             <span className="truncate text-[10.5px] text-muted-foreground">
-              {model.configured ? 'Enter 发送 · Shift+Enter 换行' : '未配置模型 API Key'}
+              {model.configured ? '' : '未配置模型 API Key'}
             </span>
             <div className="ml-auto flex items-center gap-1.5">
               <AgentEffortSelect
