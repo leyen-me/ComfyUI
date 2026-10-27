@@ -41,7 +41,7 @@ export function MoreMenu({ actions, label = '更多操作' }: MoreMenuProps) {
     if (!button || !panel) return
 
     const rect = button.getBoundingClientRect()
-    const height = panel.offsetHeight
+    const height = Math.min(panel.offsetHeight, window.innerHeight - EDGE * 2)
 
     let top = rect.bottom + GAP
     if (top + height > window.innerHeight - EDGE) {
@@ -108,6 +108,8 @@ export function MoreMenu({ actions, label = '更多操作' }: MoreMenuProps) {
                 top: position?.top ?? -9999,
                 left: position?.left ?? -9999,
                 width: PANEL_WIDTH,
+                maxHeight: window.innerHeight - EDGE * 2,
+                overflowY: 'auto',
                 visibility: position ? 'visible' : 'hidden',
               }}
               className="animate-rise z-50 rounded-xl border border-border bg-elevated p-1 shadow-[var(--shadow-pop)]"

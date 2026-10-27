@@ -94,7 +94,7 @@ export function AgentQuestionPanel({
 
   if (collapsed) {
     return (
-      <div data-agent-question className="shrink-0 px-6 pb-2">
+      <div data-agent-question className="shrink-0 px-3 pb-2 sm:px-6">
         <button
           type="button"
           onClick={() => setCollapsed(false)}
@@ -117,7 +117,7 @@ export function AgentQuestionPanel({
   }
 
   return (
-    <div data-agent-question className="shrink-0 px-6 pb-2">
+    <div data-agent-question className="shrink-0 px-3 pb-2 sm:px-6">
       <div className="mx-auto w-full max-w-3xl overflow-hidden rounded-[16px] border border-amber-500/35 bg-card shadow-[var(--shadow-soft)]">
         <div className="flex items-center gap-2 border-b border-amber-500/20 bg-amber-500/5 px-3.5 py-2">
           <CircleHelp className="size-3.5 shrink-0 text-amber-600 dark:text-amber-400" />

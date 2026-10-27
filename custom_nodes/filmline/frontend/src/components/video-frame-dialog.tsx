@@ -141,7 +141,8 @@ export function VideoFrameDialog({
           ? `${video.name} · 拖动时间轴或逐帧选择，确认后会把这一帧保存为图片资产`
           : '选择一帧作为首帧或尾帧'
       }
-      className="w-[min(820px,96vw)]"
+      className="sm:w-[min(820px,96vw)]"
+      mobileFullHeight
       footer={
         <>
           <span className="mr-auto self-center font-mono text-[11px] text-muted-foreground">
@@ -170,7 +171,7 @@ export function VideoFrameDialog({
           preload="auto"
           playsInline
           controls={false}
-          className="max-h-[48vh] w-full rounded-lg bg-black object-contain"
+          className="max-h-[calc(100dvh-18rem)] w-full rounded-lg bg-black object-contain sm:max-h-[48vh]"
           onLoadedMetadata={(event) => {
             const value = event.currentTarget.duration
             setDuration(Number.isFinite(value) ? value : 0)

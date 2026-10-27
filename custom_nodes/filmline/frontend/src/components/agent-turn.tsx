@@ -108,7 +108,7 @@ export function AgentToolRow({
           type="button"
           onClick={onPause}
           title="暂停这个工具"
-          className="cursor-pointer rounded p-0.5 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 hover:bg-muted hover:text-foreground focus-visible:opacity-100"
+          className="cursor-pointer rounded p-0.5 text-muted-foreground opacity-100 transition-opacity hover:bg-muted hover:text-foreground focus-visible:opacity-100 lg:opacity-0 lg:group-hover:opacity-100"
         >
           <Pause className="size-3" />
         </button>
@@ -281,7 +281,7 @@ export function AgentTurn({
           />
 
           {final.done && turn.errors.length === 0 ? (
-            <div className="mt-1 flex items-center gap-0.5 opacity-0 transition-opacity group-hover/final:opacity-100 group-focus-within/final:opacity-100">
+            <div className="mt-1 flex items-center gap-0.5 opacity-100 transition-opacity group-focus-within/final:opacity-100 lg:opacity-0 lg:group-hover/final:opacity-100">
               <Button
                 variant="ghost"
                 size="icon"

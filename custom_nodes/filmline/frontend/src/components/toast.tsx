@@ -15,7 +15,7 @@ export function Toast({ message }: { message: ToastMessage | null }) {
       role="status"
       aria-live="polite"
       className={cn(
-        'pointer-events-none fixed bottom-6 left-1/2 z-50 flex -translate-x-1/2 items-center gap-2 rounded-full border border-border bg-elevated py-2 pr-4 pl-3 text-[13px] text-foreground shadow-[var(--shadow-pop)] transition-all duration-200',
+        'pointer-events-none fixed bottom-[calc(4.75rem+env(safe-area-inset-bottom))] left-1/2 z-50 flex max-w-[calc(100vw-2rem)] -translate-x-1/2 items-center gap-2 rounded-full border border-border bg-elevated py-2 pr-4 pl-3 text-center text-[13px] text-foreground shadow-[var(--shadow-pop)] transition-all duration-200 lg:bottom-6',
         message ? 'translate-y-0 opacity-100' : 'translate-y-3 opacity-0',
       )}
     >

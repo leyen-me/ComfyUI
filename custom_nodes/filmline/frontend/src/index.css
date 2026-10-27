@@ -74,13 +74,34 @@
     height: 100%;
   }
 
+  /* 移动端地址栏会改变可视高度，优先用动态视口避免底部导航被遮住 */
+  @supports (height: 100dvh) {
+    html,
+    body,
+    #root {
+      height: 100dvh;
+    }
+  }
+
   body {
     background-color: var(--background);
     color: var(--foreground);
     font-family: var(--font-sans);
     -webkit-font-smoothing: antialiased;
+    -webkit-tap-highlight-color: transparent;
+    -webkit-text-size-adjust: 100%;
     font-feature-settings: 'cv11', 'ss01';
     letter-spacing: -0.003em;
+    overscroll-behavior-y: none;
+  }
+
+  /* 触屏没有 hover，交互元素统一用触控友好的最小点击面积 */
+  @media (pointer: coarse) {
+    button,
+    a,
+    [role='button'] {
+      touch-action: manipulation;
+    }
   }
 
   ::selection {
@@ -183,4 +204,16 @@ dialog[open] {
   height: 0;
   pointer-events: none;
   color: color-mix(in srgb, var(--muted-foreground) 70%, transparent);
+}
+
+/*
+ * iOS 会在表单控件字号小于 16px 时自动放大页面，打断输入。
+ * 手机宽度下统一到 16px；桌面端保持原有紧凑排版。
+ */
+@media (max-width: 767px) {
+  input:not([type='checkbox']):not([type='radio']):not([type='range']),
+  textarea,
+  select {
+    font-size: 16px;
+  }
 }

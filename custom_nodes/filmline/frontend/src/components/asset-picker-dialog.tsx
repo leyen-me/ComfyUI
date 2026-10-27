@@ -131,10 +131,12 @@ export function AssetPickerDialog({
           ? `可多选${kindLabel(kind)}；勾选顺序就是参考素材的编号顺序。`
           : `只显示${kindLabel(kind)}资产；生成结果和上传的文件都在这里。`
       }
-      className="w-[min(680px,94vw)]"
+      className="sm:w-[min(680px,94vw)]"
+      mobileFullHeight
       footer={footer}
     >
-      <div className="relative mb-3">
+      <div className="flex h-full min-h-0 flex-col">
+      <div className="relative mb-3 shrink-0">
         <Search className="pointer-events-none absolute top-1/2 left-3 size-3.5 -translate-y-1/2 text-muted-foreground" />
         <Input
           type="search"
@@ -146,7 +148,7 @@ export function AssetPickerDialog({
         />
       </div>
 
-      <div className="max-h-[56vh] min-h-40 overflow-y-auto pb-3">
+      <div className="max-h-[56vh] min-h-40 overflow-y-auto pb-3 max-sm:max-h-none max-sm:min-h-0 max-sm:flex-1">
         {loading ? (
           <div className="flex items-center justify-center gap-2 py-16 text-xs text-muted-foreground">
             <Loader2 className="size-3.5 animate-spin" />
@@ -231,6 +233,7 @@ export function AssetPickerDialog({
             })}
           </div>
         ) : null}
+      </div>
       </div>
     </Dialog>
   )

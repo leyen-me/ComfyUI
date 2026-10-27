@@ -45,7 +45,7 @@ function HomePage() {
         <BrandMark />
       </AppHeader>
       <main className="flex-1 overflow-y-auto">
-        <div className="mx-auto w-full max-w-6xl px-8 pt-10 pb-16">
+        <div className="mx-auto w-full max-w-6xl px-4 pt-6 pb-10 sm:px-8 sm:pt-10 sm:pb-16">
           <ProjectWorkspace />
         </div>
       </main>

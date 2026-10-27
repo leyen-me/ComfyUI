@@ -209,7 +209,8 @@ export function AssetList({
             <div className="absolute top-1.5 left-1.5">
               <SourceBadge source={asset.source} kind={asset.kind} />
             </div>
-            <div className="absolute top-1.5 right-1.5 rounded-md bg-background/70 opacity-0 backdrop-blur-sm transition-opacity group-hover:opacity-100 focus-within:opacity-100">
+            {/* 触屏没有 hover，操作菜单在手机上常显；桌面仍保持悬停出现 */}
+            <div className="absolute top-1.5 right-1.5 rounded-md bg-background/70 opacity-100 backdrop-blur-sm transition-opacity focus-within:opacity-100 group-hover:opacity-100 md:opacity-0 md:group-hover:opacity-100">
               <MoreMenu actions={buildActions(asset, handlers)} label={`${asset.name} 的操作`} />
             </div>
           </div>

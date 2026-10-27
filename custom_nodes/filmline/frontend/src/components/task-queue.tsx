@@ -129,7 +129,7 @@ export function TaskQueue() {
         aria-label="任务队列"
         aria-expanded={open}
         className={cn(
-          'fixed top-3 right-4 z-40 inline-flex h-8 cursor-pointer items-center gap-1.5 rounded-full border border-border bg-elevated px-3 text-xs shadow-[0_1px_2px_rgb(0_0_0/0.1)] transition-colors hover:border-foreground/20 hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring/60 focus-visible:outline-none',
+          'fixed top-[calc(0.75rem+env(safe-area-inset-top))] right-4 z-40 inline-flex h-8 cursor-pointer items-center gap-1.5 rounded-full border border-border bg-elevated px-3 text-xs shadow-[0_1px_2px_rgb(0_0_0/0.1)] transition-colors hover:border-foreground/20 hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring/60 focus-visible:outline-none',
           active > 0 && 'border-primary/40',
         )}
         onClick={() => setOpen((value) => !value)}

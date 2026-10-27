@@ -26,7 +26,8 @@ export function AssetPreview({ asset, onClose, onCopyPrompt, onReusePrompt }: As
         if (!open) onClose()
       }}
       title={asset?.name ?? '预览'}
-      className="w-[min(1100px,94vw)]"
+      className="sm:w-[min(1100px,94vw)]"
+      mobileFullHeight
       footer={
         <>
           {prompt ? (
@@ -46,21 +47,24 @@ export function AssetPreview({ asset, onClose, onCopyPrompt, onReusePrompt }: As
       }
     >
       {asset ? (
-        <div className="max-h-[72vh] space-y-3 overflow-y-auto pb-3">
-          {asset.kind === 'image' ? (
-            <img
-              src={asset.content_url ?? ''}
-              alt={asset.name}
-              className="mx-auto max-h-[58vh] w-auto max-w-full rounded-lg bg-black/30 object-contain"
-            />
-          ) : (
-            <video
-              src={asset.content_url ?? ''}
-              controls
-              autoPlay
-              className="mx-auto max-h-[58vh] w-auto max-w-full rounded-lg bg-black"
-            />
-          )}
+        <div className="space-y-3 pb-3 sm:max-h-[72vh] sm:overflow-y-auto">
+          <div className="-mx-2 flex justify-center sm:mx-0">
+            {asset.kind === 'image' ? (
+              <img
+                src={asset.content_url ?? ''}
+                alt={asset.name}
+                className="max-h-[calc(100dvh-13rem)] w-auto max-w-full rounded-lg bg-black/30 object-contain sm:max-h-[58vh]"
+              />
+            ) : (
+              <video
+                src={asset.content_url ?? ''}
+                controls
+                autoPlay
+                playsInline
+                className="max-h-[calc(100dvh-13rem)] w-auto max-w-full rounded-lg bg-black sm:max-h-[58vh]"
+              />
+            )}
+          </div>
 
           {dimensions || meta.seed !== undefined ? (
             <div className="flex flex-wrap gap-x-4 gap-y-1 font-mono text-[11px] text-muted-foreground">

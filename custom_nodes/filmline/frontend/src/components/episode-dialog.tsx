@@ -66,6 +66,7 @@ export function EpisodeDialog({
       open={open}
       onOpenChange={onOpenChange}
       title={isEdit ? '编辑分集' : '新建分集'}
+      mobileFullHeight
       footer={
         <>
           <Button onClick={() => onOpenChange(false)} disabled={submitting}>
@@ -77,8 +78,13 @@ export function EpisodeDialog({
         </>
       }
     >
-      <form id="episode-form" className="space-y-4 pb-3" onSubmit={handleSubmit} noValidate>
-        <div>
+      <form
+        id="episode-form"
+        className="flex flex-col gap-4 pb-3 max-sm:h-full max-sm:min-h-0"
+        onSubmit={handleSubmit}
+        noValidate
+      >
+        <div className="shrink-0">
           <Label htmlFor="episode-title">标题</Label>
           <Input
             id="episode-title"
@@ -89,17 +95,17 @@ export function EpisodeDialog({
             onChange={(event) => setTitle(event.target.value)}
           />
         </div>
-        <div>
+        <div className="flex min-h-0 flex-col max-sm:flex-1">
           <Label htmlFor="episode-synopsis">简介</Label>
           <Textarea
             id="episode-synopsis"
             value={synopsis}
             maxLength={5000}
-            className="min-h-28"
+            className="min-h-28 max-sm:min-h-0 max-sm:flex-1 max-sm:resize-none"
             onChange={(event) => setSynopsis(event.target.value)}
           />
         </div>
-        <p className="min-h-5 text-xs text-destructive" role="alert" aria-live="polite">
+        <p className="min-h-5 shrink-0 text-xs text-destructive" role="alert" aria-live="polite">
           {error}
         </p>
       </form>

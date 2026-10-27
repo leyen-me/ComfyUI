@@ -69,6 +69,7 @@ export function ProjectDialog({ open, project, onOpenChange, onSaved }: ProjectD
       open={open}
       onOpenChange={onOpenChange}
       title={isEdit ? '编辑项目' : '新建项目'}
+      mobileFullHeight
       footer={
         <>
           <Button onClick={() => onOpenChange(false)} disabled={submitting}>
@@ -80,8 +81,13 @@ export function ProjectDialog({ open, project, onOpenChange, onSaved }: ProjectD
         </>
       }
     >
-      <form id="project-form" className="space-y-4 pb-3" onSubmit={handleSubmit} noValidate>
-        <div>
+      <form
+        id="project-form"
+        className="flex flex-col gap-4 pb-3 max-sm:h-full max-sm:min-h-0"
+        onSubmit={handleSubmit}
+        noValidate
+      >
+        <div className="shrink-0">
           <Label htmlFor="project-name">项目名称</Label>
           <Input
             id="project-name"
@@ -93,17 +99,18 @@ export function ProjectDialog({ open, project, onOpenChange, onSaved }: ProjectD
           />
         </div>
 
-        <div>
+        <div className="flex min-h-0 flex-col max-sm:flex-1">
           <Label htmlFor="project-description">简介</Label>
           <Textarea
             id="project-description"
             value={form.description}
             maxLength={2000}
+            className="max-sm:min-h-0 max-sm:flex-1 max-sm:resize-none"
             onChange={(event) => setForm((prev) => ({ ...prev, description: event.target.value }))}
           />
         </div>
 
-        <p className="min-h-5 text-xs text-destructive" role="alert" aria-live="polite">
+        <p className="min-h-5 shrink-0 text-xs text-destructive" role="alert" aria-live="polite">
           {error}
         </p>
       </form>

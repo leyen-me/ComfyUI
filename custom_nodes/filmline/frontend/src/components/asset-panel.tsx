@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Loader2, Plus, Upload } from 'lucide-react'
+import { ChevronLeft, Loader2, Plus, Upload } from 'lucide-react'
+import { Link } from 'react-router-dom'
 
 import { ApiError, api, type Asset, type AssetKind, type Episode, type Project } from '@/lib/api'
 import { assetKindMeta } from '@/lib/asset-kinds'
@@ -135,7 +136,16 @@ export function AssetPanel({
 
   return (
     <div className="flex h-full flex-col">
-      <header className="px-4 pt-4 pb-3">
+      <header className="px-4 pt-3 pb-3 sm:pt-4">
+        {episode ? (
+          <Link
+            to={`/projects/${project.code}/assets/${kind}`}
+            className="mb-2 inline-flex items-center gap-0.5 rounded-md py-0.5 text-[12px] text-muted-foreground transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none lg:hidden"
+          >
+            <ChevronLeft className="size-3.5" />
+            项目资产
+          </Link>
+        ) : null}
         <div className="flex items-center gap-2">
           <div className="min-w-0 flex-1">
             <h2 className="truncate text-[15px] font-semibold tracking-tight" title={episode?.title ?? project.name}>

@@ -94,15 +94,15 @@ export function ProjectWorkspace() {
 
   return (
     <div className="flex flex-col gap-8">
-      <div className="flex flex-wrap items-end gap-4">
-        <div className="mr-auto">
+      <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end sm:gap-4">
+        <div className="sm:mr-auto">
           <h1 className="text-2xl font-semibold tracking-tight">项目</h1>
           <p className="mt-1 text-[13px] text-muted-foreground">
             {data ? `${total} 个项目 · 拖动卡片调整顺序` : '\u00a0'}
           </p>
         </div>
 
-        <div className="relative">
+        <div className="relative w-full sm:w-auto">
           {loading ? (
             <Loader2 className="pointer-events-none absolute top-1/2 left-3 size-3.5 -translate-y-1/2 animate-spin text-muted-foreground" />
           ) : (
@@ -113,13 +113,14 @@ export function ProjectWorkspace() {
             value={keyword}
             placeholder="搜索名称或编号"
             aria-label="搜索项目"
-            className="w-64 pl-8"
+            className="w-full pl-8 sm:w-64"
             onChange={(event) => setKeyword(event.target.value)}
           />
         </div>
 
         <Button
           variant="primary"
+          className="w-full sm:w-auto"
           onClick={() => {
             setEditing(null)
             setDialogOpen(true)

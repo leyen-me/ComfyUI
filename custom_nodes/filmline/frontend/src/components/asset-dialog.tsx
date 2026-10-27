@@ -78,6 +78,7 @@ export function AssetDialog({
       open={open}
       onOpenChange={onOpenChange}
       title={isEdit ? '编辑资产' : '新建文本'}
+      mobileFullHeight
       footer={
         <>
           <Button onClick={() => onOpenChange(false)} disabled={submitting}>
@@ -89,8 +90,13 @@ export function AssetDialog({
         </>
       }
     >
-      <form id="asset-form" className="space-y-4 pb-3" onSubmit={handleSubmit} noValidate>
-        <div>
+      <form
+        id="asset-form"
+        className="flex flex-col gap-4 pb-3 max-sm:h-full max-sm:min-h-0"
+        onSubmit={handleSubmit}
+        noValidate
+      >
+        <div className="shrink-0">
           <Label htmlFor="asset-name">名称</Label>
           <Input
             id="asset-name"
@@ -103,19 +109,19 @@ export function AssetDialog({
         </div>
 
         {showContent ? (
-          <div>
+          <div className="flex min-h-0 flex-col max-sm:flex-1">
             <Label htmlFor="asset-content">内容</Label>
             <Textarea
               id="asset-content"
               value={content}
-              className="min-h-40"
+              className="min-h-40 max-sm:min-h-0 max-sm:flex-1 max-sm:resize-none"
               maxLength={200_000}
               onChange={(event) => setContent(event.target.value)}
             />
           </div>
         ) : null}
 
-        <p className="min-h-5 text-xs text-destructive" role="alert" aria-live="polite">
+        <p className="min-h-5 shrink-0 text-xs text-destructive" role="alert" aria-live="polite">
           {error}
         </p>
       </form>

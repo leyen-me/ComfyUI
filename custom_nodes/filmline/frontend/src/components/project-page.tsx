@@ -7,6 +7,8 @@ import { emitAssetsChanged, type AssetsChangedDetail } from '@/lib/events'
 import { useDebouncedCallback } from '@/hooks/use-debounced-callback'
 import { useEpisodes } from '@/hooks/use-episodes'
 import { useWorkspaceEvents } from '@/hooks/use-workspace-events'
+import { mobileProjectTab, projectSection, type MobileProjectTab } from '@/lib/layout'
+import { cn } from '@/lib/utils'
 import type { WorkspaceEvent } from '@/lib/workspace-events'
 import { AppHeader, BrandMark } from './app-header'
 import { AssetPanel } from './asset-panel'
@@ -14,6 +16,7 @@ import { AgentPanel } from './agent-panel'
 import { EpisodeDialog } from './episode-dialog'
 import { EpisodeOverview } from './episode-overview'
 import { isAssetKind } from './kind-tabs'
+import { MobileProjectNav } from './mobile-project-nav'
 import { ProjectDialog } from './project-dialog'
 import { ProjectSidebar } from './project-sidebar'
 import { Toast, type ToastMessage } from './toast'
@@ -46,6 +49,37 @@ export function ProjectPage() {
   const parts = pathname.split('/').filter(Boolean)
   const offset = parts[2] === 's' ? 4 : 2
   const episodeCode = parts[offset] === 'episodes' ? parts[offset + 1] : undefined
+
+  // 手机端一次只显示一栏：资产（含分集列表）或 Agent。
+  // 路由变化到资产/分集时自动回到资产栏，避免从任务队列跳转后仍停在助手上。
+  const section = projectSection(pathname, basePath)
+  // 切换会话只会改变 /s/:id，不应把用户从助手页踢回资产页；
+  // 其他路径变化（任务队列跳转、选择分集等）才回到资产栏。
+  const routeKey = pathname.replace(/\/s\/\d+(?=\/|$)/, '')
+  const [mobilePane, setMobilePane] = useState<'assets' | 'agent'>('assets')
+  const mobileTab = mobileProjectTab(section, mobilePane)
+
+  useEffect(() => {
+    if (section !== 'other') setMobilePane('assets')
+  }, [section, routeKey])
+
+  const selectMobileTab = useCallback(
+    (tab: MobileProjectTab) => {
+      if (tab === 'agent') {
+        setMobilePane('agent')
+        return
+      }
+      setMobilePane('assets')
+      if (tab === 'episodes') {
+        navigate(`${basePath}/episodes`)
+        return
+      }
+      if (section === 'other' || section === 'episode-list') {
+        navigate(`${basePath}/assets/text`)
+      }
+    },
+    [basePath, navigate, section],
+  )
 
   const [project, setProject] = useState<Project | null>(null)
   const [projectVersion, setProjectVersion] = useState(0)
@@ -182,28 +216,34 @@ export function ProjectPage() {
     <div className="flex h-full flex-col">
       <AppHeader>
         <BrandMark compact />
-        <nav aria-label="位置" className="flex min-w-0 items-center gap-1.5 text-[13px]">
+        <nav
+          aria-label="位置"
+          className="flex min-w-0 flex-1 items-center gap-1.5 text-[13px]"
+        >
           <Link
             to="/"
-            className="shrink-0 rounded-md px-1.5 py-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+            className="hidden shrink-0 rounded-md px-1.5 py-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground sm:inline-flex"
           >
             项目
           </Link>
-          <ChevronRight className="size-3.5 shrink-0 text-muted-foreground/50" />
+          <ChevronRight className="hidden size-3.5 shrink-0 text-muted-foreground/50 sm:block" />
           <Link
             to={basePath}
-            className={
+            className={cn(
+              'min-w-0 truncate rounded-md px-1.5 py-1 transition-colors',
               currentEpisode
-                ? 'min-w-0 truncate rounded-md px-1.5 py-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground'
-                : 'min-w-0 truncate rounded-md px-1.5 py-1 font-medium text-foreground'
-            }
+                ? 'text-muted-foreground hover:bg-muted hover:text-foreground'
+                : 'font-medium text-foreground',
+              // 手机上分集标题本身较长，隐藏上一级项目名，把宽度留给当前分集
+              currentEpisode && 'hidden sm:inline',
+            )}
             title={project.name}
           >
             {project.name}
           </Link>
           {currentEpisode ? (
             <>
-              <ChevronRight className="size-3.5 shrink-0 text-muted-foreground/50" />
+              <ChevronRight className="hidden size-3.5 shrink-0 text-muted-foreground/50 sm:block" />
               <span className="min-w-0 truncate px-1.5 font-medium" title={currentEpisode.title}>
                 <span className="mr-1.5 font-mono text-[11px] text-primary">
                   {currentEpisode.code}
@@ -215,67 +255,87 @@ export function ProjectPage() {
         </nav>
       </AppHeader>
 
-      <div className="flex min-h-0 flex-1">
-      <ProjectSidebar
-        episodes={episodes}
-        basePath={basePath}
-        onCreateEpisode={openEpisodeCreate}
-        onEditEpisode={openEpisodeEdit}
-        onDeleteEpisode={setDeletingEpisode}
-      />
-
-      <section className="flex w-[22rem] shrink-0 flex-col border-r border-border bg-card/40">
-        <Routes>
-          <Route index element={<Navigate to="assets/text" replace />} />
-
-          <Route
-            path="assets/:kind"
-            element={
-              <ProjectAssetRoute
-                project={project}
-                onEditScope={() => setEditingProject(true)}
-              />
-            }
+      <div className="flex min-h-0 flex-1 flex-col lg:flex-row">
+        <div className="hidden min-h-0 lg:flex">
+          <ProjectSidebar
+            episodes={episodes}
+            basePath={basePath}
+            onCreateEpisode={openEpisodeCreate}
+            onEditEpisode={openEpisodeEdit}
+            onDeleteEpisode={setDeletingEpisode}
           />
+        </div>
 
-          <Route
-            path="episodes"
-            element={
-              <EpisodeOverview
-                episodes={episodes}
-                basePath={basePath}
-                loading={episodesLoading}
-                onCreate={openEpisodeCreate}
-                onEdit={openEpisodeEdit}
-                onDelete={setDeletingEpisode}
-              />
-            }
+        <section
+          className={cn(
+            'min-h-0 w-full flex-1 flex-col border-border bg-card/40 lg:flex lg:w-[22rem] lg:flex-none lg:border-r',
+            mobileTab === 'agent' ? 'hidden' : 'flex',
+          )}
+        >
+          <Routes>
+            <Route index element={<Navigate to="assets/text" replace />} />
+
+            <Route
+              path="assets/:kind"
+              element={
+                <ProjectAssetRoute
+                  project={project}
+                  onEditScope={() => setEditingProject(true)}
+                />
+              }
+            />
+
+            <Route
+              path="episodes"
+              element={
+                <EpisodeOverview
+                  episodes={episodes}
+                  basePath={basePath}
+                  loading={episodesLoading}
+                  onCreate={openEpisodeCreate}
+                  onEdit={openEpisodeEdit}
+                  onDelete={setDeletingEpisode}
+                />
+              }
+            />
+
+            <Route
+              path="episodes/:ep/assets/:kind"
+              element={
+                <EpisodeAssetRoute
+                  project={project}
+                  episodes={episodes}
+                  basePath={basePath}
+                  loading={episodesLoading}
+                  onEditEpisode={openEpisodeEdit}
+                  onDeleteEpisode={setDeletingEpisode}
+                />
+              }
+            />
+
+            <Route path="*" element={<Navigate to="assets/text" replace />} />
+          </Routes>
+        </section>
+
+        <div
+          className={cn(
+            'min-h-0 min-w-0 flex-1',
+            mobileTab === 'agent' ? 'flex' : 'hidden lg:flex',
+          )}
+        >
+          <AgentPanel
+            project={project}
+            sessionId={sessionId}
+            onSessionChange={handleSessionChange}
           />
-
-          <Route
-            path="episodes/:ep/assets/:kind"
-            element={
-              <EpisodeAssetRoute
-                project={project}
-                episodes={episodes}
-                basePath={basePath}
-                loading={episodesLoading}
-                onEditEpisode={openEpisodeEdit}
-                onDeleteEpisode={setDeletingEpisode}
-              />
-            }
-          />
-
-          <Route path="*" element={<Navigate to="assets/text" replace />} />
-        </Routes>
-      </section>
-
-      <AgentPanel
-        project={project}
-        sessionId={sessionId}
-        onSessionChange={handleSessionChange}
-      />
+        </div>
       </div>
+
+      <MobileProjectNav
+        active={mobileTab}
+        episodeCount={episodes.length}
+        onSelect={selectMobileTab}
+      />
 
       <ProjectDialog
         open={editingProject}

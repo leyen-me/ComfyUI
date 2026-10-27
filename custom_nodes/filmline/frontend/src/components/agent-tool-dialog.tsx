@@ -52,11 +52,12 @@ export function AgentToolDialog({
       }}
       title={tool ? tool.label || tool.name : '工具'}
       description={tool ? `工具名 ${tool.name} · ${STATUS_LABEL[tool.status]}` : undefined}
-      className="w-[min(880px,94vw)]"
+      className="sm:w-[min(880px,94vw)]"
+      mobileFullHeight
       footer={<Button onClick={onClose}>关闭</Button>}
     >
       {tool ? (
-        <div className="grid max-h-[62vh] gap-3 overflow-y-auto pb-3 md:grid-cols-2">
+        <div className="grid max-h-[62vh] gap-3 overflow-y-auto pb-3 max-sm:h-full max-sm:max-h-none md:grid-cols-2">
           <section className="min-w-0">
             <header className="mb-1.5 flex items-center justify-between">
               <span className="text-[11px] font-medium tracking-wide text-muted-foreground uppercase">

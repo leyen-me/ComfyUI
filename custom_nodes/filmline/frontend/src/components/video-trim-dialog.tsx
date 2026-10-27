@@ -121,7 +121,8 @@ export function VideoTrimDialog({
           ? `${video.name} · 拖动两个手柄选择 2–15 秒的区间，播放从入点开始`
           : '拖动两个手柄选择参考视频区间'
       }
-      className="w-[min(760px,96vw)]"
+      className="sm:w-[min(760px,96vw)]"
+      mobileFullHeight
       footer={
         <>
           <span className="mr-auto self-center font-mono text-[11px] text-muted-foreground">
@@ -144,7 +145,7 @@ export function VideoTrimDialog({
           preload="auto"
           playsInline
           controls={false}
-          className="max-h-[46vh] w-full rounded-lg bg-black object-contain"
+          className="max-h-[calc(100dvh-18rem)] w-full rounded-lg bg-black object-contain sm:max-h-[46vh]"
           onLoadedMetadata={(event) => {
             const value = event.currentTarget.duration
             const next = Number.isFinite(value) ? value : 0

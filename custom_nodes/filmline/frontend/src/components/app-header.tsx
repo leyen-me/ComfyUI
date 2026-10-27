@@ -47,10 +47,11 @@ export function ThemeToggle() {
  * 全站统一的 56px 顶栏。右侧预留任务队列按钮的位置（它是 fixed 定位的全局组件）。
  */
 export function AppHeader({ children, actions }: { children?: ReactNode; actions?: ReactNode }) {
+  // 右侧 pr-28 给 fixed 定位的任务队列按钮留位；顶部与底部适配刘海屏 safe-area
   return (
-    <header className="flex h-14 shrink-0 items-center gap-3 border-b border-border bg-background/80 pr-28 pl-4 backdrop-blur">
+    <header className="flex h-[calc(3.5rem+env(safe-area-inset-top))] shrink-0 items-center gap-2 border-b border-border bg-background/80 pr-28 pl-3 pt-[env(safe-area-inset-top)] backdrop-blur sm:gap-3 sm:pl-4">
       {children}
-      <div className="ml-auto flex items-center gap-1">
+      <div className="ml-auto flex shrink-0 items-center gap-1">
         {actions}
         <ThemeToggle />
       </div>

@@ -88,7 +88,8 @@ function Lightbox({
         if (!open) onClose()
       }}
       title={item?.title ?? '预览'}
-      className="w-[min(1100px,94vw)]"
+      className="sm:w-[min(1100px,94vw)]"
+      mobileFullHeight
       footer={
         item ? (
           <a
@@ -103,26 +104,31 @@ function Lightbox({
       }
     >
       {item ? (
-        <div className="max-h-[72vh] overflow-y-auto pb-3">
+        <div className="pb-3 sm:max-h-[72vh] sm:overflow-y-auto">
           {failed ? (
             <p className="rounded-lg border border-dashed border-border px-4 py-8 text-center text-[12px] text-muted-foreground">
               素材不可用，可能已被删除或文件已移动。
             </p>
           ) : item.kind === 'image' ? (
-            <img
-              src={item.src}
-              alt={item.title}
-              onError={() => setFailed(true)}
-              className="mx-auto max-h-[66vh] w-auto max-w-full rounded-lg bg-black/30 object-contain"
-            />
+            <div className="-mx-2 flex justify-center sm:mx-0">
+              <img
+                src={item.src}
+                alt={item.title}
+                onError={() => setFailed(true)}
+                className="max-h-[calc(100dvh-11rem)] w-auto max-w-full rounded-lg bg-black/30 object-contain sm:max-h-[66vh]"
+              />
+            </div>
           ) : item.kind === 'video' ? (
-            <video
-              src={item.src}
-              controls
-              autoPlay
-              onError={() => setFailed(true)}
-              className="mx-auto max-h-[66vh] w-full rounded-lg bg-black object-contain"
-            />
+            <div className="-mx-2 flex justify-center sm:mx-0">
+              <video
+                src={item.src}
+                controls
+                autoPlay
+                playsInline
+                onError={() => setFailed(true)}
+                className="max-h-[calc(100dvh-11rem)] w-full rounded-lg bg-black object-contain sm:max-h-[66vh]"
+              />
+            </div>
           ) : (
             <audio
               src={item.src}

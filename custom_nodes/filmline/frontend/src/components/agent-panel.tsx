@@ -525,7 +525,7 @@ export function AgentPanel({
 
   return (
     <aside className="flex min-w-0 flex-1 flex-col bg-background">
-      <header className="flex h-12 shrink-0 items-center gap-2 border-b border-border px-4">
+      <header className="flex h-12 shrink-0 items-center gap-2 border-b border-border px-3 sm:px-4">
         <button
           ref={titleRef}
           type="button"
@@ -562,7 +562,7 @@ export function AgentPanel({
             title={connection === 'live' ? '事件流已连接' : '事件流连接中'}
           />
           <span className="hidden sm:inline">{model.model || 'agent'}</span>
-          <span className="font-mono tabular-nums" title="上下文占用">
+          <span className="hidden font-mono tabular-nums md:inline" title="上下文占用">
             {context}
           </span>
           <AgentBalanceBadge refreshToken={balanceToken} />
@@ -612,7 +612,7 @@ export function AgentPanel({
                 type="button"
                 onClick={() => removeSession(item.id)}
                 title="删除对话"
-                className="cursor-pointer rounded p-1 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 hover:bg-destructive/10 hover:text-destructive focus-visible:opacity-100"
+                className="cursor-pointer rounded p-1 text-muted-foreground opacity-100 transition-opacity hover:bg-destructive/10 hover:text-destructive focus-visible:opacity-100 sm:opacity-0 sm:group-hover:opacity-100"
               >
                 <Trash2 className="size-3.5" />
               </button>
@@ -631,7 +631,7 @@ export function AgentPanel({
         }}
         className="min-h-0 flex-1 overflow-y-auto"
       >
-        <div ref={contentRef} className="mx-auto w-full max-w-3xl px-6 py-4">
+        <div ref={contentRef} className="mx-auto w-full max-w-3xl px-3 py-4 sm:px-6">
           {loading ? (
             <div className="flex h-40 items-center justify-center gap-2 text-[13px] text-muted-foreground">
               <Loader2 className="size-4 animate-spin" />
@@ -644,7 +644,7 @@ export function AgentPanel({
               </span>
               <h2 className="mt-5 text-lg font-semibold tracking-tight">把想法交给 Agent</h2>
               <p className="mt-2 max-w-md text-[13px] leading-relaxed text-muted-foreground">
-                描述你要做的镜头、要改的资产，或者直接问项目里有什么。左侧的文字、图片、视频都可以拖进输入框。
+                描述你要做的镜头、要改的资产，或者直接问项目里有什么。资产里的文字、图片、视频都可以作为参考。
               </p>
             </div>
           ) : (
@@ -701,7 +701,7 @@ export function AgentPanel({
           event.preventDefault()
           addAttachment(payload)
         }}
-        className="shrink-0 px-6 pt-1 pb-5"
+        className="shrink-0 px-3 pt-1 pb-3 sm:px-6 sm:pb-5"
       >
         <div className="mx-auto w-full max-w-3xl rounded-[20px] border border-border bg-elevated p-2.5 shadow-[var(--shadow-soft)] transition-[border-color,box-shadow] focus-within:border-foreground/20 focus-within:shadow-[var(--shadow-pop)]">
           {attachmentsView.length ? (
@@ -740,10 +740,10 @@ export function AgentPanel({
                 ? '请先回答上方的问题，再继续对话'
                 : running
                   ? 'Agent 运行中，可以先想下一步；暂停后才能发送新消息'
-                  : '描述你要做的事，或者把左侧素材拖进来…'
+                  : '描述你要做的事，或者把素材加进来…'
             }
             aria-label="给 Agent 的消息"
-            className="block max-h-[200px] min-h-[52px] w-full resize-none bg-transparent px-2 py-2 text-[14px] leading-relaxed text-foreground placeholder:text-muted-foreground/70 focus:outline-none"
+            className="block max-h-[200px] min-h-[52px] w-full resize-none bg-transparent px-2 py-2 text-base leading-relaxed text-foreground placeholder:text-muted-foreground/70 focus:outline-none sm:text-[14px]"
             onChange={(event) => setText(event.target.value)}
             onKeyDown={(event) => {
               if (event.key !== 'Enter' || event.shiftKey) return

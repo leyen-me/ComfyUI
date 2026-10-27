@@ -1,6 +1,8 @@
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from 'react'
 import { createPortal } from 'react-dom'
 
+import { fitPopoverHeight, fitPopoverWidth } from '@/lib/layout'
+
 interface PopoverProps {
   open: boolean
   onOpenChange: (open: boolean) => void
@@ -26,7 +28,12 @@ export function Popover({
   align = 'start',
 }: PopoverProps) {
   const panelRef = useRef<HTMLDivElement>(null)
-  const [position, setPosition] = useState<{ top: number; left: number } | null>(null)
+  const [position, setPosition] = useState<{
+    top: number
+    left: number
+    width: number
+    maxHeight: number
+  } | null>(null)
 
   useLayoutEffect(() => {
     if (!open) return
@@ -35,16 +42,19 @@ export function Popover({
     if (!anchor || !panel) return
 
     const rect = anchor.getBoundingClientRect()
-    const height = panel.offsetHeight
+    // 窄屏（手机）上原始宽度可能超过视口，先夹到可视范围内再计算左右位置
+    const actualWidth = fitPopoverWidth(width, window.innerWidth, EDGE)
+    const maxHeight = fitPopoverHeight(window.innerHeight, EDGE)
+    const height = Math.min(panel.offsetHeight, maxHeight)
 
     let top = rect.bottom + GAP
     if (top + height > window.innerHeight - EDGE) {
       top = Math.max(EDGE, rect.top - GAP - height)
     }
-    const preferred = align === 'end' ? rect.right - width : rect.left
-    const left = Math.min(Math.max(EDGE, preferred), window.innerWidth - width - EDGE)
+    const preferred = align === 'end' ? rect.right - actualWidth : rect.left
+    const left = Math.min(Math.max(EDGE, preferred), window.innerWidth - actualWidth - EDGE)
 
-    setPosition({ top, left })
+    setPosition({ top, left, width: actualWidth, maxHeight })
   }, [open, anchorRef, width, align])
 
   useEffect(() => {
@@ -91,7 +101,9 @@ export function Popover({
         position: 'fixed',
         top: position?.top ?? -9999,
         left: position?.left ?? -9999,
-        width,
+        width: position?.width ?? width,
+        maxHeight: position?.maxHeight,
+        overflowY: position ? 'auto' : undefined,
         visibility: position ? 'visible' : 'hidden',
       }}
       className="animate-rise z-50 rounded-xl border border-border bg-elevated p-1.5 shadow-[var(--shadow-pop)]"
