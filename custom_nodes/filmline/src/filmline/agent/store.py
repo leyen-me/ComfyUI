@@ -24,7 +24,7 @@ from ..db.models import (
     AgentTaskWatch,
     AgentToolLedger,
 )
-from ..errors import NotFound
+from ..errors import InvalidArgument, NotFound
 
 _lock = threading.Lock()
 
@@ -119,6 +119,108 @@ def list_sessions(project_id: int, *, limit: int = 50) -> list[SessionInfo]:
 def get_session(session_id: int) -> SessionInfo:
     with session_scope() as session:
         return _session_out(_find(session, session_id))
+
+
+def fork_session(session_id: int, *, turn: int) -> SessionInfo:
+    """从第 ``turn`` 轮正常结束时的上下文复制出一个新会话。
+
+    复制模型消息与 UI 事件，但保留原会话不动；新会话接下来从 ``turn + 1``
+    继续，因此可以基于同一段历史走不同分支。
+    """
+    if turn < 1:
+        raise InvalidArgument("turn 必须是正整数")
+
+    with _lock, session_scope() as session:
+        source = _find(session, session_id)
+
+        events = (
+            session.execute(
+                select(AgentEvent)
+                .where(AgentEvent.session_id == session_id)
+                .order_by(AgentEvent.seq)
+            )
+            .scalars()
+            .all()
+        )
+
+        copied_events: list[AgentEvent] = []
+        usage: dict | None = None
+        finished = False
+        last_status: str | None = None
+        for row in events:
+            try:
+                data = json.loads(row.data) if row.data else {}
+            except json.JSONDecodeError:
+                data = {}
+            copied_events.append(row)
+            if row.type == "usage" and isinstance(data, dict):
+                usage = data
+            if row.type == "run.finished" and data.get("turn") == turn:
+                status = str(data.get("status") or "")
+                if status == "done":
+                    finished = True
+                    break
+                last_status = status
+
+        if not finished:
+            if last_status:
+                raise InvalidArgument(f"第 {turn} 轮状态为 {last_status}，无法创建分支")
+            raise InvalidArgument(f"第 {turn} 轮尚未完成，无法创建分支")
+
+        messages = (
+            session.execute(
+                select(AgentMessage)
+                .where(AgentMessage.session_id == session_id, AgentMessage.turn <= turn)
+                .order_by(AgentMessage.seq)
+            )
+            .scalars()
+            .all()
+        )
+
+        created = AgentSession(
+            project_id=source.project_id,
+            title=f"{source.title} · 第{turn}轮分支"[:200],
+            status="idle",
+            model=source.model,
+            thinking=source.thinking,
+            reasoning_effort=source.reasoning_effort,
+            context_window=source.context_window,
+            last_seq=copied_events[-1].seq,
+            last_message_seq=messages[-1].seq if messages else 0,
+            turn=turn,
+            usage=usage,
+        )
+        session.add(created)
+        session.flush()
+
+        for row in copied_events:
+            session.add(
+                AgentEvent(
+                    session_id=created.id,
+                    seq=row.seq,
+                    type=row.type,
+                    data=row.data,
+                    created_at=row.created_at,
+                )
+            )
+        for row in messages:
+            session.add(
+                AgentMessage(
+                    session_id=created.id,
+                    seq=row.seq,
+                    turn=row.turn,
+                    role=row.role,
+                    content=row.content,
+                    reasoning=row.reasoning,
+                    tool_calls_raw=row.tool_calls_raw,
+                    tool_call_id=row.tool_call_id,
+                    tool_name=row.tool_name,
+                    meta=row.meta,
+                    created_at=row.created_at,
+                )
+            )
+        session.flush()
+        return _session_out(created)
 
 
 def _find(session, session_id: int) -> AgentSession:

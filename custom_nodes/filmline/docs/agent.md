@@ -101,6 +101,15 @@ DeepSeek 的上下文缓存要求前缀完全稳定。因此：
 - 已完成的工具不会重复执行（尤其生成任务）；
 - 生成任务本身由已有的 `generation_tasks` runner 恢复，与 Agent 解耦。
 
+### 10. 复制与分支
+
+- 每轮最终回答完成后，前端在正文下方显示「复制」「分支」；
+- 分支只允许从**正常完成**（`run.finished` 且 `status=done`）的轮次创建；
+- 后端在同一事务里复制该轮结束前的 `agent_messages` 与 `agent_events`，新会话
+  `turn` 设为该轮，下一轮自然从 `turn + 1` 开始；
+- 原会话不做任何修改，分支继承模型、思考强度与上下文窗口，标题为「原标题 · 第N轮分支」；
+- 分支不复制工具账本与任务关注；已完成的轮次没有待补工具，继续对话时按需重新查询任务。
+
 ## 事件协议
 
 SSE：`id: <seq>`，`data: {"seq","type","data","ts"}`，心跳为 `: ping`。
@@ -166,6 +175,7 @@ DeepSeek 要求 assistant 的 `tool_calls` 后紧跟对应的全部 tool 消息�
 | POST | `/studio/api/projects/{ref}/agent/sessions` |
 | GET/PATCH/DELETE | `/studio/api/agent/sessions/{id}` |
 | GET | `/studio/api/agent/sessions/{id}/events?after=N`（SSE） |
+| POST | `/studio/api/agent/sessions/{id}/fork`（`{turn}`） |
 | POST | `/studio/api/agent/sessions/{id}/messages` |
 | POST | `/studio/api/agent/sessions/{id}/pause` |
 | POST | `/studio/api/agent/sessions/{id}/resume` |

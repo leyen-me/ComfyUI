@@ -96,6 +96,7 @@ npm run test:logic   # 纯函数单测（页码、提示词、拖拽载荷等）
 | POST | `/studio/api/projects/{ref}/agent/sessions` | 新建会话 |
 | GET/PATCH/DELETE | `/studio/api/agent/sessions/{id}` | 会话详情 / 改名 / 修改思考强度 / 软删除 |
 | GET | `/studio/api/agent/sessions/{id}/events?after=N` | SSE 事件流，`after` 断点续传 |
+| POST | `/studio/api/agent/sessions/{id}/fork` | 从某一轮完成时的上下文复制出新会话分支，`{turn}` |
 | GET | `/studio/api/events?project=PRJ-0001` | 工作区实时事件 SSE（可选项目过滤；不落库、不回放） |
 | POST | `/studio/api/agent/sessions/{id}/messages` | 发送消息（`text` + `asset_ids`），202 启动运行 |
 | POST | `/studio/api/agent/sessions/{id}/pause` | 暂停推理与当前工具 |
@@ -298,6 +299,9 @@ DEEPSEEK_MAX_TOKENS=4096
 - **流式**：后端把模型输出拆成 reasoning / content / tool 事件，按 `seq` 入库；
   浏览器用 SSE 从 `after` 断点续传。断网、刷新、换标签页都不会中断推理；
   重新打开页面会先回放历史再继续接收。
+- **复制与分支**：每轮最终回答下方有「复制」和「分支」两个按钮。复制只取该轮最终
+  正文；分支会把**该轮完成时的上下文**（模型消息 + UI 事件）复制到一个新会话，
+  新会话从下一轮继续，原会话保持不变。分支标题自动带「第 N 轮分支」，可在会话菜单里改名。
 - **暂停**：全局暂停会中断模型请求与正在执行的工具，工具会得到
   `{"ok":false,"error":{"code":"paused"}}`；流式阶段的半截消息作废，恢复后重新请求。
   单个工具也可以在消息流里点暂停。

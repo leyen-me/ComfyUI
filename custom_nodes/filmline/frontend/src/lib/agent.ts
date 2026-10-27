@@ -196,6 +196,13 @@ export const agentApi = {
     return call<void>(`/agent/sessions/${sessionId}`, { method: 'DELETE' })
   },
 
+  forkSession(sessionId: number, turn: number) {
+    return call<AgentSession>(`/agent/sessions/${sessionId}/fork`, {
+      method: 'POST',
+      body: JSON.stringify({ turn }),
+    })
+  },
+
   sendMessage(sessionId: number, text: string, assetIds: number[]) {
     return call<{ session: AgentSession; seq: number; turn: number }>(
       `/agent/sessions/${sessionId}/messages`,

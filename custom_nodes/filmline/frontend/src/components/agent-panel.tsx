@@ -32,6 +32,7 @@ import {
   type ToolView,
 } from '@/lib/agent-view'
 import { hasAssetDrag, readAssetDrag, type AssetDragPayload } from '@/lib/asset-drag'
+import { copyText } from '@/lib/clipboard'
 import { formatRelative } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import { AgentBalanceBadge } from './agent-balance'
@@ -80,6 +81,7 @@ export function AgentPanel({
   const [attachments, setAttachments] = useState<AssetDragPayload[]>([])
   const [sending, setSending] = useState(false)
   const [busy, setBusy] = useState(false)
+  const [forkingTurn, setForkingTurn] = useState<number | null>(null)
   const [menuOpen, setMenuOpen] = useState(false)
   const [tool, setTool] = useState<ToolView | null>(null)
   const [toast, setToast] = useState<ToastMessage | null>(null)
@@ -476,6 +478,28 @@ export function AgentPanel({
     }
   }
 
+  async function copyTurn(content: string) {
+    const copied = await copyText(content)
+    notify(copied ? '已复制本轮回答' : '复制失败，请手动选择文本', copied ? 'ok' : 'error')
+  }
+
+  async function forkTurn(turn: number) {
+    if (activeId === null || forkingTurn !== null) return
+    setForkingTurn(turn)
+    try {
+      const created = await agentApi.forkSession(activeId, turn)
+      drafts.current.delete(created.id)
+      setSessions((previous) => [created, ...previous])
+      setActiveId(created.id)
+      onSessionChange?.(created.id)
+      notify(`已从第 ${turn} 轮创建分支`)
+    } catch (cause) {
+      notify(cause instanceof ApiError ? cause.fullMessage : '创建分支失败', 'error')
+    } finally {
+      setForkingTurn(null)
+    }
+  }
+
   async function removeSession(id: number) {
     try {
       await agentApi.deleteSession(id)
@@ -630,8 +654,11 @@ export function AgentPanel({
                 turn={turn}
                 running={running && turn.turn === view.turns[view.turns.length - 1]?.turn}
                 projectCode={project.code}
+                forking={forkingTurn === turn.turn}
                 onOpenTool={setTool}
                 onPauseTool={(id) => void handlePauseTool(id)}
+                onCopy={(content) => void copyTurn(content)}
+                onFork={(turnNumber) => void forkTurn(turnNumber)}
               />
             ))
           )}

@@ -5,7 +5,9 @@ import {
   Check,
   ChevronDown,
   ChevronRight,
+  Copy,
   FileText,
+  GitFork,
   Image as ImageIcon,
   Info,
   Loader2,
@@ -22,6 +24,7 @@ import type { ToolView, TurnView } from '@/lib/agent-view'
 import { finalStep } from '@/lib/agent-view'
 import { cn } from '@/lib/utils'
 import { AgentToolCard } from './agent-tool-card'
+import { Button } from './ui/button'
 
 const MarkdownContent = lazy(() => import('./markdown-content'))
 
@@ -149,14 +152,20 @@ export function AgentTurn({
   turn,
   running,
   projectCode,
+  forking,
   onOpenTool,
   onPauseTool,
+  onCopy,
+  onFork,
 }: {
   turn: TurnView
   running: boolean
   projectCode: string
+  forking: boolean
   onOpenTool: (tool: ToolView) => void
   onPauseTool: (toolCallId: string) => void
+  onCopy: (content: string) => void
+  onFork: (turn: number) => void
 }) {
   const [expanded, setExpanded] = useState(running)
   const final = finalStep(turn)
@@ -264,11 +273,43 @@ export function AgentTurn({
       ) : null}
 
       {final && final.content.trim() ? (
-        <RichContent
-          content={final.content}
-          markdown={final.done}
-          className="text-[14px] leading-7 text-foreground"
-        />
+        <div className="group/final">
+          <RichContent
+            content={final.content}
+            markdown={final.done}
+            className="text-[14px] leading-7 text-foreground"
+          />
+
+          {final.done && turn.errors.length === 0 ? (
+            <div className="mt-1 flex items-center gap-0.5 opacity-0 transition-opacity group-hover/final:opacity-100 group-focus-within/final:opacity-100">
+              <Button
+                variant="ghost"
+                size="icon"
+                className="size-7"
+                title="复制本轮回答"
+                aria-label="复制本轮回答"
+                onClick={() => onCopy(final.content)}
+              >
+                <Copy className="size-3.5" />
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="size-7"
+                title="从本轮上下文创建分支会话"
+                aria-label="从本轮上下文创建分支会话"
+                disabled={forking}
+                onClick={() => onFork(turn.turn)}
+              >
+                {forking ? (
+                  <Loader2 className="size-3.5 animate-spin" />
+                ) : (
+                  <GitFork className="size-3.5" />
+                )}
+              </Button>
+            </div>
+          ) : null}
+        </div>
       ) : null}
 
       {running && !final?.content.trim() && !hasDetails ? (

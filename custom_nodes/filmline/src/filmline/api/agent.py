@@ -222,6 +222,17 @@ def register_agent_routes(routes: web.RouteTableDef) -> None:
         await asyncio.to_thread(store.delete_session, session_id)
         return web.Response(status=204)
 
+    @routes.post(f"{API_PREFIX}/agent/sessions/{{session_id}}/fork")
+    @handle_errors
+    async def fork_session(request: web.Request) -> web.Response:
+        session_id = await _session_id(request)
+        payload = await read_object(request)
+        turn = payload.get("turn")
+        if not isinstance(turn, int) or isinstance(turn, bool) or turn < 1:
+            raise InvalidArgument("turn 必须是正整数")
+        created = await asyncio.to_thread(store.fork_session, session_id, turn=turn)
+        return ok(_session_out(created), status=201)
+
     @routes.post(f"{API_PREFIX}/agent/sessions/{{session_id}}/messages")
     @handle_errors
     async def post_message(request: web.Request) -> web.Response:
