@@ -94,6 +94,15 @@ export interface AgentBalanceInfo {
   fetched_at: string | null
 }
 
+export interface AgentSkillInfo {
+  id: string
+  title: string
+  summary: string
+  when: string
+  version: number
+  chars: number
+}
+
 export interface AgentSystemPrompt {
   prompt: string
   chars: number
@@ -103,6 +112,9 @@ export interface AgentSystemPrompt {
   reasoning_effort: string | null
   tools: AgentToolInfo[]
   tool_count: number
+  skills: AgentSkillInfo[]
+  skill_chars: number
+  skill_problems: { file: string; error: string }[]
   note: string
 }
 

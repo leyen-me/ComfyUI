@@ -6,7 +6,8 @@ import hashlib
 from unittest import mock
 
 from base import ApiTestCase
-from filmline.agent.prompt import SYSTEM_PROMPT
+from filmline.agent import skills
+from filmline.agent.prompt import system_prompt
 
 
 class AgentSessionApiTest(ApiTestCase):
@@ -15,13 +16,22 @@ class AgentSessionApiTest(ApiTestCase):
         body = await response.json()
         self.assertEqual(response.status, 200, body)
         data = body["data"]
-        self.assertEqual(data["prompt"], SYSTEM_PROMPT)
-        self.assertEqual(data["chars"], len(SYSTEM_PROMPT))
+        current = system_prompt()
+        self.assertEqual(data["prompt"], current)
+        self.assertEqual(data["chars"], len(current))
         self.assertEqual(
-            data["sha256"], hashlib.sha256(SYSTEM_PROMPT.encode("utf-8")).hexdigest()
+            data["sha256"], hashlib.sha256(current.encode("utf-8")).hexdigest()
         )
+        self.assertEqual(data["skill_problems"], [])
         self.assertGreaterEqual(data["tool_count"], 20)
         self.assertEqual(len(data["tools"]), data["tool_count"])
+        self.assertEqual(
+            [item["id"] for item in data["skills"]], skills.ids()
+        )
+        self.assertIn("h3-prompt", [item["id"] for item in data["skills"]])
+        self.assertGreater(data["skill_chars"], 1000)
+        self.assertIn('<skill id="h3-prompt"', data["prompt"])
+        self.assertNotIn(skills.get("h3-prompt").text, data["prompt"])
         self.assertIn("note", data)
 
     async def _project(self, name: str = "Agent 项目") -> dict:

@@ -67,6 +67,10 @@ export function AgentPromptBar({ info }: { info: AgentSystemPrompt | null }) {
             <span>·</span>
             <span>{info.tool_count} 个工具</span>
             <span>·</span>
+            <span>
+              {info.skills.length} 个技能（{info.skill_chars} 字符，按需加载）
+            </span>
+            <span>·</span>
             <span className="font-mono" title={info.sha256}>
               sha256 {info.sha256.slice(0, 12)}
             </span>
@@ -102,6 +106,28 @@ export function AgentPromptBar({ info }: { info: AgentSystemPrompt | null }) {
                 >
                   {tool.name}
                 </span>
+              ))}
+            </div>
+          </details>
+
+          <details className="mt-2">
+            <summary className="cursor-pointer text-[11px] text-muted-foreground hover:text-foreground">
+              技能目录（{info.skills.length}，正文按需加载）
+            </summary>
+            {info.skill_problems.length > 0 ? (
+              <p className="mt-1.5 text-[11px] leading-relaxed text-destructive">
+                以下技能文件解析失败，已跳过：
+                {info.skill_problems.map((item) => `${item.file}（${item.error}）`).join('；')}
+              </p>
+            ) : null}
+            <div className="mt-1.5 space-y-1.5">
+              {info.skills.map((skill) => (
+                <div key={skill.id} className="text-[11px] leading-relaxed text-muted-foreground">
+                  <span className="font-mono text-foreground/80">{skill.id}</span>
+                  <span> · {skill.title} · {skill.chars} 字符</span>
+                  <p className="mt-0.5">{skill.summary}</p>
+                  <p className="mt-0.5">何时使用：{skill.when}</p>
+                </div>
               ))}
             </div>
           </details>

@@ -26,7 +26,7 @@ from ..config import AgentSettings
 from ..domain.projects import ProjectService
 from . import store
 from .bus import BUS
-from .prompt import SYSTEM_PROMPT
+from .prompt import system_prompt
 from .provider import ProviderError, StreamClient
 from .tools import ToolContext, definitions, execute, failure, get
 
@@ -308,7 +308,7 @@ class AgentEngine:
     # ------------------------------------------------------------------
 
     def _build_messages(self, session_id: int) -> list[dict[str, Any]]:
-        messages: list[dict[str, Any]] = [{"role": "system", "content": SYSTEM_PROMPT}]
+        messages: list[dict[str, Any]] = [{"role": "system", "content": system_prompt()}]
         rows = _canonical_rows(store.list_messages(session_id))
         keep_images = _image_messages_to_keep(rows)
         for row in rows:

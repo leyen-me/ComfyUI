@@ -14,7 +14,8 @@ from ..agent import store
 from ..agent.balance import fetch_balance
 from ..agent.bus import BUS
 from ..agent.engine import ENGINE_KEY, AgentEngine
-from ..agent.prompt import SYSTEM_PROMPT
+from ..agent.prompt import system_prompt as build_system_prompt
+from ..agent.skills import catalog as skill_catalog, problems as skill_problems
 from ..agent.tools import catalog
 from ..domain.assets import AssetService
 from ..domain.projects import ProjectService
@@ -105,11 +106,16 @@ def register_agent_routes(routes: web.RouteTableDef) -> None:
         项目现状由模型通过工具读取。
         """
         tools = catalog()
+        prompt = build_system_prompt()
+        skill_items = skill_catalog()
         return ok(
             {
-                "prompt": SYSTEM_PROMPT,
-                "chars": len(SYSTEM_PROMPT),
-                "sha256": hashlib.sha256(SYSTEM_PROMPT.encode("utf-8")).hexdigest(),
+                "prompt": prompt,
+                "chars": len(prompt),
+                "sha256": hashlib.sha256(prompt.encode("utf-8")).hexdigest(),
+                "skills": skill_items,
+                "skill_chars": sum(int(item["chars"]) for item in skill_items),
+                "skill_problems": list(skill_problems()),
                 "model": settings.model,
                 "thinking": settings.thinking,
                 "reasoning_effort": (
