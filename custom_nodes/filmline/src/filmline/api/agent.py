@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 
 from aiohttp import web
@@ -11,6 +12,8 @@ from .. import config
 from ..agent import store
 from ..agent.bus import BUS
 from ..agent.engine import ENGINE_KEY, AgentEngine
+from ..agent.prompt import SYSTEM_PROMPT
+from ..agent.tools import catalog
 from ..domain.assets import AssetService
 from ..domain.projects import ProjectService
 from ..errors import Conflict, InvalidArgument, NotFound
@@ -86,6 +89,34 @@ async def _load_assets(project_id: int, raw: object) -> list:
 
 def register_agent_routes(routes: web.RouteTableDef) -> None:
     settings = config.agent_settings()
+
+    @routes.get(f"{API_PREFIX}/agent/system-prompt")
+    @handle_errors
+    async def system_prompt(_: web.Request) -> web.Response:
+        """原样暴露实际发送给模型的系统提示，便于用户核对。
+
+        工具定义、历史消息与 workspace 数据不在其中：工具以 ``tools`` 数组发送，
+        项目现状由模型通过工具读取。
+        """
+        tools = catalog()
+        return ok(
+            {
+                "prompt": SYSTEM_PROMPT,
+                "chars": len(SYSTEM_PROMPT),
+                "sha256": hashlib.sha256(SYSTEM_PROMPT.encode("utf-8")).hexdigest(),
+                "model": settings.model,
+                "thinking": settings.thinking,
+                "reasoning_effort": (
+                    settings.reasoning_effort if settings.thinking == "enabled" else None
+                ),
+                "tools": tools,
+                "tool_count": len(tools),
+                "note": (
+                    "这是每次请求都会发送的系统提示原文；工具定义、历史消息和项目数据"
+                    "在请求中单独发送。"
+                ),
+            }
+        )
 
     @routes.get(f"{API_PREFIX}/projects/{{ref}}/agent/sessions")
     @handle_errors

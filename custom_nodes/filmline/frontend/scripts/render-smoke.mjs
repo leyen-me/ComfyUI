@@ -361,6 +361,33 @@ globalThis.fetch = async (input, init = {}) => {
   } else if (/^\/studio\/api\/projects\/[^/]+$/.test(path)) {
     if (method === 'PATCH') Object.assign(project, JSON.parse(init.body))
     data = project
+  } else if (path.endsWith('/agent/system-prompt')) {
+    data = {
+      prompt: '你是 Filmline 的影视制片 Agent。\n\n工作方式\n- 先理解目标。',
+      chars: 34,
+      sha256: 'a'.repeat(64),
+      model: 'deepseek-flash',
+      thinking: 'auto',
+      reasoning_effort: null,
+      tools: [
+        {
+          name: 'get_workspace_context',
+          label: '读取工作区',
+          description: '读取当前项目',
+          write: false,
+          destructive: false,
+        },
+        {
+          name: 'read_video',
+          label: '查看视频',
+          description: '抽帧拼图',
+          write: false,
+          destructive: false,
+        },
+      ],
+      tool_count: 2,
+      note: '这是每次请求都会发送的系统提示原文。',
+    }
   } else if (path.endsWith('/agent/sessions') && method === 'GET') {
     data = {
       items: [{ ...agentSession }],
@@ -464,6 +491,18 @@ const agentToolDetail =
   .find((el) => el.textContent?.trim() === '关闭')
   ?.click()
 await wait(150)
+
+// —— 顶部系统提示：可见、可展开、显示模型/工具/哈希 ——
+const agentPromptVisible = rootText().includes('系统提示') && rootText().includes('34 字符')
+;[...document.querySelectorAll('button')]
+  .find((el) => el.textContent?.includes('系统提示'))
+  ?.click()
+await wait(180)
+const agentPromptExpanded =
+  rootText().includes('先理解目标') &&
+  rootText().includes('deepseek-flash') &&
+  rootText().includes('2 个工具') &&
+  rootText().includes('sha256 aaaaaaaaaaaa')
 
 const optionsTrigger = document.querySelector('button[aria-label="尺寸与分辨率"]')
 const panel = {
@@ -942,6 +981,8 @@ const checks = [
   ['Agent 深度思考可展开', agentReasoningShown],
   ['Agent 工具详情含输入输出', agentToolDetail],
   ['Agent 显示上下文占用', agentContext],
+  ['顶部显示系统提示', agentPromptVisible],
+  ['系统提示可展开查看原文与元信息', agentPromptExpanded],
   ['复制失败时兜底弹窗可手动复制', fallbackShown],
   ['视频卡片下半部分可打开预览', videoPreviewOpened],
   ['视频列表为无控制条的缩略预览', videoListNoControls],

@@ -61,6 +61,26 @@ export interface AgentQuestion {
   multiple?: boolean
 }
 
+export interface AgentToolInfo {
+  name: string
+  label: string
+  description: string
+  write: boolean
+  destructive: boolean
+}
+
+export interface AgentSystemPrompt {
+  prompt: string
+  chars: number
+  sha256: string
+  model: string
+  thinking: string
+  reasoning_effort: string | null
+  tools: AgentToolInfo[]
+  tool_count: number
+  note: string
+}
+
 export interface AgentEvent {
   seq: number
   type: string
@@ -98,6 +118,10 @@ async function call<T>(path: string, init: RequestInit = {}): Promise<T> {
 }
 
 export const agentApi = {
+  systemPrompt() {
+    return call<AgentSystemPrompt>('/agent/system-prompt')
+  },
+
   listSessions(projectCode: string) {
     return call<AgentSessionList>(`/projects/${encodeURIComponent(projectCode)}/agent/sessions`)
   },

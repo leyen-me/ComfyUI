@@ -82,6 +82,7 @@ npm run test:logic   # 纯函数单测（页码、提示词、拖拽载荷等）
 | GET | `/studio/api/tasks/{id}` | 单个任务状态；前端提交后轮询 |
 | POST | `/studio/api/tasks/{id}/cancel` | 取消排队/运行中的 Filmline 任务 |
 | POST | `/studio/api/prompts/optimize` | DeepSeek 提示词优化（仅视频，后端代理） |
+| GET | `/studio/api/agent/system-prompt` | 原样返回系统提示、sha256、模型、思考模式与工具目录 |
 | GET | `/studio/api/projects/{ref}/agent/sessions` | 项目的 Agent 会话列表（含模型与上下文窗口） |
 | POST | `/studio/api/projects/{ref}/agent/sessions` | 新建会话 |
 | GET/PATCH/DELETE | `/studio/api/agent/sessions/{id}` | 会话详情 / 改名 / 软删除 |
@@ -262,6 +263,9 @@ DEEPSEEK_MAX_TOKENS=4096
 右侧不再是表单，而是一个后端常驻的会话式 Agent。完整设计见
 [`docs/agent.md`](docs/agent.md)。
 
+- **系统提示可见**：右侧顶部固定一条「系统提示」，收起时显示原文预览与字符数，
+  展开后原样展示每次请求实际发送的 prompt，并附模型、思考模式、工具数量与
+  sha256；可一键复制。工具定义、历史消息和项目数据不在系统提示里，界面会注明。
 - **会话归属**：一个项目可有多个对话，顶部切换，与分集无关；所有人共享。
 - **流式**：后端把模型输出拆成 reasoning / content / tool 事件，按 `seq` 入库；
   浏览器用 SSE 从 `after` 断点续传。断网、刷新、换标签页都不会中断推理；

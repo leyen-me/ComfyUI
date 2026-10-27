@@ -123,6 +123,20 @@ def definitions() -> list[dict[str, Any]]:
     return [tool.definition() for tool in _REGISTRY.values()]
 
 
+def catalog() -> list[dict[str, Any]]:
+    """给界面看的工具目录（不含冗长的 JSON Schema）。"""
+    return [
+        {
+            "name": tool.name,
+            "label": tool.label,
+            "description": tool.description,
+            "write": tool.write,
+            "destructive": tool.destructive,
+        }
+        for tool in _REGISTRY.values()
+    ]
+
+
 def tool_names() -> list[str]:
     return list(_REGISTRY)
 

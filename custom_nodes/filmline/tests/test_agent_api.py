@@ -2,10 +2,27 @@
 
 from __future__ import annotations
 
+import hashlib
+
 from base import ApiTestCase
+from filmline.agent.prompt import SYSTEM_PROMPT
 
 
 class AgentSessionApiTest(ApiTestCase):
+    async def test_system_prompt_is_exposed_verbatim(self) -> None:
+        response = await self.client.get("/studio/api/agent/system-prompt")
+        body = await response.json()
+        self.assertEqual(response.status, 200, body)
+        data = body["data"]
+        self.assertEqual(data["prompt"], SYSTEM_PROMPT)
+        self.assertEqual(data["chars"], len(SYSTEM_PROMPT))
+        self.assertEqual(
+            data["sha256"], hashlib.sha256(SYSTEM_PROMPT.encode("utf-8")).hexdigest()
+        )
+        self.assertGreaterEqual(data["tool_count"], 20)
+        self.assertEqual(len(data["tools"]), data["tool_count"])
+        self.assertIn("note", data)
+
     async def _project(self, name: str = "Agent 项目") -> dict:
         response = await self.client.post("/studio/api/projects", json={"name": name})
         body = await response.json()

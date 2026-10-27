@@ -22,6 +22,7 @@ import {
   subscribeAgentEvents,
   type AgentAssetRef,
   type AgentSession,
+  type AgentSystemPrompt,
 } from '@/lib/agent'
 import {
   applyEvent,
@@ -34,6 +35,7 @@ import {
 import { hasAssetDrag, readAssetDrag, type AssetDragPayload } from '@/lib/asset-drag'
 import { formatRelative } from '@/lib/format'
 import { cn } from '@/lib/utils'
+import { AgentPromptBar } from './agent-prompt-bar'
 import { AgentQuestionDialog } from './agent-question-dialog'
 import { AgentToolDialog } from './agent-tool-dialog'
 import { AgentTurn } from './agent-turn'
@@ -77,6 +79,7 @@ export function AgentPanel({ project }: { project: Project }) {
     context_window: 1_000_000,
     configured: true,
   })
+  const [systemPrompt, setSystemPrompt] = useState<AgentSystemPrompt | null>(null)
 
   const scrollRef = useRef<HTMLDivElement>(null)
   const stick = useRef(true)
@@ -92,6 +95,21 @@ export function AgentPanel({ project }: { project: Project }) {
     const timer = window.setTimeout(() => setToast(null), 2600)
     return () => window.clearTimeout(timer)
   }, [toast])
+
+  useEffect(() => {
+    let disposed = false
+    agentApi
+      .systemPrompt()
+      .then((data) => {
+        if (!disposed) setSystemPrompt(data)
+      })
+      .catch(() => {
+        // 提示栏加载失败不影响会话本身
+      })
+    return () => {
+      disposed = true
+    }
+  }, [])
 
   useEffect(() => {
     let disposed = false
@@ -379,6 +397,8 @@ export function AgentPanel({ project }: { project: Project }) {
           </button>
         </div>
       </header>
+
+      <AgentPromptBar info={systemPrompt} />
 
       <Popover open={menuOpen} onOpenChange={setMenuOpen} anchorRef={titleRef} width={320}>
         <div className="max-h-[60vh] overflow-y-auto p-1">

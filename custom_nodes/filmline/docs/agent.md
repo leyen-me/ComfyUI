@@ -118,6 +118,7 @@ DeepSeek 要求 assistant 的 `tool_calls` 后紧跟对应的全部 tool 消息�
 
 | 方法 | 路径 |
 |---|---|
+| GET | `/studio/api/agent/system-prompt` |
 | GET | `/studio/api/projects/{ref}/agent/sessions` |
 | POST | `/studio/api/projects/{ref}/agent/sessions` |
 | GET/PATCH/DELETE | `/studio/api/agent/sessions/{id}` |
@@ -130,6 +131,18 @@ DeepSeek 要求 assistant 的 `tool_calls` 后紧跟对应的全部 tool 消息�
 
 会话按项目归属、所有人共享；与分集无关。所有写操作仍走原有领域服务与校验，
 生成参数校验收敛在 `domain/produce.py`，HTTP 与工具共用，不存在第二套规则。
+
+## 系统提示可见
+
+`GET /studio/api/agent/system-prompt` 直接返回 `agent/prompt.py::SYSTEM_PROMPT`
+原文、字符数、sha256、模型与思考模式、工具目录。前端在会话顶部固定一条可折叠
+的「系统提示」，默认显示预览，展开后逐字展示 prompt 并支持复制。
+
+它展示的是**每次请求实际发送的系统提示**。工具定义（`tools` 数组）、历史消息和
+项目数据不在其中：工具定义随请求单独发送，项目现状由模型通过工具读取。因此
+不能把这条提示误当成“完整请求”。
+
+提示文本是代码常量，改动需要发布新版本；sha256 用于让用户核对当前运行的版本。
 
 ## 配置
 
