@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { lazy, Suspense, useState } from 'react'
 import {
   AlertCircle,
   Brain,
@@ -22,6 +22,26 @@ import type { ToolView, TurnView } from '@/lib/agent-view'
 import { finalStep } from '@/lib/agent-view'
 import { cn } from '@/lib/utils'
 import { AgentToolCard } from './agent-tool-card'
+
+const MarkdownContent = lazy(() => import('./markdown-content'))
+
+function RichContent({
+  content,
+  markdown,
+  className,
+}: {
+  content: string
+  markdown: boolean
+  className?: string
+}) {
+  const raw = <div className={cn('whitespace-pre-wrap break-words', className)}>{content}</div>
+  if (!markdown) return raw
+  return (
+    <Suspense fallback={raw}>
+      <MarkdownContent content={content} className={className} />
+    </Suspense>
+  )
+}
 
 const KIND_ICON = {
   image: ImageIcon,
@@ -96,12 +116,14 @@ export function AgentToolRow({
 
 function CollapsibleBlock({
   title,
-  children,
+  content,
   tone,
+  markdown = false,
 }: {
   title: string
-  children: React.ReactNode
+  content: string
   tone?: 'reasoning' | 'content'
+  markdown?: boolean
 }) {
   return (
     <div className="mb-2 last:mb-0">
@@ -110,16 +132,15 @@ function CollapsibleBlock({
           {title}
         </p>
       ) : null}
-      <div
+      <RichContent
+        content={content}
+        markdown={markdown}
         className={cn(
-          'whitespace-pre-wrap break-words',
           tone === 'reasoning'
             ? 'text-[12.5px] leading-relaxed font-light italic text-muted-foreground/80'
             : 'text-[13px] leading-relaxed text-foreground/85',
         )}
-      >
-        {children}
-      </div>
+      />
     </div>
   )
 }
@@ -202,21 +223,20 @@ export function AgentTurn({
           {expanded ? (
             <div className="mt-2 rounded-xl border border-border/70 bg-muted/20 px-3.5 py-3">
               {finalReasoning.trim() ? (
-                <CollapsibleBlock title="深度思考" tone="reasoning">
-                  {finalReasoning}
-                </CollapsibleBlock>
+                <CollapsibleBlock title="深度思考" tone="reasoning" content={finalReasoning} />
               ) : null}
               {detailSteps.map((step) => (
                 <div key={step.step} className="mb-3 last:mb-0">
                   {step.reasoning.trim() ? (
-                    <CollapsibleBlock title="深度思考" tone="reasoning">
-                      {step.reasoning}
-                    </CollapsibleBlock>
+                    <CollapsibleBlock title="深度思考" tone="reasoning" content={step.reasoning} />
                   ) : null}
                   {step.content.trim() ? (
-                    <CollapsibleBlock title="中间输出" tone="content">
-                      {step.content}
-                    </CollapsibleBlock>
+                    <CollapsibleBlock
+                      title="中间输出"
+                      tone="content"
+                      content={step.content}
+                      markdown={step.done}
+                    />
                   ) : null}
                   {step.tools.map((tool) => (
                     <div key={tool.id} className="mb-1.5 last:mb-0">
@@ -242,9 +262,11 @@ export function AgentTurn({
       ) : null}
 
       {final && final.content.trim() ? (
-        <div className="text-[14px] leading-7 whitespace-pre-wrap break-words text-foreground">
-          {final.content}
-        </div>
+        <RichContent
+          content={final.content}
+          markdown={final.done}
+          className="text-[14px] leading-7 text-foreground"
+        />
       ) : null}
 
       {running && !final?.content.trim() && !hasDetails ? (

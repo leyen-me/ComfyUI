@@ -221,6 +221,15 @@ DeepSeek 要求 assistant 的 `tool_calls` 后紧跟对应的全部 tool 消息�
 - 工具层：`web_search` / `web_fetch` 对 408/429/5xx 单次重试；写工具不自动重放，
   避免重复创建资产/生成任务；工具失败会作为 tool 结果交给模型自行决定。
 
+## Markdown 渲染
+
+- 完成的 assistant 正文与中间输出用 Markdown 渲染；流式阶段保持纯文本；
+- 使用 `react-markdown` + `remark-gfm` + `remark-breaks`，组件按需懒加载；
+- 支持标题、列表、表格、引用、代码块（复制）、行内代码、链接、删除线；
+- 禁止原始 HTML；链接只允许 http/https/mailto/相对路径；
+- 远程图片不自动加载，降级为带说明的外链；
+- 思考内容、工具输入/输出仍是纯文本 / `<pre>`，不参与 Markdown 解析。
+
 ## 图像输入
 
 对齐官方 Vision / Files API：

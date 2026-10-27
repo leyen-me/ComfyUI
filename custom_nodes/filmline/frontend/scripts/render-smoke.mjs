@@ -476,7 +476,7 @@ const agentEvents = [
   },
   { type: 'step.started', data: { turn: 1, step: 1 } },
   { type: 'content.delta', data: { text: '已经看完参考图，建议先做一张主视觉。' } },
-  { type: 'step.finished', data: { turn: 1, step: 1, content: '已经看完参考图，建议先做一张主视觉。', reasoning: '', tool_calls: [] } },
+  { type: 'step.finished', data: { turn: 1, step: 1, content: '已经看完参考图，建议先做一张主视觉。\n\n**重点**：先做 A/B 两张。\n\n| 方案 | 用途 |\n| --- | --- |\n| A | 主视觉 |', reasoning: '', tool_calls: [] } },
   {
     type: 'usage',
     data: {
@@ -779,6 +779,9 @@ const agentWorkspaceCard = rootText().includes('分集 1')
 await wait(150)
 
 // —— 顶部系统提示：可见、可展开、显示模型/工具/哈希 ——
+await wait(500)
+const markdownRendered =
+  Boolean(document.querySelector('strong')) && Boolean(document.querySelector('table'))
 const agentPromptVisible = rootText().includes('系统提示') && rootText().includes('34 字符')
 ;[...document.querySelectorAll('button')]
   .find((el) => el.textContent?.includes('系统提示'))
@@ -1344,6 +1347,7 @@ const checks = [
   ['文本工具显示文本预览', agentTextCard],
   ['工作区工具显示概况卡', agentWorkspaceCard],
   ['Agent 显示上下文占用', agentContext],
+  ['Markdown 内容渲染正常', markdownRendered],
   ['顶部显示系统提示', agentPromptVisible],
   ['系统提示可展开查看原文与元信息', agentPromptExpanded],
   ['右上角显示 DeepSeek 余额', balanceShown],
