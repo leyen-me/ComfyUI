@@ -155,3 +155,95 @@ def probe(path: Path) -> MediaInfo:
         raise
     except Exception as exc:
         raise InvalidArgument("无法读取媒体信息，文件可能已损坏或格式不受支持") from exc
+
+
+def _decode_rgb_frame(container, stream, seconds: float):
+    """跳到指定秒并返回第一帧（RGB PIL Image）。"""
+    import av  # noqa: F401  (确保异常信息一致)
+    from PIL import Image
+
+    target = max(0.0, float(seconds))
+    if stream.time_base is not None:
+        try:
+            container.seek(int(target / stream.time_base), stream=stream, backward=True)
+        except Exception:
+            pass
+    frame = None
+    for candidate in container.decode(stream):
+        if candidate.time is not None:
+            stamp = float(candidate.time)
+        elif candidate.pts is not None and stream.time_base is not None:
+            stamp = float(candidate.pts * stream.time_base)
+        else:
+            stamp = target
+        frame = candidate
+        if stamp >= target - 1e-6:
+            break
+    if frame is None:
+        raise InvalidArgument("无法读取视频帧")
+    return Image.fromarray(frame.to_ndarray(format="rgb24")).convert("RGB")
+
+
+def video_contact_sheet_data_url(path: Path, seconds: list[float]) -> str:
+    """把多个时间点的帧拼成一张网格图（3 列），供模型一次看完动作走向。"""
+    try:
+        import av
+        from PIL import Image, ImageDraw
+
+        stamps = [max(0.0, float(value)) for value in seconds] or [0.0]
+        tiles = []
+        with av.open(str(path)) as container:
+            stream = container.streams.video[0] if container.streams.video else None
+            if stream is None:
+                raise InvalidArgument("视频不包含视频流")
+            for stamp in stamps:
+                image = _decode_rgb_frame(container, stream, stamp)
+                image.thumbnail((480, 480))
+                tiles.append((stamp, image))
+
+        columns = min(3, len(tiles))
+        rows = (len(tiles) + columns - 1) // columns
+        padding = 6
+        label_height = 18
+        tile_width = max(image.width for _, image in tiles)
+        tile_height = max(image.height for _, image in tiles) + label_height
+        canvas = Image.new(
+            "RGB",
+            (
+                columns * tile_width + padding * (columns + 1),
+                rows * tile_height + padding * (rows + 1),
+            ),
+            (18, 18, 20),
+        )
+        draw = ImageDraw.Draw(canvas)
+        for index, (stamp, image) in enumerate(tiles):
+            column = index % columns
+            row = index // columns
+            x = padding + column * (tile_width + padding)
+            y = padding + row * (tile_height + padding)
+            canvas.paste(image, (x, y + label_height))
+            draw.text((x + 2, y + 2), f"{stamp:.2f}s", fill=(220, 220, 220))
+
+        buffer = io.BytesIO()
+        canvas.save(buffer, format="JPEG", quality=86, optimize=True)
+        return _image_payload(buffer.getvalue(), "image/jpeg")
+    except InvalidArgument:
+        raise
+    except Exception as exc:
+        raise InvalidArgument("无法生成视频帧拼图") from exc
+
+
+def video_frame_image(path: Path, seconds: float):
+    """读取单帧，返回 PIL Image（用于另存为图片资产）。"""
+    try:
+        import av
+
+        with av.open(str(path)) as container:
+            stream = container.streams.video[0] if container.streams.video else None
+            if stream is None:
+                raise InvalidArgument("视频不包含视频流")
+            return _decode_rgb_frame(container, stream, seconds)
+    except InvalidArgument:
+        raise
+    except Exception as exc:
+        raise InvalidArgument("无法读取视频帧") from exc

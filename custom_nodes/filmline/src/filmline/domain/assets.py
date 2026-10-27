@@ -29,6 +29,10 @@ MAX_LIST = 200
 MAX_NAME = 200
 
 
+def _escape_like(term: str) -> str:
+    return term.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
 @dataclass(frozen=True)
 class ResolvedAsset:
     id: int
@@ -74,6 +78,7 @@ class AssetService:
         episode_id: int | None = None,
         kind: AssetKind | None = None,
         source: AssetSource | None = None,
+        q: str = "",
         limit: int = MAX_LIST,
         offset: int = 0,
     ) -> AssetList:
@@ -89,6 +94,11 @@ class AssetService:
             conditions.append(Asset.kind == kind.value)
         if source is not None:
             conditions.append(Asset.source == source.value)
+        term = (q or "").strip()
+        if term:
+            conditions.append(
+                Asset.name.ilike(f"%{_escape_like(term)}%", escape="\\")
+            )
 
         with self._scope() as session:
             total = session.execute(

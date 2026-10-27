@@ -3,7 +3,8 @@
 影视制片管线，以 ComfyUI 扩展的形式运行，**不修改 ComfyUI 任何源码**，
 只通过官方扩展点注册 HTTP 路由。
 
-当前进度：P0 —— 项目（Project）CRUD + 深色前端。
+当前进度：P0 项目 / 分集 / 资产 / 生成管线已完成；右侧生成面板已替换为
+**会话式 Agent**（可调用项目、资产、媒体与生成工具），旧表单组件保留但不再挂载。
 
 ## 为什么不做成独立服务
 
@@ -31,8 +32,12 @@ React 19 + Vite 7 + TypeScript + Tailwind CSS v4，组件按 shadcn/ui 的写法
 - **全局顶栏**：56px 统一顶栏（品牌 / 面包屑 / 主题切换），右上角预留任务队列按钮。
 - **项目列表**：卡片墙，封面取项目最新一张图片，无图时按 id 生成稳定的渐变占位。
 - **项目内布局**：左侧项目导航（项目资产 + 分集列表），中间资产面板
-  （分类用分段控件：文本 / 图片 / 视频 / 音频），右侧上方是「近期生成」舞台
-  （当前作用域的 AI 产物，可点开复用参数、可拖回输入区迭代），下方固定提示词输入框。
+  （分类用分段控件：文本 / 图片 / 视频 / 音频），右侧是 **Agent 会话**：
+  顶部切换会话、中间流式消息、底部输入框；左侧资产可直接拖入输入框作为附件。
+- **Agent 界面**：每个 turn 的深度思考、中间输出与工具调用收进可折叠区域，
+  最终回答在折叠之外；思考为浅色斜体，正文正常色，工具为蓝色下划线，点击查看
+  输入/输出并可分别复制；工具执行时显示转圈与进度，单个工具可暂停；输入框右下角
+  在运行中变为暂停按钮；顶部显示上下文占用（如 `31.5K/1M（3%）`）。
 - **资产来源标记**：`source=user`（用户创建或上传）与 `source=ai`（ComfyUI 生成），
   界面上以徽章区分。文本资产由用户创建；图片/视频支持上传并指定来源。
 - **拖拽排序**：HTML5 原生拖拽，松手即保存；菜单里另有「上移/下移」作为键盘替代。
@@ -77,6 +82,15 @@ npm run test:logic   # 纯函数单测（页码、提示词、拖拽载荷等）
 | GET | `/studio/api/tasks/{id}` | 单个任务状态；前端提交后轮询 |
 | POST | `/studio/api/tasks/{id}/cancel` | 取消排队/运行中的 Filmline 任务 |
 | POST | `/studio/api/prompts/optimize` | DeepSeek 提示词优化（仅视频，后端代理） |
+| GET | `/studio/api/projects/{ref}/agent/sessions` | 项目的 Agent 会话列表（含模型与上下文窗口） |
+| POST | `/studio/api/projects/{ref}/agent/sessions` | 新建会话 |
+| GET/PATCH/DELETE | `/studio/api/agent/sessions/{id}` | 会话详情 / 改名 / 软删除 |
+| GET | `/studio/api/agent/sessions/{id}/events?after=N` | SSE 事件流，`after` 断点续传 |
+| POST | `/studio/api/agent/sessions/{id}/messages` | 发送消息（`text` + `asset_ids`），202 启动运行 |
+| POST | `/studio/api/agent/sessions/{id}/pause` | 暂停推理与当前工具 |
+| POST | `/studio/api/agent/sessions/{id}/resume` | 继续被暂停/中断的会话 |
+| POST | `/studio/api/agent/sessions/{id}/answers` | 回答 `ask_question` |
+| POST | `/studio/api/agent/sessions/{id}/tools/{tool_call_id}/pause` | 只暂停某个工具 |
 | GET | `/studio/api/health` | 版本、库路径、schema 版本、项目数、LLM 是否配置 |
 
 统一响应信封：
@@ -109,6 +123,15 @@ ComfyUI/user/filmline/
 | `FILMLINE_REF_SCHEDULER` | 参考生成默认调度器（simple / beta / normal） |
 | `FILMLINE_COMFY_URL` | 本机 ComfyUI 地址 |
 | `FILMLINE_VIDEO_TIMEOUT` | 视频任务超时秒数（默认 7200，即 2 小时） |
+| `FILMLINE_AGENT_API_KEY` | Agent 模型 Key，未设置时回落到 `DEEPSEEK_API_KEY` |
+| `FILMLINE_AGENT_BASE_URL` | OpenAI 兼容端点，默认 `https://api.deepseek.com` |
+| `FILMLINE_AGENT_MODEL` | 模型，默认 `deepseek-flash` |
+| `FILMLINE_AGENT_THINKING` | `auto`（默认，不发送 `thinking`，DeepSeek 默认开启）/ `enabled` / `disabled` |
+| `FILMLINE_AGENT_REASONING_EFFORT` | 仅 `enabled` 时发送；`low` / `high` / `max`，非法值回落 `high` |
+| `FILMLINE_AGENT_CONTEXT_WINDOW` | 上下文窗口，默认 `1000000` |
+| `FILMLINE_AGENT_MAX_TOKENS` | 单次输出预算（含思考），默认 `8192` |
+| `FILMLINE_AGENT_TIMEOUT` | 流式读取空闲超时秒数，默认 `300` |
+| `FILMLINE_AGENT_TICK_SECONDS` | 未完成任务的定时自检间隔，默认 `300` |
 
 ## 视频生成参数（对齐官方）
 
@@ -234,6 +257,60 @@ DEEPSEEK_MAX_TOKENS=4096
   并在截断/非法 JSON 时自动重试一次（重试预算翻倍），仍失败才返回明确错误。
 - 失败、超时、返回格式异常都会保留原文，不阻塞生成；应用前可人工修改。
 
+### Agent（右侧会话）
+
+右侧不再是表单，而是一个后端常驻的会话式 Agent。完整设计见
+[`docs/agent.md`](docs/agent.md)。
+
+- **会话归属**：一个项目可有多个对话，顶部切换，与分集无关；所有人共享。
+- **流式**：后端把模型输出拆成 reasoning / content / tool 事件，按 `seq` 入库；
+  浏览器用 SSE 从 `after` 断点续传。断网、刷新、换标签页都不会中断推理；
+  重新打开页面会先回放历史再继续接收。
+- **暂停**：全局暂停会中断模型请求与正在执行的工具，工具会得到
+  `{"ok":false,"error":{"code":"paused"}}`；流式阶段的半截消息作废，恢复后重新请求。
+  单个工具也可以在消息流里点暂停。
+- **恢复**：进程重启后未完成的会话标记为 `interrupted`；缺失的工具结果由账本或
+  `interrupted` 错误补齐，已执行的工具不会重复执行。
+- **深度思考**：默认 `FILMLINE_AGENT_THINKING=auto`，不发送 `thinking` 字段，DeepSeek 按官方
+  默认开启并返回 `reasoning_content`；后端流式解析并保存原文，在所有后续请求里完整回传
+  （请求携带 `tools` 时官方要求必须回传，即使该轮没有工具调用）。数据库与界面
+  1:1 还原换行与空白；`disabled` 时只发送 `{"type":"disabled"}`，不再发送 effort。
+- **缓存友好**：系统提示静态、上下文只追加、工具参数以原始字符串回填，
+  不改写历史；实测第二轮能命中前缀缓存。
+- **上下文用量**：每次响应记录 `prompt_tokens` 与 `context_window`，输入框左下角显示
+  `已用/窗口（百分比）`。
+- **附件**：左侧资产拖入输入框生成附件 chip，发送时只传资产 id；模型按需调用
+  `read_image` / `read_video` / `read_text_asset` 读取，避免把大文件塞进每条消息。
+- **问答**：模型可调用 `ask_question`，右侧弹出对话框（单选/多选/自由输入）；
+  回答作为工具结果继续同一条推理链，本轮状态为 `waiting_input`。
+- **生成是异步的**：`create_image` / `create_video` 立即返回 `task_id`。模型可以选择
+  `wait_generation` 阻塞等待（最长 15 分钟、可暂停），也可以先结束本轮；
+  任务完成时后端会以“系统通知”的形式代替用户发一条消息并让 Agent 自检。
+  仍有未完成任务时，每 5 分钟（`FILMLINE_AGENT_TICK_SECONDS`）再提醒一次。
+- **工具集**：工作区/分集/项目读写、资产列表与文本读写、`probe_media`、
+  `read_image`、`read_video`（均匀抽帧拼成网格图）、`read_audio`、`extract_frame`、
+  `create_image`、`create_video`、任务查询/等待/取消、`ask_question`。
+  删除资产、删除分集、取消任务必须先 `ask_question` 确认。
+- **统一协议**：工具入参走 JSON Schema 严格校验（未知字段拒绝），输出固定
+  `{ok, summary, data, error, meta}`；失败作为结果返回给模型而不是抛异常。
+- **参数校验单一入口**：HTTP 生成接口与 Agent 共用 `domain/produce.py`，不存在
+  绕过接口规则的第二条路径。
+
+模型与上下文窗口全部可配置，换 provider 只改环境变量：
+
+```env
+FILMLINE_AGENT_API_KEY=
+FILMLINE_AGENT_BASE_URL=https://api.deepseek.com
+FILMLINE_AGENT_MODEL=deepseek-flash
+# auto=不发送 thinking（DeepSeek 默认开启）；enabled 才发送 effort
+FILMLINE_AGENT_THINKING=auto
+FILMLINE_AGENT_REASONING_EFFORT=high
+FILMLINE_AGENT_CONTEXT_WINDOW=1000000
+```
+
+未设置 `FILMLINE_AGENT_*` 时回落到 `DEEPSEEK_*`；没有 API Key 时会话仍可打开，
+发送后给出明确错误，不影响左侧资产与原有生成接口。
+
 ### 任务队列
 
 - 生成接口改为 **202 + task**，后台 runner 负责提交 ComfyUI、等待完成、落盘和登记资产；
@@ -259,6 +336,7 @@ custom_nodes/filmline/
 │   ├── config.py  clock.py  errors.py
 │   ├── db/                      # 引擎、模型、user_version 迁移
 │   ├── domain/                  # DTO + 业务规则（不依赖 aiohttp）
+│   ├── agent/                   # 会话循环、SSE 事件、工具与提示
 │   └── api/                     # aiohttp 路由、响应信封
 ├── frontend/                    # React + Vite 源码
 │   └── src/{components,hooks,lib}
@@ -304,6 +382,14 @@ custom_nodes/filmline/
 14. **帧锚定（Add Guide）**：参考生成可额外挂最多 4 张图片锚定到输出时间轴的指定秒数，
     走官方 `MiniMaxH3AddGuide` 链在 positive 上。它解决「参考素材不锁时间轴」的问题，
     与首尾帧模式互补；当前只支持单张图片锚定，不支持整段视频/音频锚定。
+15. **Agent 原文入库**：思考、正文、工具参数与结果都保存模型实际读到/写出的原文，
+    回填请求时不重新序列化；系统提示保持静态，历史只追加，才能稳定命中前缀缓存。
+16. **事件可回放**：Agent 的每个增量都带会话内单调 `seq`；SSE 用 `after` 续传，
+    `pause` 必须同时停止模型请求与当前工具，并给工具写入 paused 结果。
+17. **工具幂等**：`agent_tool_ledger` 以 `tool_call_id` 去重；重启后缺结果的调用补
+    `interrupted`，生成任务不重复提交。完成通知与定时自检都通过“代替用户发消息”进入同一循环。
+18. **入口唯一**：生成参数校验只在 `domain/produce.py`，HTTP 路由与 Agent 工具共用；
+    旧右侧表单组件保留但不挂载，旧接口继续可用，便于回退。
 
 ## 测试
 

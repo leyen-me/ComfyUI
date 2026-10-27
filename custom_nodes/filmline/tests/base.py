@@ -51,6 +51,21 @@ class DbTestCase(unittest.TestCase):
         shutil.rmtree(self.tmp, ignore_errors=True)
 
 
+class AsyncDbTestCase(unittest.IsolatedAsyncioTestCase):
+    """异步测试 + 独立临时库。"""
+
+    async def asyncSetUp(self) -> None:
+        self.tmp = Path(tempfile.mkdtemp(prefix="filmline_async_"))
+        _isolate_data_dir(self.tmp)
+        db.reset()
+        db.init(self.tmp / "test.db")
+
+    async def asyncTearDown(self) -> None:
+        db.reset()
+        _restore_data_dir()
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+
 class ApiTestCase(unittest.IsolatedAsyncioTestCase):
     """带 aiohttp 进程内服务的测试。"""
 

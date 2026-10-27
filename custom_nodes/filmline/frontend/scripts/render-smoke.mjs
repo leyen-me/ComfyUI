@@ -216,6 +216,81 @@ const doneTask = {
 
 let queueTask = { ...runningTask }
 
+
+const agentSession = {
+  id: 1,
+  project_id: 1,
+  title: '竖屏预告方案',
+  status: 'idle',
+  model: 'deepseek-flash',
+  context_window: 1_000_000,
+  usage: { prompt_tokens: 31_500, context_window: 1_000_000 },
+  turn: 1,
+  last_seq: 14,
+  created_at: '2026-10-24T07:00:00.000Z',
+  updated_at: '2026-10-24T07:20:00.000Z',
+}
+
+const agentEvents = [
+  { type: 'user.message', data: { turn: 1, text: '把这段做成 8 秒竖屏预告', assets: [] } },
+  { type: 'run.started', data: { turn: 1 } },
+  { type: 'step.started', data: { turn: 1, step: 0 } },
+  { type: 'reasoning.delta', data: { text: '先确认资产，再读图。' } },
+  { type: 'content.delta', data: { text: '我先读一下参考图。' } },
+  {
+    type: 'step.finished',
+    data: {
+      turn: 1,
+      step: 0,
+      content: '我先读一下参考图。',
+      reasoning: '先确认资产，再读图。',
+      tool_calls: [
+        { id: 'call_1', type: 'function', function: { name: 'read_image', arguments: '{"asset_id":10}' } },
+      ],
+    },
+  },
+  {
+    type: 'tool.started',
+    data: {
+      turn: 1,
+      tool_call_id: 'call_1',
+      name: 'read_image',
+      label: '查看图片',
+      args_raw: '{"asset_id":10}',
+      write: false,
+    },
+  },
+  { type: 'tool.progress', data: { tool_call_id: 'call_1', text: '读取图片', percent: 40 } },
+  {
+    type: 'tool.finished',
+    data: {
+      turn: 1,
+      tool_call_id: 'call_1',
+      status: 'ok',
+      summary: '已读取图片',
+      result_raw: '{"ok":true,"summary":"已读取图片","data":{"asset_id":10}}',
+    },
+  },
+  { type: 'step.started', data: { turn: 1, step: 1 } },
+  { type: 'content.delta', data: { text: '已经看完参考图，建议先做一张主视觉。' } },
+  { type: 'step.finished', data: { turn: 1, step: 1, content: '已经看完参考图，建议先做一张主视觉。', reasoning: '', tool_calls: [] } },
+  {
+    type: 'usage',
+    data: {
+      prompt_tokens: 31_500,
+      completion_tokens: 800,
+      total_tokens: 32_300,
+      context_window: 1_000_000,
+    },
+  },
+  { type: 'run.finished', data: { status: 'done', turn: 1 } },
+]
+
+const agentFrames = agentEvents.map((event, index) => {
+  const seq = index + 1
+  return `id: ${seq}\ndata: ${JSON.stringify({ seq, type: event.type, data: event.data })}\n\n`
+})
+
 globalThis.fetch = async (input, init = {}) => {
   const path = new URL(String(input), 'http://127.0.0.1:8188').pathname
   const method = (init.method ?? 'GET').toUpperCase()
@@ -286,6 +361,30 @@ globalThis.fetch = async (input, init = {}) => {
   } else if (/^\/studio\/api\/projects\/[^/]+$/.test(path)) {
     if (method === 'PATCH') Object.assign(project, JSON.parse(init.body))
     data = project
+  } else if (path.endsWith('/agent/sessions') && method === 'GET') {
+    data = {
+      items: [{ ...agentSession }],
+      model: 'deepseek-flash',
+      context_window: 1_000_000,
+      configured: true,
+    }
+  } else if (path.endsWith('/agent/sessions') && method === 'POST') {
+    data = { ...agentSession }
+  } else if (/\/agent\/sessions\/\d+$/.test(path)) {
+    data = { ...agentSession }
+  } else if (/\/agent\/sessions\/\d+\/events$/.test(path)) {
+    const after = Number(
+      new URL(String(input), 'http://127.0.0.1:8188').searchParams.get('after') || 0,
+    )
+    const encoder = new TextEncoder()
+    const frames = after === 0 ? agentFrames : []
+    const body = new ReadableStream({
+      start(controller) {
+        for (const frame of frames) controller.enqueue(encoder.encode(frame))
+        controller.close()
+      },
+    })
+    return { ok: true, status: 200, body, json: async () => ({ ok: true, data: {} }) }
   } else {
     data = { items: [{ ...project }], total: 1, limit: 20, offset: 0 }
   }
@@ -337,6 +436,34 @@ window.history.pushState({}, '', '/studio/projects/PRJ-0001')
 window.dispatchEvent(new window.PopStateEvent('popstate'))
 await wait(500)
 const detailText = rootText()
+
+// —— Agent 面板：会话、最终回答、折叠思考、工具详情、上下文占用 ——
+const agentPrompt = Boolean(document.querySelector('textarea[aria-label="给 Agent 的消息"]'))
+const agentTitle = detailText.includes('竖屏预告方案')
+const agentSend = Boolean(document.querySelector('button[title="发送"]'))
+const agentFinalVisible = rootText().includes('已经看完参考图，建议先做一张主视觉。')
+const agentContext = rootText().includes('31.5K/1M')
+const agentCollapsedByDefault = !rootText().includes('先确认资产，再读图。')
+
+;[...document.querySelectorAll('button')]
+  .find((el) => el.textContent?.includes('深度思考与工具调用'))
+  ?.click()
+await wait(180)
+const agentReasoningShown = rootText().includes('先确认资产，再读图。')
+
+;[...document.querySelectorAll('button')]
+  .find((el) => el.textContent?.includes('查看图片'))
+  ?.click()
+await wait(180)
+const agentToolDialogText = document.querySelector('dialog[open]')?.textContent ?? ''
+const agentToolDetail =
+  agentToolDialogText.includes('输入') &&
+  agentToolDialogText.includes('输出') &&
+  agentToolDialogText.includes('asset_id')
+;[...document.querySelectorAll('dialog[open] button')]
+  .find((el) => el.textContent?.trim() === '关闭')
+  ?.click()
+await wait(150)
 
 const optionsTrigger = document.querySelector('button[aria-label="尺寸与分辨率"]')
 const panel = {
@@ -807,53 +934,14 @@ const checks = [
   ['项目页显示项目名', detailText.includes(renamed)],
   ['项目页有资产导航', ['文本', '图片', '视频', '音频'].every((label) => detailText.includes(label))],
   ['项目页有文本资产', detailText.includes('第一幕')],
-  ['生成面板有提示词输入', panel.hasPrompt],
-  ['提示词助手可展开', assistantShown],
-  ['提示词助手可插入模板', assistantTemplateInserted],
-  ['默认图片模式', panel.imageDefault],
-  ['尺寸选择是一个组合按钮', panel.hasOptions && panel.hasCount],
-  ['面板含比例与分辨率两组', optionsText.includes('比例') && optionsText.includes('分辨率')],
-  ['只提供 1K/2K（无 4K）', optionsText.includes('1K') && optionsText.includes('2K') && !has4k],
-  ['选择 2K 后按钮同步显示', triggerAfterTier.includes('2K')],
-  ['视频有尺寸与时长', videoMode.hasDuration && videoMode.noCount],
-  ['时长默认 5 秒', durationDefault],
-  ['时长可选预设 8 秒', durationPreset],
-  ['时长面板显示帧数与实际时长', durationHintShown],
-  ['时长可自定义 13 秒', durationCustom],
-  ['视频有分辨率档位', videoMode.hasTier && videoOptionsText.includes('分辨率')],
-  ['视频有首尾帧两个槽位', keyframeSlots.length === 2 && hasVideoModeTabs],
-  ['首帧槽位可打开资产选择器', pickerOpened],
-  ['选择图片后首帧槽位显示缩略图', firstFramePicked],
-  ['视频拖到槽位打开选帧对话框', videoFrameDialogOpened],
-  ['AI 优化可预览并应用', optimizePreviewShown && optimizeApplied],
-  ['参考模式显示参考素材托盘', referenceTrayShown],
-  ['参考图选择器可多选', referencePickerOpened],
-  ['选择参考图后显示图1', referenceAdded],
-  ['参考图可插入 Picture 引用', referenceTagInserted],
-  ['参考视频选择器显示视频缩略图', videoPickerThumbShown],
-  ['参考视频可拖入托盘', videoRefAdded],
-  ['参考音频可拖入托盘', audioRefAdded],
-  ['视频原声默认占用音轨', soundtrackDefault],
-  ['视频/音频引用可插入提示词', mediaTagsInserted],
-  ['参考视频裁剪打开独立对话框', trimDialogOpened],
-  ['文本资产拖入输入框变成文字', textAssetDropped],
-  ['切回首尾帧再切回参考模式保留素材', keyframeSlotsAgain === 2 && referencePersisted],
-  ['切回图片模式隐藏首尾帧槽位', keyframeSlotsAfterImage === 0],
-  ['切回图片模式隐藏参考托盘', !referenceTrayAfterImage],
-  ['项目资产页仅「资产」高亮', activeNavOnProject.length === 1 && activeNavOnProject[0] === '项目资产'],
-  ['分集页仅当前集高亮', activeNavOnEpisode.length === 1 && activeNavOnEpisode[0].includes('EP01')],
-  ['分集创建后出现在导航', afterEpisodeCreate.includes('EP01')],
-  ['分集页显示集标题', episodeText.includes('EP01 · 本集素材') && episodeText.includes('第 1 集')],
-  ['项目内不出现删除项目', projectMenuItems.includes('编辑') && !projectMenuItems.includes('删除')],
-  ['资产菜单挂在 body 上（不被裁剪）', menuInBody && !menuInRoot],
-  ['编辑弹窗回填文本内容', prefilled],
-  ['文本资产单击进入编辑', clickOpensEdit],
-  ['资产改名立即更新', afterAssetEdit.includes('第一幕（改）')],
-  ['列表不展示提示词', !imageTabText.includes('雪夜长安街，红灯笼')],
-  ['点击图片打开预览', previewText.includes('让他图1笑起来') && previewText.includes('1344×768')],
-  ['预览显示生成耗时', previewText.includes('耗时 1 分 41 秒') && previewText.includes('开始')],
-  ['复用提示词回填面板', reused],
-  ['复用后「图1」还原为图片块', chipRestored],
+  ['Agent 面板有输入框', agentPrompt],
+  ['Agent 会话标题可见', agentTitle],
+  ['Agent 发送按钮可用', agentSend],
+  ['Agent 最终回答在折叠之外', agentFinalVisible],
+  ['Agent 思考默认折叠', agentCollapsedByDefault],
+  ['Agent 深度思考可展开', agentReasoningShown],
+  ['Agent 工具详情含输入输出', agentToolDetail],
+  ['Agent 显示上下文占用', agentContext],
   ['复制失败时兜底弹窗可手动复制', fallbackShown],
   ['视频卡片下半部分可打开预览', videoPreviewOpened],
   ['视频列表为无控制条的缩略预览', videoListNoControls],

@@ -1,0 +1,116 @@
+/**
+ * Agent 事件折叠与上下文显示的单测（纯函数）。
+ *
+ *   npm run test:logic
+ */
+import assert from 'node:assert/strict'
+import {
+  applyEvent,
+  contextLabel,
+  emptyView,
+  finalStep,
+  intermediateSteps,
+  pendingQuestion,
+} from '../src/lib/agent-view.ts'
+
+function event(seq, type, data) {
+  return { seq, type, data }
+}
+
+function run(events) {
+  return events.reduce(applyEvent, emptyView)
+}
+
+const finalOnly = run([
+  event(1, 'user.message', { turn: 1, text: '你好', assets: [] }),
+  event(2, 'run.started', { turn: 1 }),
+  event(3, 'step.started', { turn: 1, step: 0 }),
+  event(4, 'reasoning.delta', { text: '思考\n第二行' }),
+  event(5, 'content.delta', { text: '最终' }),
+  event(6, 'content.delta', { text: '回答' }),
+  event(7, 'step.finished', {
+    turn: 1,
+    step: 0,
+    content: '最终回答',
+    reasoning: '思考\n第二行',
+    tool_calls: [],
+  }),
+])
+assert.equal(finalOnly.turns.length, 1)
+assert.equal(finalStep(finalOnly.turns[0])?.content, '最终回答')
+assert.equal(finalStep(finalOnly.turns[0])?.reasoning, '思考\n第二行')
+assert.equal(intermediateSteps(finalOnly.turns[0]).length, 0)
+
+const withTool = run([
+  event(1, 'user.message', { turn: 1, text: '看图', assets: [] }),
+  event(2, 'step.started', { turn: 1, step: 0 }),
+  event(3, 'content.delta', { text: '先读图' }),
+  event(4, 'step.finished', {
+    turn: 1,
+    step: 0,
+    content: '先读图',
+    reasoning: '需要图',
+    tool_calls: [{ id: 'c1', function: { name: 'read_image', arguments: '{"asset_id":1}' } }],
+  }),
+  event(5, 'tool.started', {
+    turn: 1,
+    tool_call_id: 'c1',
+    name: 'read_image',
+    label: '查看图片',
+    args_raw: '{"asset_id":1}',
+  }),
+  event(6, 'tool.progress', { tool_call_id: 'c1', text: '读取中', percent: 50 }),
+  event(7, 'tool.finished', {
+    turn: 1,
+    tool_call_id: 'c1',
+    status: 'ok',
+    result_raw: '{"ok":true}',
+  }),
+  event(8, 'step.started', { turn: 1, step: 1 }),
+  event(9, 'step.finished', {
+    turn: 1,
+    step: 1,
+    content: '看完了',
+    reasoning: '',
+    tool_calls: [],
+  }),
+])
+const toolTurn = withTool.turns[0]
+assert.equal(finalStep(toolTurn)?.content, '看完了')
+const middle = intermediateSteps(toolTurn)
+assert.equal(middle.length, 1)
+assert.equal(middle[0].tools.length, 1)
+assert.equal(middle[0].tools[0].status, 'ok')
+assert.equal(middle[0].tools[0].label, '查看图片')
+assert.equal(middle[0].tools[0].percent, 50)
+
+const discarded = run([
+  event(1, 'step.started', { turn: 1, step: 0 }),
+  event(2, 'content.delta', { text: '半截' }),
+  event(3, 'step.discarded', { turn: 1, step: 0 }),
+])
+assert.equal(discarded.turns[0].steps[0].content, '')
+assert.equal(finalStep(discarded.turns[0]), undefined)
+
+const deduped = run([
+  event(1, 'content.delta', { text: 'A' }),
+  event(1, 'content.delta', { text: '重复' }),
+])
+assert.equal(deduped.lastSeq, 1)
+assert.equal(deduped.turns[0].steps[0].content, 'A')
+
+const question = run([
+  event(1, 'question', {
+    tool_call_id: 'q1',
+    turn: 1,
+    questions: [
+      { id: 'a', header: '确认', question: '继续？', options: [{ label: '是' }] },
+    ],
+  }),
+])
+assert.equal(pendingQuestion(question)?.question?.toolCallId, 'q1')
+
+assert.equal(contextLabel({ prompt_tokens: 31_500, context_window: 1_000_000 }, 0), '31.5K/1M（3%）')
+assert.equal(contextLabel(null, 1_000_000), '0/1M（0%）')
+
+console.log('Agent 事件折叠与上下文显示正常')

@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, Integer, JSON, String, Text
+from sqlalchemy import DateTime, ForeignKey, Integer, JSON, String, Text, UniqueConstraint
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 from ..clock import utcnow
@@ -108,6 +108,120 @@ class GenerationTask(Base):
     finished_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, default=utcnow, onupdate=utcnow, nullable=False
+    )
+
+
+class AgentSession(Base):
+    """项目下的一个 Agent 会话；所有人共享，与分集无关。"""
+
+    __tablename__ = "agent_sessions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    project_id: Mapped[int] = mapped_column(
+        ForeignKey("projects.id"), index=True, nullable=False
+    )
+    title: Mapped[str] = mapped_column(String(200), nullable=False)
+    # idle | running | waiting_input | paused | interrupted | error
+    status: Mapped[str] = mapped_column(String(20), nullable=False, index=True)
+    model: Mapped[str] = mapped_column(String(120), default="", server_default="")
+    context_window: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    # 事件与模型消息使用各自的单调序号，前端按事件序号断点续传
+    last_seq: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    last_message_seq: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    turn: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    usage: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, index=True)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=utcnow, onupdate=utcnow, nullable=False
+    )
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
+
+
+class AgentMessage(Base):
+    """模型可见的上下文，只追加。
+
+    ``content`` / ``reasoning`` / ``tool_calls_raw`` 保存的是模型实际看到/输出的
+    原始字符串，重建请求时原样回填，避免重新序列化破坏 DeepSeek 的前缀缓存。
+    """
+
+    __tablename__ = "agent_messages"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    session_id: Mapped[int] = mapped_column(
+        ForeignKey("agent_sessions.id"), index=True, nullable=False
+    )
+    seq: Mapped[int] = mapped_column(Integer, nullable=False)
+    turn: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    # user | assistant | tool
+    role: Mapped[str] = mapped_column(String(16), nullable=False)
+    content: Mapped[str] = mapped_column(Text, default="", server_default="")
+    reasoning: Mapped[str] = mapped_column(Text, default="", server_default="")
+    # assistant 的完整 tool_calls JSON（arguments 保持原始字符串）
+    tool_calls_raw: Mapped[str | None] = mapped_column(Text, nullable=True)
+    tool_call_id: Mapped[str | None] = mapped_column(String(80), nullable=True, index=True)
+    tool_name: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    meta: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, index=True)
+
+    __table_args__ = (UniqueConstraint("session_id", "seq", name="ux_agent_messages_seq"),)
+
+
+class AgentEvent(Base):
+    """SSE 事件日志：增量原文入库，刷新/断网后按 seq 回放。"""
+
+    __tablename__ = "agent_events"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    session_id: Mapped[int] = mapped_column(
+        ForeignKey("agent_sessions.id"), index=True, nullable=False
+    )
+    seq: Mapped[int] = mapped_column(Integer, nullable=False)
+    type: Mapped[str] = mapped_column(String(40), nullable=False, index=True)
+    data: Mapped[str] = mapped_column(Text, default="", server_default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, index=True)
+
+    __table_args__ = (UniqueConstraint("session_id", "seq", name="ux_agent_events_seq"),)
+
+
+class AgentToolLedger(Base):
+    """工具执行账本：同一 tool_call_id 只执行一次，崩溃恢复后不重复产生副作用。"""
+
+    __tablename__ = "agent_tool_ledger"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    session_id: Mapped[int] = mapped_column(
+        ForeignKey("agent_sessions.id"), index=True, nullable=False
+    )
+    tool_call_id: Mapped[str] = mapped_column(String(80), nullable=False)
+    tool_name: Mapped[str] = mapped_column(String(64), nullable=False)
+    # running | ok | error | paused | cancelled | interrupted
+    status: Mapped[str] = mapped_column(String(16), nullable=False)
+    result_raw: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+    __table_args__ = (
+        UniqueConstraint("session_id", "tool_call_id", name="ux_agent_ledger_call"),
+    )
+
+
+class AgentTaskWatch(Base):
+    """Agent 关注的生成任务：完成通知与定时自检都从这里取。"""
+
+    __tablename__ = "agent_task_watch"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    session_id: Mapped[int] = mapped_column(
+        ForeignKey("agent_sessions.id"), index=True, nullable=False
+    )
+    task_id: Mapped[int] = mapped_column(Integer, index=True, nullable=False)
+    # 完成后通知的时间；为空表示还没通知
+    notified_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+    __table_args__ = (
+        UniqueConstraint("session_id", "task_id", name="ux_agent_task_watch"),
     )
 
 

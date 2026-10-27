@@ -10,8 +10,10 @@ import logging
 from aiohttp import web
 
 from .. import __version__, config, db, llm
+from ..agent.engine import AgentEngine
 from ..domain.projects import ProjectService
 from ..runner import TaskRunner, RUNNER_KEY
+from .agent import register_agent_routes
 from .assets import register_asset_routes
 from .episodes import register_episode_routes
 from .generate import register_generate_routes
@@ -37,11 +39,17 @@ def register_routes(app: web.Application) -> None:
     register_generate_routes(routes)
     register_task_routes(routes)
     register_prompt_routes(routes)
+    register_agent_routes(routes)
 
     runner = TaskRunner()
     app[RUNNER_KEY] = runner
     app.on_startup.append(runner.start)
     app.on_cleanup.append(runner.stop)
+
+    agent = AgentEngine()
+    agent.bind_runner(runner)
+    app.on_startup.append(agent.start)
+    app.on_cleanup.append(agent.stop)
 
     @routes.get(f"{API_PREFIX}/health")
     @handle_errors
@@ -54,6 +62,8 @@ def register_routes(app: web.Application) -> None:
                 "schema_version": _schema_version(),
                 "projects": projects.total,
                 "llm_configured": llm.configured(),
+                "agent_configured": config.agent_settings().configured,
+                "agent_model": config.agent_settings().model,
             }
         )
 

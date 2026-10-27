@@ -172,6 +172,142 @@ def _migration_007_generation_tasks(conn: Connection) -> None:
         )
 
 
+def _migration_008_agent(conn: Connection) -> None:
+    """Agent 会话、上下文消息、SSE 事件、工具账本与任务关注。"""
+    conn.exec_driver_sql(
+        """
+        CREATE TABLE agent_sessions (
+            id INTEGER NOT NULL,
+            project_id INTEGER NOT NULL,
+            title VARCHAR(200) NOT NULL,
+            status VARCHAR(20) NOT NULL,
+            model VARCHAR(120) DEFAULT '' NOT NULL,
+            context_window INTEGER DEFAULT 0 NOT NULL,
+            last_seq INTEGER DEFAULT 0 NOT NULL,
+            last_message_seq INTEGER DEFAULT 0 NOT NULL,
+            turn INTEGER DEFAULT 0 NOT NULL,
+            usage JSON,
+            created_at DATETIME NOT NULL,
+            updated_at DATETIME NOT NULL,
+            deleted_at DATETIME,
+            PRIMARY KEY (id),
+            FOREIGN KEY(project_id) REFERENCES projects (id)
+        )
+        """
+    )
+    for index, column in (
+        ("ix_agent_sessions_project_id", "project_id"),
+        ("ix_agent_sessions_status", "status"),
+        ("ix_agent_sessions_created_at", "created_at"),
+        ("ix_agent_sessions_deleted_at", "deleted_at"),
+    ):
+        conn.exec_driver_sql(f"CREATE INDEX {index} ON agent_sessions ({column})")
+
+    conn.exec_driver_sql(
+        """
+        CREATE TABLE agent_messages (
+            id INTEGER NOT NULL,
+            session_id INTEGER NOT NULL,
+            seq INTEGER NOT NULL,
+            turn INTEGER NOT NULL,
+            role VARCHAR(16) NOT NULL,
+            content TEXT DEFAULT '' NOT NULL,
+            reasoning TEXT DEFAULT '' NOT NULL,
+            tool_calls_raw TEXT,
+            tool_call_id VARCHAR(80),
+            tool_name VARCHAR(64),
+            meta JSON,
+            created_at DATETIME NOT NULL,
+            PRIMARY KEY (id),
+            FOREIGN KEY(session_id) REFERENCES agent_sessions (id)
+        )
+        """
+    )
+    conn.exec_driver_sql(
+        "CREATE UNIQUE INDEX ux_agent_messages_seq ON agent_messages (session_id, seq)"
+    )
+    conn.exec_driver_sql(
+        "CREATE INDEX ix_agent_messages_session_id ON agent_messages (session_id)"
+    )
+    conn.exec_driver_sql(
+        "CREATE INDEX ix_agent_messages_tool_call_id ON agent_messages (tool_call_id)"
+    )
+    conn.exec_driver_sql(
+        "CREATE INDEX ix_agent_messages_created_at ON agent_messages (created_at)"
+    )
+
+    conn.exec_driver_sql(
+        """
+        CREATE TABLE agent_events (
+            id INTEGER NOT NULL,
+            session_id INTEGER NOT NULL,
+            seq INTEGER NOT NULL,
+            type VARCHAR(40) NOT NULL,
+            data TEXT DEFAULT '' NOT NULL,
+            created_at DATETIME NOT NULL,
+            PRIMARY KEY (id),
+            FOREIGN KEY(session_id) REFERENCES agent_sessions (id)
+        )
+        """
+    )
+    conn.exec_driver_sql(
+        "CREATE UNIQUE INDEX ux_agent_events_seq ON agent_events (session_id, seq)"
+    )
+    conn.exec_driver_sql(
+        "CREATE INDEX ix_agent_events_session_id ON agent_events (session_id)"
+    )
+    conn.exec_driver_sql("CREATE INDEX ix_agent_events_type ON agent_events (type)")
+    conn.exec_driver_sql(
+        "CREATE INDEX ix_agent_events_created_at ON agent_events (created_at)"
+    )
+
+    conn.exec_driver_sql(
+        """
+        CREATE TABLE agent_tool_ledger (
+            id INTEGER NOT NULL,
+            session_id INTEGER NOT NULL,
+            tool_call_id VARCHAR(80) NOT NULL,
+            tool_name VARCHAR(64) NOT NULL,
+            status VARCHAR(16) NOT NULL,
+            result_raw TEXT,
+            created_at DATETIME NOT NULL,
+            finished_at DATETIME,
+            PRIMARY KEY (id),
+            FOREIGN KEY(session_id) REFERENCES agent_sessions (id)
+        )
+        """
+    )
+    conn.exec_driver_sql(
+        "CREATE UNIQUE INDEX ux_agent_ledger_call ON agent_tool_ledger (session_id, tool_call_id)"
+    )
+    conn.exec_driver_sql(
+        "CREATE INDEX ix_agent_tool_ledger_session_id ON agent_tool_ledger (session_id)"
+    )
+
+    conn.exec_driver_sql(
+        """
+        CREATE TABLE agent_task_watch (
+            id INTEGER NOT NULL,
+            session_id INTEGER NOT NULL,
+            task_id INTEGER NOT NULL,
+            notified_at DATETIME,
+            created_at DATETIME NOT NULL,
+            PRIMARY KEY (id),
+            FOREIGN KEY(session_id) REFERENCES agent_sessions (id)
+        )
+        """
+    )
+    conn.exec_driver_sql(
+        "CREATE UNIQUE INDEX ux_agent_task_watch ON agent_task_watch (session_id, task_id)"
+    )
+    conn.exec_driver_sql(
+        "CREATE INDEX ix_agent_task_watch_session_id ON agent_task_watch (session_id)"
+    )
+    conn.exec_driver_sql(
+        "CREATE INDEX ix_agent_task_watch_task_id ON agent_task_watch (task_id)"
+    )
+
+
 MIGRATIONS: list[tuple[int, object]] = [
     (1, _migration_001_initial),
     (2, _migration_002_drop_project_status),
@@ -180,6 +316,7 @@ MIGRATIONS: list[tuple[int, object]] = [
     (5, _migration_005_episodes),
     (6, _migration_006_generation_stats),
     (7, _migration_007_generation_tasks),
+    (8, _migration_008_agent),
 ]
 
 

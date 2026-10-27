@@ -6,7 +6,7 @@ import { ApiError, api, type Episode, type Project } from '@/lib/api'
 import { useEpisodes } from '@/hooks/use-episodes'
 import { AppHeader, BrandMark } from './app-header'
 import { AssetPanel } from './asset-panel'
-import { GenerationPanel } from './generation-panel'
+import { AgentPanel } from './agent-panel'
 import { EpisodeDialog } from './episode-dialog'
 import { EpisodeOverview } from './episode-overview'
 import { isAssetKind } from './kind-tabs'
@@ -203,7 +203,7 @@ export function ProjectPage() {
         </Routes>
       </section>
 
-      <GenerationPanel project={project} episodeCode={episodeCode} />
+      <AgentPanel project={project} />
       </div>
 
       <ProjectDialog
