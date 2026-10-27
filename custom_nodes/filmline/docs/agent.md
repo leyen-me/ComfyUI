@@ -135,6 +135,7 @@ SSE：`id: <seq>`，`data: {"seq","type","data","ts"}`，心跳为 `: ping`。
 | 媒体 | `probe_media` `read_image` `read_video`（抽帧拼图） `read_audio` `extract_frame` |
 | 生成 | `create_image` `create_video` `get_generation_task` `list_generation_tasks` `wait_generation` `cancel_generation_task` |
 | 外部 | `web_search` `web_fetch`（DeepSeek Search / Fetch，按次计费） |
+| 技能 | `read_skill`（按需加载领域规范正文） |
 | 交互 | `ask_question` |
 
 统一输入校验：JSON Schema 子集，`additionalProperties=false`。
@@ -260,6 +261,29 @@ DeepSeek 要求 assistant 的 `tool_calls` 后紧跟对应的全部 tool 消息�
 不能把这条提示误当成“完整请求”。
 
 提示文本是代码常量，改动需要发布新版本；sha256 用于让用户核对当前运行的版本。
+
+## 系统技能（按需加载）
+
+领域规范不写进系统提示，而是放在 `agent/skills/*.md`，由模型按需用 `read_skill` 读取。
+
+- **热发现**：每次构建系统提示或调用 `read_skill` 时按目录快照（文件名 + mtime + size）
+  检查 `agent/skills/*.md`，有变化才重新解析。新增或修改技能文件下一次请求即生效，
+  **不需要重启服务**；目录没变时返回同一个元组对象，系统提示逐字节不变。
+  技能目录一变，系统提示就变，其余请求的前缀缓存会失效一次，这是预期代价。
+- **元信息**：每个技能开头是一段单行 `key: value` 的前置块，必填
+  `id` / `title` / `summary` / `when`，可选 `version`，文件名必须等于 `id`。
+- **容错**：单个文件解析失败只跳过该技能，错误写入日志并通过
+  `GET /agent/system-prompt` 的 `skill_problems` 暴露；其他技能与正在运行的会话不受影响。
+- **系统提示只放索引**：`prompt.py::system_prompt()` = `BASE_PROMPT` + `<skills>` 块，
+  每项是一个 `<skill id=… title=… load_with="read_skill" chars=…>` 元素，含覆盖内容与
+  何时使用，并明确“这不是正文，必须调用 read_skill”。提示长度不随技能正文增长；
+  元信息里禁止出现双引号和尖括号，避免破坏索引块。
+- **加载**：`read_skill(skill)` 一次性返回正文与字符数；技能都是一份完整的手册，
+  拆成多段反而破坏上下文连贯。工具 schema 不把 id 写死成 enum，未知 id 由执行期校验
+  并返回可用列表，新增技能才能免重启。
+- **单一事实源**：`h3-prompt` 是 H3 视频提示词规范的唯一运行时副本，摘编自
+  `docs/h3-prompt-guide.html` 与 `docs/h3-model-handbook.html`；改规范只改技能文件，
+  不要在 `BASE_PROMPT` 里再抄一份。
 
 ## 配置
 
