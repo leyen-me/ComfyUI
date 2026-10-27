@@ -3,7 +3,9 @@ import { AlertCircle, Loader2, Plus, Search } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 
 import { ApiError, api, type Project } from '@/lib/api'
+import { useDebouncedCallback } from '@/hooks/use-debounced-callback'
 import { useProjects } from '@/hooks/use-projects'
+import { useWorkspaceEvents } from '@/hooks/use-workspace-events'
 import type { MenuAction } from './ui/more-menu'
 import { Button } from './ui/button'
 import { Dialog } from './ui/dialog'
@@ -15,6 +17,10 @@ import { Toast, type ToastMessage } from './toast'
 export function ProjectWorkspace() {
   const { data, loading, error, query, search, reload } = useProjects()
   const navigate = useNavigate()
+
+  // Agent / 其他标签页写入后刷新卡片（名称、封面、资产数量、排序）
+  const scheduleReload = useDebouncedCallback(reload, 300)
+  useWorkspaceEvents(null, scheduleReload, scheduleReload)
 
   const [keyword, setKeyword] = useState('')
   const [dialogOpen, setDialogOpen] = useState(false)

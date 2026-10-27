@@ -11,6 +11,7 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from .. import events
 from ..clock import to_iso, utcnow
 from ..db import session_scope
 from ..db.models import Asset, Project
@@ -141,7 +142,14 @@ class ProjectService:
 
             row.code = f"PRJ-{row.id:04d}"
             session.flush()
-            return _to_out(row)
+            result = _to_out(row)
+            events.record(
+                session,
+                events.PROJECTS,
+                action="created",
+                project_id=row.id,
+            )
+            return result
 
     def update(self, ref: str | int, payload: ProjectUpdate) -> ProjectOut:
         changes = payload.model_dump(exclude_unset=True, exclude_none=True)
@@ -153,7 +161,14 @@ class ProjectService:
             for field, value in changes.items():
                 setattr(row, field, value)
             session.flush()
-            return _to_out(row)
+            result = _to_out(row)
+            events.record(
+                session,
+                events.PROJECT,
+                action="updated",
+                project_id=row.id,
+            )
+            return result
 
     def delete(self, ref: str | int) -> None:
         """软删除：素材与渲染记录可能仍引用该项目。"""
@@ -161,6 +176,12 @@ class ProjectService:
             row = self._find(session, ref)
             row.deleted_at = utcnow()
             session.flush()
+            events.record(
+                session,
+                events.PROJECT,
+                action="deleted",
+                project_id=row.id,
+            )
 
     def reorder(self, ids: list[int]) -> None:
         """按给定 id 顺序重写位置。必须覆盖全部未删除项目，避免顺序错乱。"""
@@ -188,6 +209,11 @@ class ProjectService:
             for index, project_id in enumerate(ids):
                 by_id[project_id].sort_index = index
             session.flush()
+            events.record(
+                session,
+                events.PROJECTS,
+                action="reordered",
+            )
 
     # ---------------------------------------------------------------- 内部
     @staticmethod

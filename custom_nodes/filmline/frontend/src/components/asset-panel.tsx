@@ -4,7 +4,7 @@ import { Loader2, Plus, Upload } from 'lucide-react'
 import { ApiError, api, type Asset, type AssetKind, type Episode, type Project } from '@/lib/api'
 import { assetKindMeta } from '@/lib/asset-kinds'
 import { useAssetCounts, useAssets } from '@/hooks/use-assets'
-import { ASSETS_CHANGED, emitReusePrompt } from '@/lib/events'
+import { ASSETS_CHANGED, emitReusePrompt, type AssetsChangedDetail } from '@/lib/events'
 import { reuseDetailFor } from '@/lib/reuse'
 import { copyText } from '@/lib/clipboard'
 import { AssetDialog } from './asset-dialog'
@@ -68,15 +68,23 @@ export function AssetPanel({
     return () => clearTimeout(timer)
   }, [toast])
 
-  // 生成完成后刷新当前列表与计数
+  // 生成完成或 Agent / 其他标签页推送变更后刷新当前列表与计数
   useEffect(() => {
-    function onChanged() {
+    function onChanged(event: Event) {
+      const detail = (event as CustomEvent<AssetsChangedDetail | undefined>).detail
+      if (detail?.projectId !== undefined && detail.projectId !== project.id) return
+      if (detail?.action === 'deleted' && detail.assetIds?.length) {
+        const deleted = new Set(detail.assetIds)
+        setPreview((current) => (current && deleted.has(current.id) ? null : current))
+        setEditing((current) => (current && deleted.has(current.id) ? null : current))
+        setPendingDelete((current) => (current && deleted.has(current.id) ? null : current))
+      }
       reload()
       setCountsVersion((value) => value + 1)
     }
     window.addEventListener(ASSETS_CHANGED, onChanged)
     return () => window.removeEventListener(ASSETS_CHANGED, onChanged)
-  }, [reload])
+  }, [reload, project.id])
 
   function refresh() {
     reload()

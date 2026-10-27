@@ -5,7 +5,7 @@ from __future__ import annotations
 from ...domain.assets import AssetService
 from ...domain.episodes import EpisodeService
 from ...domain.projects import ProjectService
-from ...domain.schemas import EpisodeCreate, EpisodeUpdate, ProjectCreate, ProjectUpdate
+from ...domain.schemas import EpisodeCreate, EpisodeUpdate, ProjectUpdate
 from ...domain.tasks import TaskService
 from ...errors import NotFound
 from .base import Tool, ToolContext, ToolOutcome, register
@@ -123,17 +123,6 @@ async def _delete_episode(ctx: ToolContext, args: dict) -> ToolOutcome:
     return ToolOutcome(summary=f"已删除分集 {target.code}（资产保留）")
 
 
-async def _create_project(ctx: ToolContext, args: dict) -> ToolOutcome:
-    project = await _to_thread(
-        ProjectService().create,
-        ProjectCreate(name=args["name"], description=args.get("description", "")),
-    )
-    return ToolOutcome(
-        summary=f"已新建项目 {project.code}「{project.name}」",
-        data={"id": project.id, "code": project.code, "name": project.name},
-    )
-
-
 async def _update_project(ctx: ToolContext, args: dict) -> ToolOutcome:
     payload = ProjectUpdate(name=args.get("name"), description=args.get("description"))
     project = await _to_thread(ProjectService().update, ctx.project_code, payload)
@@ -216,24 +205,6 @@ def register_tools() -> None:
             handler=_delete_episode,
             write=True,
             destructive=True,
-        )
-    )
-    register(
-        Tool(
-            name="create_project",
-            label="新建项目",
-            description="新建一个项目（不会自动切换当前会话的项目）。",
-            parameters={
-                "type": "object",
-                "properties": {
-                    "name": {"type": "string", "minLength": 1, "maxLength": 120},
-                    "description": {"type": "string", "maxLength": 4000},
-                },
-                "required": ["name"],
-                "additionalProperties": False,
-            },
-            handler=_create_project,
-            write=True,
         )
     )
     register(

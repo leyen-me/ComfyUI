@@ -5,6 +5,7 @@ from __future__ import annotations
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from .. import events
 from ..clock import to_iso, utcnow
 from ..db import session_scope
 from ..db.models import Episode
@@ -77,7 +78,15 @@ class EpisodeService:
             )
             session.add(row)
             session.flush()
-            return _to_out(row)
+            result = _to_out(row)
+            events.record(
+                session,
+                events.EPISODES,
+                action="created",
+                project_id=project_id,
+                episode_id=row.id,
+            )
+            return result
 
     def update(self, episode_id: int, payload: EpisodeUpdate) -> EpisodeOut:
         changes = payload.model_dump(exclude_unset=True, exclude_none=True)
@@ -89,7 +98,15 @@ class EpisodeService:
             for field, value in changes.items():
                 setattr(row, field, value)
             session.flush()
-            return _to_out(row)
+            result = _to_out(row)
+            events.record(
+                session,
+                events.EPISODES,
+                action="updated",
+                project_id=row.project_id,
+                episode_id=row.id,
+            )
+            return result
 
     def delete(self, episode_id: int) -> None:
         """只软删分集本身；其下资产保留，恢复分集后仍可用。"""
@@ -97,6 +114,13 @@ class EpisodeService:
             row = self._find(db_session=session, episode_id=episode_id)
             row.deleted_at = utcnow()
             session.flush()
+            events.record(
+                session,
+                events.EPISODES,
+                action="deleted",
+                project_id=row.project_id,
+                episode_id=row.id,
+            )
 
     def reorder(self, project_id: int, ids: list[int]) -> None:
         if len(set(ids)) != len(ids):
@@ -129,6 +153,12 @@ class EpisodeService:
             for index, episode_id in enumerate(ids):
                 by_id[episode_id].sort_index = index
             session.flush()
+            events.record(
+                session,
+                events.EPISODES,
+                action="reordered",
+                project_id=project_id,
+            )
 
     # ---------------------------------------------------------------- 内部
     @staticmethod

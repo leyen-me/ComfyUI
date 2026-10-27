@@ -42,6 +42,12 @@ React 19 + Vite 7 + TypeScript + Tailwind CSS v4，组件按 shadcn/ui 的写法
   在运行中变为暂停按钮；顶部显示上下文占用（如 `31.5K/1M（3%）`）。
 - **资产来源标记**：`source=user`（用户创建或上传）与 `source=ai`（ComfyUI 生成），
   界面上以徽章区分。文本资产由用户创建；图片/视频支持上传并指定来源。
+- **实时同步**：资产、分集、项目的写入在数据库提交后由后端广播 SSE
+  （`/studio/api/events`），所有打开的项目页与项目列表自动刷新，不需要手动刷新浏览器。
+  Agent 工具、HTTP 接口和生成任务走同一套领域服务，因此三种来源都能覆盖。
+  事件只用于提示、不落库；断线重连或页面恢复可见时前端会做一次全量拉取补齐。
+  事件总线是进程内的，当前单进程架构无需额外依赖；将来拆多进程时需替换为
+  Redis Pub/Sub 或数据库通知。
 - **拖拽排序**：HTML5 原生拖拽，松手即保存；菜单里另有「上移/下移」作为键盘替代。
 - **品牌名收敛**：展示名只在 `frontend/src/lib/brand.ts`（以及 `index.html` 的 `<title>`）。
 - **构建产物**：输出到 `../web/`，由 ComfyUI 以 `/studio/static/` 提供，**不要手改**。
@@ -90,6 +96,7 @@ npm run test:logic   # 纯函数单测（页码、提示词、拖拽载荷等）
 | POST | `/studio/api/projects/{ref}/agent/sessions` | 新建会话 |
 | GET/PATCH/DELETE | `/studio/api/agent/sessions/{id}` | 会话详情 / 改名 / 修改思考强度 / 软删除 |
 | GET | `/studio/api/agent/sessions/{id}/events?after=N` | SSE 事件流，`after` 断点续传 |
+| GET | `/studio/api/events?project=PRJ-0001` | 工作区实时事件 SSE（可选项目过滤；不落库、不回放） |
 | POST | `/studio/api/agent/sessions/{id}/messages` | 发送消息（`text` + `asset_ids`），202 启动运行 |
 | POST | `/studio/api/agent/sessions/{id}/pause` | 暂停推理与当前工具 |
 | POST | `/studio/api/agent/sessions/{id}/resume` | 继续被暂停/中断的会话 |
@@ -346,10 +353,11 @@ DEEPSEEK_MAX_TOKENS=4096
   `web_search` / `web_fetch` 显示可点击的结果卡；`read_text_asset` / `read_file` /
   文本资产创建修改显示可复制文本预览；`get_workspace_context` 显示项目概况，
   `list_episodes` 显示分集列表。原始输入/输出仍可点开查看。
-- **工具集**：工作区/分集/项目读写、资产列表与文本读写、`probe_media`、
+- **工具集**：当前项目与分集读写、资产列表与文本读写、`probe_media`、
   `read_image`、`read_video`（均匀抽帧拼成网格图）、`read_audio`、`extract_frame`、
   `create_image`、`create_video`、任务查询/等待/取消、资产移动、`web_search`、`web_fetch`、
   `ask_question`。删除资产、删除分集、取消任务必须先 `ask_question` 确认。
+  Agent 只操作当前项目：不提供新建/删除项目的工具，项目生命周期统一在项目列表页管理。
 - **外部理解**：`web_search` / `web_fetch` 对接 DeepSeek 官方 Search / Fetch 接口，
   支持 `site:`、`lang:`、`after:`、`-`、精确短语等语法；搜索返回标题、URL、摘要、
   日期与权威度，抓取返回 Markdown 正文（最多 20000 字符，超出截断）。两者按成功
@@ -454,6 +462,9 @@ custom_nodes/filmline/
     `interrupted`，生成任务不重复提交。完成通知与定时自检都通过“代替用户发消息”进入同一循环。
 18. **入口唯一**：生成参数校验只在 `domain/produce.py`，HTTP 路由与 Agent 工具共用；
     旧右侧表单组件保留但不挂载，旧接口继续可用，便于回退。
+19. **变更事件后置**：领域服务只在事务内登记待发事件，`session_scope` 提交成功后才广播；
+    回滚不得通知前端。事件不落库、不回放，客户端重连后全量同步。
+    Agent 不提供新建/删除项目工具；项目生命周期只能从项目列表操作。
 
 ## 测试
 

@@ -5,17 +5,19 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 
 from aiohttp import web
 
-from .. import __version__, config, db, llm
+from .. import __version__, config, db, events as workspace_events, llm
 from ..agent.engine import AgentEngine
 from ..domain.projects import ProjectService
 from ..runner import TaskRunner, RUNNER_KEY
 from .agent import register_agent_routes
 from .assets import register_asset_routes
 from .episodes import register_episode_routes
+from .events import register_event_routes
 from .generate import register_generate_routes
 from .http import handle_errors, ok
 from .projects import register_project_routes
@@ -40,6 +42,16 @@ def register_routes(app: web.Application) -> None:
     register_task_routes(routes)
     register_prompt_routes(routes)
     register_agent_routes(routes)
+    register_event_routes(routes)
+
+    async def start_workspace_events(_: web.Application) -> None:
+        workspace_events.BUS.bind(asyncio.get_running_loop())
+
+    async def stop_workspace_events(_: web.Application) -> None:
+        workspace_events.BUS.unbind(asyncio.get_running_loop())
+
+    app.on_startup.append(start_workspace_events)
+    app.on_cleanup.append(stop_workspace_events)
 
     runner = TaskRunner()
     app[RUNNER_KEY] = runner

@@ -1,9 +1,13 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { ChevronRight, Loader2 } from 'lucide-react'
 import { Link, Navigate, Route, Routes, useLocation, useNavigate, useParams } from 'react-router-dom'
 
 import { ApiError, api, type Episode, type Project } from '@/lib/api'
+import { emitAssetsChanged, type AssetsChangedDetail } from '@/lib/events'
+import { useDebouncedCallback } from '@/hooks/use-debounced-callback'
 import { useEpisodes } from '@/hooks/use-episodes'
+import { useWorkspaceEvents } from '@/hooks/use-workspace-events'
+import type { WorkspaceEvent } from '@/lib/workspace-events'
 import { AppHeader, BrandMark } from './app-header'
 import { AssetPanel } from './asset-panel'
 import { AgentPanel } from './agent-panel'
@@ -44,6 +48,7 @@ export function ProjectPage() {
   const episodeCode = parts[offset] === 'episodes' ? parts[offset + 1] : undefined
 
   const [project, setProject] = useState<Project | null>(null)
+  const [projectVersion, setProjectVersion] = useState(0)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const { episodes, loading: episodesLoading, reload: reloadEpisodes } = useEpisodes(
@@ -70,6 +75,13 @@ export function ProjectPage() {
   }, [toast])
 
   useEffect(() => {
+    // 切换项目时清掉旧数据，避免顶部面包屑短暂显示上一个项目
+    setProject(null)
+    setLoading(true)
+    setError(null)
+  }, [ref])
+
+  useEffect(() => {
     const controller = new AbortController()
     setLoading(true)
     setError(null)
@@ -88,7 +100,42 @@ export function ProjectPage() {
       })
 
     return () => controller.abort()
-  }, [ref])
+  }, [ref, projectVersion])
+
+  const reloadProject = useCallback(() => setProjectVersion((value) => value + 1), [])
+
+  // Agent / 其他标签页写入后，按项目做一次合并刷新
+  const pendingAssets = useRef<AssetsChangedDetail | undefined>(undefined)
+  const refreshFromWorkspace = useDebouncedCallback(() => {
+    const detail = pendingAssets.current
+    pendingAssets.current = undefined
+    reloadProject()
+    reloadEpisodes()
+    emitAssetsChanged(detail)
+  }, 250)
+
+  const handleWorkspaceEvent = useCallback(
+    (event: WorkspaceEvent) => {
+      if (event.type === 'projects') return
+      if (event.type === 'project' && event.action === 'deleted') {
+        notify('项目已被删除', 'error')
+        navigate('/', { replace: true })
+        return
+      }
+      if (event.type === 'assets') {
+        pendingAssets.current = {
+          projectId: event.project_id,
+          episodeId: event.episode_id,
+          action: event.action,
+          assetIds: event.asset_ids,
+        }
+      }
+      refreshFromWorkspace()
+    },
+    [navigate, notify, refreshFromWorkspace],
+  )
+
+  useWorkspaceEvents(ref, handleWorkspaceEvent, refreshFromWorkspace)
 
   async function confirmDeleteEpisode() {
     if (!deletingEpisode) return
@@ -109,7 +156,7 @@ export function ProjectPage() {
   const openEpisodeCreate = () => setEpisodeDialog({ open: true, episode: null })
   const openEpisodeEdit = (episode: Episode) => setEpisodeDialog({ open: true, episode })
 
-  if (loading) {
+  if (loading && !project) {
     return (
       <div className="flex h-full items-center justify-center gap-2 text-sm text-muted-foreground">
         <Loader2 className="size-4 animate-spin" />
@@ -118,7 +165,7 @@ export function ProjectPage() {
     )
   }
 
-  if (error || !project) {
+  if (!project) {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-4">
         <p className="text-sm text-destructive">{error ?? '项目不存在'}</p>

@@ -130,7 +130,7 @@ SSE：`id: <seq>`，`data: {"seq","type","data","ts"}`，心跳为 `: ping`。
 
 | 分组 | 工具 |
 |---|---|
-| 工作区 | `get_workspace_context` `list_episodes` `create_episode` `update_episode` `delete_episode` `create_project` `update_project` |
+| 工作区 | `get_workspace_context` `list_episodes` `create_episode` `update_episode` `delete_episode` `update_project` |
 | 资产 | `list_assets` `get_asset` `read_text_asset` `create_text_asset` `update_text_asset` `delete_asset` |
 | 媒体 | `probe_media` `read_image` `read_video`（抽帧拼图） `read_audio` `extract_frame` |
 | 生成 | `create_image` `create_video` `get_generation_task` `list_generation_tasks` `wait_generation` `cancel_generation_task` |

@@ -11,6 +11,7 @@ from datetime import datetime
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from .. import events
 from ..clock import to_iso, utcnow
 from ..db import session_scope
 from ..db.models import Asset, Episode
@@ -152,7 +153,16 @@ class AssetService:
             )
             session.add(row)
             session.flush()
-            return _to_out(row)
+            result = _to_out(row)
+            events.record(
+                session,
+                events.ASSETS,
+                action="created",
+                project_id=project_id,
+                episode_id=episode_id,
+                asset_ids=[row.id],
+            )
+            return result
 
     def create_from_file(
         self,
@@ -191,7 +201,16 @@ class AssetService:
             )
             session.add(row)
             session.flush()
-            return _to_out(row)
+            result = _to_out(row)
+            events.record(
+                session,
+                events.ASSETS,
+                action="created",
+                project_id=project_id,
+                episode_id=episode_id,
+                asset_ids=[row.id],
+            )
+            return result
 
     def resolve_assets(
         self,
@@ -270,7 +289,16 @@ class AssetService:
             for field, value in changes.items():
                 setattr(row, field, value)
             session.flush()
-            return _to_out(row)
+            result = _to_out(row)
+            events.record(
+                session,
+                events.ASSETS,
+                action="updated",
+                project_id=row.project_id,
+                episode_id=row.episode_id,
+                asset_ids=[row.id],
+            )
+            return result
 
     def move_many(
         self, project_id: int, asset_ids: list[int], *, episode_id: int | None
@@ -312,7 +340,16 @@ class AssetService:
             for asset_id in ids:
                 by_id[asset_id].episode_id = episode_id
             session.flush()
-            return [_to_out(by_id[asset_id]) for asset_id in ids]
+            result = [_to_out(by_id[asset_id]) for asset_id in ids]
+            events.record(
+                session,
+                events.ASSETS,
+                action="moved",
+                project_id=project_id,
+                episode_id=episode_id,
+                asset_ids=ids,
+            )
+            return result
 
     def get_row_for_content(self, asset_id: int) -> tuple[str, str]:
         """返回（相对路径, mime），供文件下载使用。"""
@@ -327,6 +364,14 @@ class AssetService:
             row = self._find(session, asset_id)
             row.deleted_at = utcnow()
             session.flush()
+            events.record(
+                session,
+                events.ASSETS,
+                action="deleted",
+                project_id=row.project_id,
+                episode_id=row.episode_id,
+                asset_ids=[row.id],
+            )
 
     @staticmethod
     def _find(session: Session, asset_id: int) -> Asset:

@@ -15,7 +15,7 @@ from pathlib import Path
 from sqlalchemy import Engine, create_engine, event
 from sqlalchemy.orm import Session, sessionmaker
 
-from .. import config
+from .. import config, events
 from .migrations import migrate
 
 _LOG = logging.getLogger("filmline")
@@ -80,8 +80,11 @@ def session_scope() -> Iterator[Session]:
     try:
         yield session
         session.commit()
+        # 提交成功后才广播，避免前端刷新时读到未提交的旧数据
+        events.flush(session)
     except BaseException:
         session.rollback()
+        events.discard(session)
         raise
     finally:
         session.close()

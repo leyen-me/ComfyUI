@@ -29,14 +29,21 @@ def _ts() -> str:
 
 
 def ok(data: Any = None, *, status: int = 200) -> web.Response:
-    return web.json_response({"ok": True, "data": data, "ts": _ts()}, status=status, dumps=_dumps)
+    return web.json_response(
+        {"ok": True, "data": data, "ts": _ts()},
+        status=status,
+        dumps=_dumps,
+        headers={"Cache-Control": "no-store"},
+    )
 
 
 def fail(exc: AppError) -> web.Response:
     body = {"ok": False, "error": {"code": exc.code, "message": exc.message}, "ts": _ts()}
     if exc.details is not None:
         body["error"]["details"] = exc.details
-    return web.json_response(body, status=exc.status, dumps=_dumps)
+    return web.json_response(
+        body, status=exc.status, dumps=_dumps, headers={"Cache-Control": "no-store"}
+    )
 
 
 def _dumps(value: Any) -> str:
