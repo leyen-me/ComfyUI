@@ -117,7 +117,8 @@ SSE：`id: <seq>`，`data: {"seq","type","data","ts"}`，心跳为 `: ping`。
 | `tool.finished` | `status,result_raw,summary,elapsed_ms` | 工具结束（ok/error/paused） |
 | `question` | `tool_call_id,questions` | ask_question 内联面板 |
 | `question.answered` | `tool_call_id,answers` | 用户回答 |
-| `usage` | `prompt_tokens,completion_tokens,cache_hit_tokens,context_window` | 上下文占用 |
+| `retry` | `attempt,max_attempts,delay_ms,code,message,status` | 自动重试，UI 清除半截 step |
+| `usage` | `prompt_tokens,completion_tokens,total_tokens,reasoning_tokens,cache_hit_tokens,session_total_tokens,context_window` | 上下文占用与成本 |
 | `error` | `code,message,retryable` | 运行错误 |
 | `asset.watch` | `task_id,kind,status` | 提交了生成任务 |
 
@@ -180,6 +181,42 @@ DeepSeek 要求 assistant 的 `tool_calls` 后紧跟对应的全部 tool 消息�
 并尊重 `prefers-reduced-motion`。余额是账户级数据，所有会话共享；新建对话入口
 保留在会话下拉菜单里。
 
+## Token 用量
+
+以接口返回的 `usage` 为准，不自行分词：
+
+- `prompt_tokens` / `completion_tokens` / `total_tokens`；
+- `prompt_cache_hit_tokens` / `prompt_cache_miss_tokens`；
+- `completion_tokens_details.reasoning_tokens`；
+- 会话累计 `session_total_tokens`（跨轮、跨 step 累加）；
+- 上下文占用用 `total_tokens / context_window` 展示，因为下一轮会带上本轮输出。
+
+**不需要单独计算**：图片 token（官方按尺寸折算，已包含在 `usage`）、搜索/抓取
+（按请求计费）、system prompt / 工具定义 / 历史消息（都在 `prompt_tokens` 里）。
+**需要单独计算**：如果要做事前上下文预算或会话成本估算，应使用官方
+`deepseek_tokenizer.zip` 或按“中文字符≈0.6、英文字符≈0.3 token”粗估；目前我们
+只用图片张数/字节数和工具输出字符数做安全边界，不做严格 token 预算。
+
+## 错误与重试
+
+官方错误码映射：
+
+| HTTP | 处理 |
+|---|---|
+| 400 | `invalid_request`，附服务端 `error.message`，不重试 |
+| 401 | `unauthorized`，不重试 |
+| 402 | `insufficient_balance`，不重试，提示充值 |
+| 422 | `invalid_parameters`，附详情，不重试 |
+| 429 | `rate_limited`，重试，优先 `Retry-After` |
+| 500 / 503 | `upstream`，重试 |
+| 408 / 网络 / 超时 | 重试 |
+
+- 总尝试次数默认 3（含首次），指数退避 2s、4s，单次上限 20s；
+- 重试前发 `step.discarded`，前端清掉半截内容；不会把重复内容写入上下文；
+- 重试等待期间用户暂停会立即结束，不继续请求；
+- 工具层：`web_search` / `web_fetch` 对 408/429/5xx 单次重试；写工具不自动重放，
+  避免重复创建资产/生成任务；工具失败会作为 tool 结果交给模型自行决定。
+
 ## 图像输入
 
 对齐官方 Vision / Files API：
@@ -224,6 +261,10 @@ DeepSeek 要求 assistant 的 `tool_calls` 后紧跟对应的全部 tool 消息�
 | `FILMLINE_AGENT_MAX_TOKENS` | `8192` | 单次输出预算（含思考） |
 | `FILMLINE_AGENT_TIMEOUT` | `300` | 流式读取空闲超时（秒） |
 | `FILMLINE_AGENT_TICK_SECONDS` | `300` | 定时自检间隔 |
+| `FILMLINE_AGENT_IMAGE_MODE` | `auto` | `auto` / `inline` / `files` |
+| `FILMLINE_AGENT_FILE_EXPIRY_DAYS` | `30` | Files API 有效期 |
+| `FILMLINE_AGENT_RETRY_ATTEMPTS` | `3` | 模型请求总尝试次数（含首次） |
+| `FILMLINE_AGENT_RETRY_BASE_SECONDS` | `2` | 指数退避基数 |
 
 ## 已知限制
 

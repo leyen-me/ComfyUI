@@ -38,11 +38,20 @@ export interface TurnUser {
   noticeSource?: string
 }
 
+export interface RetryView {
+  attempt: number
+  maxAttempts: number
+  delayMs: number
+  code: string
+  message: string
+}
+
 export interface TurnView {
   turn: number
   user?: TurnUser
   steps: StepView[]
   errors: string[]
+  retries: RetryView[]
   question?: {
     toolCallId: string
     questions: AgentQuestion[]
@@ -72,7 +81,7 @@ function number(data: Record<string, unknown>, key: string): number | undefined 
 function ensureTurn(turns: TurnView[], turn: number): TurnView {
   const existing = turns.find((item) => item.turn === turn)
   if (existing) return existing
-  const created: TurnView = { turn, steps: [], errors: [] }
+  const created: TurnView = { turn, steps: [], errors: [], retries: [] }
   turns.push(created)
   turns.sort((a, b) => a.turn - b.turn)
   return created
@@ -114,6 +123,7 @@ export function applyEvent(view: AgentView, event: AgentEvent): AgentView {
   const turns = view.turns.map((turn) => ({
     ...turn,
     steps: turn.steps.map((step) => ({ ...step, tools: [...step.tools] })),
+    retries: [...turn.retries],
   }))
   const data = event.data
   const turnNumber = number(data, 'turn') ?? turns[turns.length - 1]?.turn ?? 0
@@ -141,7 +151,13 @@ export function applyEvent(view: AgentView, event: AgentEvent): AgentView {
     }
     case 'step.started': {
       const turn = ensureTurn(turns, turnNumber)
-      ensureStep(turn, number(data, 'step') ?? 0, turnNumber)
+      const step = ensureStep(turn, number(data, 'step') ?? 0, turnNumber)
+      // 自动重试会用同一个 step 号重新开始；清掉上一轮的半截内容
+      step.reasoning = ''
+      step.content = ''
+      step.tools = []
+      step.done = false
+      step.discarded = false
       status = 'running'
       break
     }
@@ -186,6 +202,18 @@ export function applyEvent(view: AgentView, event: AgentEvent): AgentView {
       step.content = ''
       step.reasoning = ''
       step.tools = []
+      break
+    }
+    case 'retry': {
+      const turn = ensureTurn(turns, turnNumber)
+      turn.retries.push({
+        attempt: number(data, 'attempt') ?? 1,
+        maxAttempts: number(data, 'max_attempts') ?? 1,
+        delayMs: number(data, 'delay_ms') ?? 0,
+        code: text(data, 'code'),
+        message: text(data, 'message'),
+      })
+      status = 'running'
       break
     }
     case 'tool.started': {
@@ -316,7 +344,10 @@ export function formatTokens(value: number | null | undefined): string {
 }
 
 export function contextLabel(usage: AgentUsage | null, fallbackWindow: number): string {
-  const used = usage?.prompt_tokens ?? 0
+  // 下一轮请求会带上本轮输出，所以用 total_tokens（prompt + completion）更接近真实占用
+  const used =
+    usage?.total_tokens ??
+    (usage?.prompt_tokens ?? 0) + (usage?.completion_tokens ?? 0)
   const window = usage?.context_window ?? fallbackWindow
   if (!window) return ''
   const percent = Math.min(100, Math.round((used / window) * 100))

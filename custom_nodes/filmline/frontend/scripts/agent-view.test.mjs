@@ -135,6 +135,36 @@ assert.equal(resumed.turns[0].steps[1].step, 2)
 assert.equal(resumed.turns[0].steps.some((step) => step.content === '半截思考'), false)
 assert.equal(finalStep(resumed.turns[0])?.content, '恢复后的回答')
 
+const retried = run([
+  event(1, 'run.started', { turn: 1 }),
+  event(2, 'step.started', { turn: 1, step: 0 }),
+  event(3, 'content.delta', { text: '半截' }),
+  event(4, 'step.discarded', { turn: 1, step: 0, reason: 'retry' }),
+  event(5, 'retry', {
+    turn: 1,
+    step: 0,
+    attempt: 1,
+    max_attempts: 3,
+    delay_ms: 2000,
+    code: 'upstream',
+    message: '模型服务暂时不可用',
+  }),
+  event(6, 'step.started', { turn: 1, step: 0 }),
+  event(7, 'content.delta', { text: '重试成功' }),
+  event(8, 'step.finished', {
+    turn: 1,
+    step: 0,
+    content: '重试成功',
+    reasoning: '',
+    tool_calls: [],
+  }),
+])
+assert.equal(finalStep(retried.turns[0])?.content, '重试成功')
+assert.equal(retried.turns[0].retries.length, 1)
+assert.equal(retried.turns[0].retries[0].attempt, 1)
+assert.equal(retried.turns[0].steps[0].content, '重试成功')
+assert.equal(retried.turns[0].steps[0].discarded, false)
+
 const question = run([
   event(1, 'question', {
     tool_call_id: 'q1',
@@ -146,7 +176,7 @@ const question = run([
 ])
 assert.equal(pendingQuestion(question)?.question?.toolCallId, 'q1')
 
-assert.equal(contextLabel({ prompt_tokens: 31_500, context_window: 1_000_000 }, 0), '31.5K/1M（3%）')
+assert.equal(contextLabel({ total_tokens: 32_300, context_window: 1_000_000 }, 0), '32.3K/1M（3%）')
 assert.equal(contextLabel(null, 1_000_000), '0/1M（0%）')
 
 console.log('Agent 事件折叠与上下文显示正常')

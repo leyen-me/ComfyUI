@@ -114,6 +114,8 @@ class AgentSettings:
     # inline：只走 base64；files：优先 Files API；auto：优先 Files，失败回退 inline
     image_mode: str = "auto"
     file_expiry_seconds: int = 2_592_000
+    retry_attempts: int = 3
+    retry_base_seconds: float = 2.0
 
     @property
     def configured(self) -> bool:
@@ -152,6 +154,8 @@ def agent_settings() -> AgentSettings:
             ("FILMLINE_AGENT_FILE_EXPIRY_DAYS",), 30, 1, 30
         )
         * 86400,
+        retry_attempts=_env_int(("FILMLINE_AGENT_RETRY_ATTEMPTS",), 3, 1, 6),
+        retry_base_seconds=float(_env_int(("FILMLINE_AGENT_RETRY_BASE_SECONDS",), 2, 1, 30)),
     )
 
 

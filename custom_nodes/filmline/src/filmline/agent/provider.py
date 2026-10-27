@@ -21,10 +21,69 @@ _LOG = logging.getLogger("filmline")
 
 
 class ProviderError(Exception):
-    def __init__(self, message: str, *, code: str = "provider_error", retryable: bool = False):
+    def __init__(
+        self,
+        message: str,
+        *,
+        code: str = "provider_error",
+        retryable: bool = False,
+        status: int | None = None,
+        retry_after: float | None = None,
+    ):
         super().__init__(message)
         self.code = code
         self.retryable = retryable
+        self.status = status
+        self.retry_after = retry_after
+
+
+def _error_detail(raw: str) -> str:
+    try:
+        value = json.loads(raw)
+    except json.JSONDecodeError:
+        return raw.strip()[:300]
+    if isinstance(value, dict):
+        error = value.get("error")
+        if isinstance(error, dict) and error.get("message"):
+            return str(error["message"])[:300]
+        if value.get("message"):
+            return str(value["message"])[:300]
+    return ""
+
+
+def _status_error(
+    status: int, raw: str, retry_after: float | None = None
+) -> ProviderError:
+    """按官方错误码映射；只有限速/超时/服务端故障适合重试。"""
+    detail = _error_detail(raw)
+    suffix = f"：{detail}" if detail and status in (400, 422) else ""
+    if status == 400:
+        return ProviderError(f"模型请求格式错误{suffix}", code="invalid_request", status=status)
+    if status == 401:
+        return ProviderError("模型 API Key 无效", code="unauthorized", status=status)
+    if status == 402:
+        return ProviderError("账户余额不足，请充值后重试", code="insufficient_balance", status=status)
+    if status == 403:
+        return ProviderError("模型接口拒绝访问", code="forbidden", status=status)
+    if status == 408:
+        return ProviderError(
+            "模型请求超时", code="timeout", retryable=True, status=status, retry_after=retry_after
+        )
+    if status == 413:
+        return ProviderError("请求体超过大小限制", code="too_large", status=status)
+    if status == 422:
+        return ProviderError(f"模型参数错误{suffix}", code="invalid_parameters", status=status)
+    if status == 429:
+        return ProviderError(
+            "模型请求过于频繁", code="rate_limited", retryable=True, status=status,
+            retry_after=retry_after,
+        )
+    if status >= 500:
+        return ProviderError(
+            "模型服务暂时不可用", code="upstream", retryable=True, status=status,
+            retry_after=retry_after,
+        )
+    return ProviderError(f"模型接口返回 HTTP {status}", code="bad_request", status=status)
 
 
 class StreamClient:
@@ -103,21 +162,14 @@ class StreamClient:
                     if response.status != 200:
                         raw = (await response.text())[:800]
                         _LOG.warning("模型接口异常: HTTP %s %s", response.status, raw)
-                        if response.status in (401, 403):
-                            raise ProviderError(
-                                "模型 API Key 无效或无权限", code="unauthorized"
-                            )
-                        if response.status == 429:
-                            raise ProviderError(
-                                "模型请求过多，请稍后重试", code="rate_limited", retryable=True
-                            )
-                        if response.status >= 500:
-                            raise ProviderError(
-                                "模型服务暂时不可用", code="upstream", retryable=True
-                            )
-                        raise ProviderError(
-                            f"模型接口返回 HTTP {response.status}", code="bad_request"
-                        )
+                        retry_after = None
+                        header = response.headers.get("Retry-After")
+                        if header:
+                            try:
+                                retry_after = max(0.0, float(header))
+                            except ValueError:
+                                retry_after = None
+                        raise _status_error(response.status, raw, retry_after)
 
                     async for raw_line in response.content:
                         line = raw_line.decode("utf-8", errors="replace").strip()

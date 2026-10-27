@@ -18,6 +18,8 @@ export interface AgentUsage {
   total_tokens?: number | null
   cache_hit_tokens?: number | null
   cache_miss_tokens?: number | null
+  reasoning_tokens?: number | null
+  session_total_tokens?: number | null
   context_window?: number
 }
 

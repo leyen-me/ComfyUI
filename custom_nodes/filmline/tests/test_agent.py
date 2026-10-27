@@ -12,7 +12,7 @@ from base import AsyncDbTestCase, DbTestCase
 from filmline import config
 from filmline.agent import store
 from filmline.agent.engine import AgentEngine
-from filmline.agent.provider import StreamClient
+from filmline.agent.provider import ProviderError, StreamClient, _status_error
 from filmline.agent.schema import SchemaError, validate
 from filmline.agent.tools.base import ToolContext, ToolOutcome
 from filmline.config import AgentSettings
@@ -34,6 +34,20 @@ def _settings(**overrides) -> AgentSettings:
     )
     base.update(overrides)
     return AgentSettings(**base)
+
+
+class ProviderErrorTest(unittest.TestCase):
+    def test_official_status_mapping(self) -> None:
+        self.assertEqual(_status_error(401, "{}").code, "unauthorized")
+        self.assertEqual(_status_error(402, "{}").code, "insufficient_balance")
+        self.assertFalse(_status_error(402, "{}").retryable)
+        self.assertEqual(_status_error(422, '{"error":{"message":"bad count"}}').code, "invalid_parameters")
+        self.assertIn("bad count", str(_status_error(422, '{"error":{"message":"bad count"}}')))
+        self.assertEqual(_status_error(429, "{}", 3).code, "rate_limited")
+        self.assertTrue(_status_error(429, "{}", 3).retryable)
+        self.assertEqual(_status_error(429, "{}", 3).retry_after, 3)
+        self.assertEqual(_status_error(503, "{}").code, "upstream")
+        self.assertTrue(_status_error(503, "{}").retryable)
 
 
 class ThinkingConfigTest(unittest.TestCase):
@@ -343,6 +357,29 @@ class FakeClient:
             yield event
 
 
+class FlakyClient:
+    def __init__(self) -> None:
+        self.calls = 0
+
+    async def stream(self, messages, tools, **kwargs):
+        self.calls += 1
+        if self.calls == 1:
+            raise ProviderError(
+                "模型服务暂时不可用",
+                code="upstream",
+                retryable=True,
+                status=503,
+                retry_after=0.01,
+            )
+        yield {
+            "type": "done",
+            "content": "重试成功",
+            "reasoning": "",
+            "tool_calls": [],
+            "usage": {"prompt_tokens": 10, "completion_tokens": 2, "total_tokens": 12},
+        }
+
+
 class SlowClient:
     def __init__(self) -> None:
         self.release = asyncio.Event()
@@ -502,6 +539,27 @@ class AgentEngineTest(AsyncDbTestCase):
         self.assertEqual([row.tool_call_id for row in rows[2:4]], ["c1", "c2"])
         images = (rows[4].meta or {}).get("images") or []
         self.assertEqual(len(images), 2)
+
+    async def test_retryable_provider_error_is_retried(self) -> None:
+        self._user("重试一下")
+        engine = AgentEngine(settings=_settings(retry_attempts=3, retry_base_seconds=0.01))
+        client = FlakyClient()
+        engine._client = client
+        await self._run(engine)
+        self.assertEqual(client.calls, 2)
+        events = store.list_events(self.session.id)
+        self.assertTrue(any(event["type"] == "retry" for event in events))
+        self.assertTrue(
+            any(
+                event["type"] == "step.discarded" and event["data"].get("reason") == "retry"
+                for event in events
+            )
+        )
+        self.assertEqual(store.get_session(self.session.id).status, "idle")
+        assistant = [
+            row for row in store.list_messages(self.session.id) if row.role == "assistant"
+        ]
+        self.assertEqual(assistant[-1].content, "重试成功")
 
     async def test_pause_discards_partial_step(self) -> None:
         self._user("写点什么")

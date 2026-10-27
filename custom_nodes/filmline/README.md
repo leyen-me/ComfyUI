@@ -136,6 +136,8 @@ ComfyUI/user/filmline/
 | `FILMLINE_AGENT_TICK_SECONDS` | 未完成任务的定时自检间隔，默认 `300` |
 | `FILMLINE_AGENT_IMAGE_MODE` | `auto`（优先 Files API）/ `inline` / `files`，默认 `auto` |
 | `FILMLINE_AGENT_FILE_EXPIRY_DAYS` | Files API 文件有效期，1–30 天，默认 `30` |
+| `FILMLINE_AGENT_RETRY_ATTEMPTS` | 模型请求总尝试次数（含首次），1–6，默认 `3` |
+| `FILMLINE_AGENT_RETRY_BASE_SECONDS` | 指数退避基数秒数，默认 `2` |
 
 ## 视频生成参数（对齐官方）
 
@@ -281,6 +283,14 @@ DEEPSEEK_MAX_TOKENS=4096
 - **暂停**：全局暂停会中断模型请求与正在执行的工具，工具会得到
   `{"ok":false,"error":{"code":"paused"}}`；流式阶段的半截消息作废，恢复后重新请求。
   单个工具也可以在消息流里点暂停。
+- **自动重试**：模型请求遇到 `408 / 429 / 5xx / 网络错误 / 超时` 会自动重试，默认总尝试
+  3 次，指数退避（2s、4s，上限 20s），优先遵守 `Retry-After`。每次重试会先作废半截
+  step，不会把重复内容写进上下文；重试期间点暂停会立即停止。`400 / 401 / 402 / 413 / 422`
+  不重试。工具里 `web_search` / `web_fetch` 也有一次显式重试；写工具不会自动重放，避免副作用。
+- **Token 记录**：每次响应记录 `prompt_tokens`、`completion_tokens`、`total_tokens`、
+  缓存命中/未命中、`reasoning_tokens` 和会话累计 token；上下文占用显示使用
+  `total_tokens / context_window`。图片 token 由官方按尺寸折算并包含在 `usage` 里，
+  我们不做二次计算；搜索/抓取按请求计费，不计 token。
 - **恢复**：进程重启后未完成的会话标记为 `interrupted`；缺失的工具结果由账本或
   `interrupted` 错误补齐，已执行的工具不会重复执行。
 - **会话级思考强度**：输入框右下角可选择 `默认 / 低 / 高 / 最高 / 关闭`，只影响当前会话。

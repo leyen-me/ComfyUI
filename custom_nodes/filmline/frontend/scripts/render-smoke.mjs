@@ -552,7 +552,7 @@ const agentPrompt = Boolean(document.querySelector('textarea[aria-label="给 Age
 const agentTitle = detailText.includes('竖屏预告方案')
 const agentSend = Boolean(document.querySelector('button[title="发送"]'))
 const agentFinalVisible = rootText().includes('已经看完参考图，建议先做一张主视觉。')
-const agentContext = rootText().includes('31.5K/1M')
+const agentContext = rootText().includes('32.3K/1M')
 const agentCollapsedByDefault = !rootText().includes('先确认资产，再读图。')
 
 ;[...document.querySelectorAll('button')]

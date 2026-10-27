@@ -11,6 +11,7 @@ import {
   Loader2,
   Music,
   Pause,
+  RefreshCw,
   Sparkles,
   Video,
   Wrench,
@@ -257,6 +258,18 @@ export function AgentTurn({
       {turn.question?.answers ? (
         <p className="mt-2 text-[11.5px] text-muted-foreground">已回答，Agent 继续执行。</p>
       ) : null}
+
+      {turn.retries.map((retry, index) => (
+        <p
+          key={`retry-${retry.attempt}-${index}`}
+          className="mt-2 flex items-start gap-1.5 text-[11.5px] leading-relaxed text-amber-700 dark:text-amber-300"
+        >
+          <RefreshCw className="mt-0.5 size-3.5 shrink-0" />
+          第 {retry.attempt}/{retry.maxAttempts} 次自动重试
+          {retry.delayMs > 0 ? `（${Math.round(retry.delayMs / 1000)} 秒后）` : ''}
+          ：{retry.message || retry.code}
+        </p>
+      ))}
 
       {turn.errors.map((message, index) => (
         <p

@@ -384,24 +384,76 @@ class AgentEngine:
                 if run.pause.is_set():
                     await self._finish_paused(session_id)
                     return
-                await self._emit(session_id, "step.started", {"turn": turn, "step": step})
-                try:
-                    result = await self._consume(run, session_id, step, turn)
-                except _Paused:
-                    await self._emit(session_id, "step.discarded", {"turn": turn, "step": step})
-                    await self._finish_paused(session_id)
-                    return
-                except ProviderError as exc:
+
+                attempt = 0
+                max_attempts = max(1, self._settings.retry_attempts)
+                while True:
+                    if run.pause.is_set():
+                        await self._finish_paused(session_id)
+                        return
                     await self._emit(
-                        session_id,
-                        "error",
-                        {"code": exc.code, "message": str(exc), "retryable": exc.retryable},
+                        session_id, "step.started", {"turn": turn, "step": step}
                     )
-                    await self._set_status(session_id, "error")
-                    await self._emit(session_id, "run.finished", {"status": "error", "turn": turn})
-                    return
-                except asyncio.CancelledError:
-                    raise
+                    try:
+                        result = await self._consume(run, session_id, step, turn)
+                        break
+                    except _Paused:
+                        await self._emit(
+                            session_id, "step.discarded", {"turn": turn, "step": step}
+                        )
+                        await self._finish_paused(session_id)
+                        return
+                    except ProviderError as exc:
+                        if exc.retryable and attempt + 1 < max_attempts:
+                            attempt += 1
+                            delay = (
+                                min(30.0, max(0.0, exc.retry_after))
+                                if exc.retry_after is not None
+                                else min(
+                                    20.0,
+                                    self._settings.retry_base_seconds * (2 ** (attempt - 1)),
+                                )
+                            )
+                            await self._emit(
+                                session_id,
+                                "step.discarded",
+                                {"turn": turn, "step": step, "reason": "retry"},
+                            )
+                            await self._emit(
+                                session_id,
+                                "retry",
+                                {
+                                    "turn": turn,
+                                    "step": step,
+                                    "attempt": attempt,
+                                    "max_attempts": max_attempts,
+                                    "delay_ms": int(delay * 1000),
+                                    "code": exc.code,
+                                    "message": str(exc),
+                                    "status": exc.status,
+                                },
+                            )
+                            if not await self._wait_retry(run, delay):
+                                await self._finish_paused(session_id)
+                                return
+                            continue
+                        await self._emit(
+                            session_id,
+                            "error",
+                            {
+                                "code": exc.code,
+                                "message": str(exc),
+                                "retryable": exc.retryable,
+                                "status": exc.status,
+                            },
+                        )
+                        await self._set_status(session_id, "error")
+                        await self._emit(
+                            session_id, "run.finished", {"status": "error", "turn": turn}
+                        )
+                        return
+                    except asyncio.CancelledError:
+                        raise
 
                 content: str = result["content"]
                 reasoning: str = result["reasoning"]
@@ -491,16 +543,33 @@ class AgentEngine:
             session_id, "run.finished", {"status": "paused", "turn": info.turn}
         )
 
+    async def _wait_retry(self, run: _Run, delay: float) -> bool:
+        """等待重试；用户在这期间点暂停就返回 False。"""
+        if delay <= 0:
+            return not run.pause.is_set()
+        try:
+            await asyncio.wait_for(run.pause.wait(), timeout=delay)
+            return False
+        except asyncio.TimeoutError:
+            return not run.pause.is_set()
+
     async def _emit_usage(self, session_id: int, usage: dict) -> None:
         if not usage:
             return
         info = await asyncio.to_thread(store.get_session, session_id)
+        details = usage.get("completion_tokens_details") or {}
+        previous = info.usage or {}
+        total = int(usage.get("total_tokens") or 0)
         payload = {
             "prompt_tokens": usage.get("prompt_tokens"),
             "completion_tokens": usage.get("completion_tokens"),
             "total_tokens": usage.get("total_tokens"),
             "cache_hit_tokens": usage.get("prompt_cache_hit_tokens"),
             "cache_miss_tokens": usage.get("prompt_cache_miss_tokens"),
+            # 思考 token 也计入 completion，单独记录便于核对成本
+            "reasoning_tokens": details.get("reasoning_tokens"),
+            # 整个会话累计的 API token（跨轮、跨 step）
+            "session_total_tokens": int(previous.get("session_total_tokens") or 0) + total,
             "context_window": info.context_window,
         }
         await asyncio.to_thread(store.update_session, session_id, usage=payload)
