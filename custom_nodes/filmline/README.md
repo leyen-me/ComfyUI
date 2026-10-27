@@ -324,7 +324,9 @@ DEEPSEEK_MAX_TOKENS=4096
 - **工具结果卡片**：`read_image` / `read_video` / `extract_frame` / `probe_media` /
   `read_audio` / `list_assets` 显示缩略图、视频封面、时间戳或音频播放器；
   `create_image` / `create_video` / 任务查询/等待显示进度与产物缩略图；
-  `web_search` / `web_fetch` 显示可点击的结果卡。原始输入/输出仍可点开查看。
+  `web_search` / `web_fetch` 显示可点击的结果卡；`read_text_asset` / `read_file` /
+  文本资产创建修改显示可复制文本预览；`get_workspace_context` 显示项目概况，
+  `list_episodes` 显示分集列表。原始输入/输出仍可点开查看。
 - **工具集**：工作区/分集/项目读写、资产列表与文本读写、`probe_media`、
   `read_image`、`read_video`（均匀抽帧拼成网格图）、`read_audio`、`extract_frame`、
   `create_image`、`create_video`、任务查询/等待/取消、`web_search`、`web_fetch`、

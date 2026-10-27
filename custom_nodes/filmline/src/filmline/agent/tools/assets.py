@@ -20,6 +20,7 @@ def _episode_id(ctx: ToolContext, code: str | None) -> int | None:
 
 
 def _asset_brief(item) -> dict:
+    text = item.text_content
     return {
         "id": item.id,
         "kind": item.kind.value,
@@ -28,7 +29,8 @@ def _asset_brief(item) -> dict:
         "episode_id": item.episode_id,
         "mime_type": item.mime_type,
         "size_bytes": item.size_bytes,
-        "text_length": len(item.text_content or "") if item.text_content is not None else None,
+        "text_length": len(text) if text is not None else None,
+        "text_preview": (text or "")[:200] if text is not None else None,
         "content_url": item.content_url,
         "created_at": item.created_at,
     }

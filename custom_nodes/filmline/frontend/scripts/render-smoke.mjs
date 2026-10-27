@@ -261,6 +261,9 @@ const agentEvents = [
         { id: 'call_2', type: 'function', function: { name: 'read_video', arguments: '{"asset_id":11}' } },
         { id: 'call_3', type: 'function', function: { name: 'web_search', arguments: '{"query":"DeepSeek"}' } },
         { id: 'call_4', type: 'function', function: { name: 'create_video', arguments: '{}' } },
+        { id: 'call_5', type: 'function', function: { name: 'list_episodes', arguments: '{}' } },
+        { id: 'call_6', type: 'function', function: { name: 'read_text_asset', arguments: '{"asset_id":31}' } },
+        { id: 'call_7', type: 'function', function: { name: 'get_workspace_context', arguments: '{}' } },
       ],
     },
   },
@@ -386,6 +389,87 @@ const agentEvents = [
           project: 'PRJ-0001',
           prompt_excerpt: '火柴被吸向滤网',
           asset_ids: [],
+        },
+      }),
+    },
+  },
+  {
+    type: 'tool.started',
+    data: {
+      turn: 1,
+      tool_call_id: 'call_5',
+      name: 'list_episodes',
+      label: '列出分集',
+      args_raw: '{}',
+    },
+  },
+  {
+    type: 'tool.finished',
+    data: {
+      turn: 1,
+      tool_call_id: 'call_5',
+      status: 'ok',
+      summary: '共 1 个分集',
+      result_raw: JSON.stringify({
+        ok: true,
+        data: { episodes: [{ code: 'EP01', title: '第 1 集', synopsis: '火柴与滤网' }] },
+      }),
+    },
+  },
+  {
+    type: 'tool.started',
+    data: {
+      turn: 1,
+      tool_call_id: 'call_6',
+      name: 'read_text_asset',
+      label: '读取文本',
+      args_raw: '{"asset_id":31}',
+    },
+  },
+  {
+    type: 'tool.finished',
+    data: {
+      turn: 1,
+      tool_call_id: 'call_6',
+      status: 'ok',
+      summary: '读取文本',
+      result_raw: JSON.stringify({
+        ok: true,
+        data: {
+          asset_id: 31,
+          name: '第一章',
+          content: '风起长安，灯影摇红。',
+          offset: 0,
+          next_offset: null,
+          total_chars: 9,
+        },
+      }),
+    },
+  },
+  {
+    type: 'tool.started',
+    data: {
+      turn: 1,
+      tool_call_id: 'call_7',
+      name: 'get_workspace_context',
+      label: '读取工作区',
+      args_raw: '{}',
+    },
+  },
+  {
+    type: 'tool.finished',
+    data: {
+      turn: 1,
+      tool_call_id: 'call_7',
+      status: 'ok',
+      summary: '工作区',
+      result_raw: JSON.stringify({
+        ok: true,
+        data: {
+          project: { code: 'PRJ-0001', name: '冒烟测试项目', description: '' },
+          episodes: [{ code: 'EP01', title: '第 1 集', synopsis: '' }],
+          asset_counts: { text: 1, image: 1, video: 1, audio: 0 },
+          active_tasks: [],
         },
       }),
     },
@@ -685,6 +769,9 @@ const agentVideoCard =
   rootText().includes('project_video_00001_.mp4') && rootText().includes('2.5s')
 const agentSearchCard = rootText().includes('DeepSeek 官方文档')
 const agentTaskCard = rootText().includes('任务 #105')
+const agentEpisodeCard = rootText().includes('EP01') && rootText().includes('火柴与滤网')
+const agentTextCard = rootText().includes('风起长安，灯影摇红。')
+const agentWorkspaceCard = rootText().includes('分集 1')
 ;[...document.querySelectorAll('dialog[open] button')]
   .find((el) => el.textContent?.trim() === '关闭')
   ?.click()
@@ -1250,6 +1337,9 @@ const checks = [
   ['视频/媒体工具显示预览', agentVideoCard],
   ['搜索工具显示结果卡', agentSearchCard],
   ['生成工具显示任务卡', agentTaskCard],
+  ['分集工具显示分集卡', agentEpisodeCard],
+  ['文本工具显示文本预览', agentTextCard],
+  ['工作区工具显示概况卡', agentWorkspaceCard],
   ['Agent 显示上下文占用', agentContext],
   ['顶部显示系统提示', agentPromptVisible],
   ['系统提示可展开查看原文与元信息', agentPromptExpanded],

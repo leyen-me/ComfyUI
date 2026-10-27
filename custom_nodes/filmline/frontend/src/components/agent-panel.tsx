@@ -563,6 +563,7 @@ export function AgentPanel({ project }: { project: Project }) {
                 key={turn.turn}
                 turn={turn}
                 running={running && turn.turn === view.turns[view.turns.length - 1]?.turn}
+                projectCode={project.code}
                 onOpenTool={setTool}
                 onPauseTool={(id) => void handlePauseTool(id)}
               />

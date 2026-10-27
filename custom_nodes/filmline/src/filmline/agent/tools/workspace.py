@@ -69,10 +69,12 @@ async def _list_episodes(ctx: ToolContext, args: dict) -> ToolOutcome:
     episodes = await _to_thread(EpisodeService().list, ctx.project_id)
     return ToolOutcome(
         summary=f"共 {len(episodes)} 个分集",
-        data=[
-            {"code": item.code, "title": item.title, "synopsis": item.synopsis}
-            for item in episodes
-        ],
+        data={
+            "episodes": [
+                {"code": item.code, "title": item.title, "synopsis": item.synopsis}
+                for item in episodes
+            ]
+        },
     )
 
 

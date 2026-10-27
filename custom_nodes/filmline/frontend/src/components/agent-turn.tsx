@@ -127,11 +127,13 @@ function CollapsibleBlock({
 export function AgentTurn({
   turn,
   running,
+  projectCode,
   onOpenTool,
   onPauseTool,
 }: {
   turn: TurnView
   running: boolean
+  projectCode: string
   onOpenTool: (tool: ToolView) => void
   onPauseTool: (toolCallId: string) => void
 }) {
@@ -223,7 +225,7 @@ export function AgentTurn({
                         onOpen={() => onOpenTool(tool)}
                         onPause={() => onPauseTool(tool.id)}
                       />
-                      <AgentToolCard tool={tool} />
+                      <AgentToolCard tool={tool} projectCode={projectCode} />
                     </div>
                   ))}
                 </div>

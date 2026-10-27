@@ -1,11 +1,16 @@
 import { useEffect, useState } from 'react'
 import {
   AudioLines,
+  BookOpen,
+  Check,
   CheckCircle2,
   Clock,
+  Copy,
   ExternalLink,
   FileText,
+  FolderOpen,
   Image as ImageIcon,
+  ListTree,
   Loader2,
   Music,
   Play,
@@ -15,6 +20,7 @@ import {
 
 import { api, type Asset, type TaskInfo, type TaskStatus } from '@/lib/api'
 import type { ToolView } from '@/lib/agent-view'
+import { copyText } from '@/lib/clipboard'
 import { formatSeconds, formatTime } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import { Dialog } from './ui/dialog'
@@ -612,20 +618,207 @@ function WebFetchCard({ envelope }: { envelope: Envelope }) {
   )
 }
 
-export function AgentToolCard({ tool }: { tool: ToolView }) {
+function TextCard({ envelope }: { envelope: Envelope }) {
+  const data = envelope.data
+  const name = str(data, 'name') || '文本'
+  const content = str(data, 'content') || str(data, 'text_preview')
+  const total = num(data, 'total_chars') ?? num(data, 'text_length') ?? content.length
+  const nextOffset = num(data, 'next_offset')
+  const [copied, setCopied] = useState(false)
+
+  if (!content && !name) return null
+
+  return (
+    <div className="mt-1.5 rounded-lg border border-border bg-card/70 p-2.5">
+      <div className="flex items-center gap-1.5 text-[11px]">
+        <FileText className="size-3 text-primary" />
+        <span className="truncate font-medium text-foreground">{name}</span>
+        <span className="ml-auto shrink-0 font-mono text-[10px] text-muted-foreground">
+          {total} 字符
+        </span>
+        <button
+          type="button"
+          onClick={async () => {
+            if (await copyText(content)) {
+              setCopied(true)
+              window.setTimeout(() => setCopied(false), 1500)
+            }
+          }}
+          title="复制文本"
+          className="cursor-pointer rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+        >
+          {copied ? <Check className="size-3" /> : <Copy className="size-3" />}
+        </button>
+      </div>
+      {content ? (
+        <pre className="mt-1.5 max-h-32 overflow-y-auto rounded-md bg-muted/40 p-2 font-mono text-[10.5px] leading-relaxed whitespace-pre-wrap break-words text-foreground/85">
+          {content.slice(0, 1500)}
+          {content.length > 1500 ? '\n…' : ''}
+        </pre>
+      ) : (
+        <p className="mt-1 text-[11px] text-muted-foreground">空文本</p>
+      )}
+      {nextOffset !== null ? (
+        <p className="mt-1 text-[10px] text-muted-foreground">
+          已显示到 {nextOffset} 字符，可继续分段读取
+        </p>
+      ) : null}
+    </div>
+  )
+}
+
+function WorkspaceCard({ envelope }: { envelope: Envelope }) {
+  const data = envelope.data
+  const project =
+    data?.project && typeof data.project === 'object'
+      ? (data.project as Record<string, unknown>)
+      : {}
+  const episodes = Array.isArray(data?.episodes) ? data.episodes : []
+  const counts =
+    data?.asset_counts && typeof data.asset_counts === 'object'
+      ? (data.asset_counts as Record<string, unknown>)
+      : {}
+  const tasks = Array.isArray(data?.active_tasks) ? data.active_tasks : []
+  const code = str(project, 'code')
+  const name = str(project, 'name') || '当前项目'
+
+  return (
+    <div className="mt-1.5 rounded-lg border border-border bg-card/70 p-2.5">
+      <div className="flex flex-wrap items-center gap-1.5 text-[11px]">
+        <BookOpen className="size-3 text-primary" />
+        {code ? (
+          <a
+            href={`/studio/projects/${code}`}
+            className="truncate font-medium text-foreground underline decoration-border underline-offset-4 hover:decoration-foreground"
+          >
+            {name}
+          </a>
+        ) : (
+          <span className="truncate font-medium text-foreground">{name}</span>
+        )}
+        {code ? <span className="font-mono text-[10px] text-muted-foreground">{code}</span> : null}
+      </div>
+      <div className="mt-1.5 flex flex-wrap gap-1">
+        {(['text', 'image', 'video', 'audio'] as const).map((kind) => (
+          <span
+            key={kind}
+            className="rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground"
+          >
+            {kind} {String(counts[kind] ?? 0)}
+          </span>
+        ))}
+        <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
+          分集 {episodes.length}
+        </span>
+      </div>
+      {episodes.length ? (
+        <div className="mt-1.5 flex flex-wrap gap-1">
+          {episodes.slice(0, 6).map((item) => {
+            if (!item || typeof item !== 'object') return null
+            const episode = item as Record<string, unknown>
+            return (
+              <span
+                key={str(episode, 'code')}
+                className="rounded border border-border px-1.5 py-0.5 text-[10px] text-muted-foreground"
+              >
+                <span className="font-mono text-primary">{str(episode, 'code')}</span>{' '}
+                {str(episode, 'title')}
+              </span>
+            )
+          })}
+        </div>
+      ) : null}
+      {tasks.length ? (
+        <div className="mt-1.5 flex flex-wrap gap-1">
+          {tasks.slice(0, 4).map((item) => {
+            if (!item || typeof item !== 'object') return null
+            const task = item as Record<string, unknown>
+            return (
+              <span
+                key={String(task.id)}
+                className="rounded bg-primary/10 px-1.5 py-0.5 text-[10px] text-primary"
+              >
+                任务 #{String(task.id)} · {str(task, 'status')}
+              </span>
+            )
+          })}
+        </div>
+      ) : null}
+    </div>
+  )
+}
+
+function EpisodesCard({
+  envelope,
+  projectCode,
+}: {
+  envelope: Envelope
+  projectCode: string
+}) {
+  const episodes = Array.isArray(envelope.data?.episodes) ? envelope.data.episodes : []
+  if (!episodes.length) return null
+  return (
+    <div className="mt-1.5 divide-y divide-border/60 overflow-hidden rounded-lg border border-border bg-card/60">
+      {episodes.slice(0, 8).map((item) => {
+        if (!item || typeof item !== 'object') return null
+        const episode = item as Record<string, unknown>
+        const code = str(episode, 'code')
+        return (
+          <a
+            key={code}
+            href={`/studio/projects/${projectCode}/episodes/${code}/assets/text`}
+            className="flex items-start gap-2 px-2.5 py-2 transition-colors hover:bg-muted/50"
+          >
+            <ListTree className="mt-0.5 size-3 shrink-0 text-primary" />
+            <span className="min-w-0 flex-1">
+              <span className="flex items-baseline gap-1.5">
+                <span className="font-mono text-[10px] text-primary">{code}</span>
+                <span className="truncate text-[11.5px] text-foreground">
+                  {str(episode, 'title')}
+                </span>
+              </span>
+              {str(episode, 'synopsis') ? (
+                <span className="mt-0.5 line-clamp-1 block text-[10px] text-muted-foreground">
+                  {str(episode, 'synopsis')}
+                </span>
+              ) : null}
+            </span>
+            <FolderOpen className="mt-0.5 size-3 shrink-0 text-muted-foreground" />
+          </a>
+        )
+      })}
+    </div>
+  )
+}
+
+export function AgentToolCard({
+  tool,
+  projectCode,
+}: {
+  tool: ToolView
+  projectCode: string
+}) {
   const envelope = parse(tool)
   if (!envelope || envelope.ok === false || !envelope.data) return null
+
+  if (tool.name === 'get_workspace_context') return <WorkspaceCard envelope={envelope} />
+  if (tool.name === 'list_episodes') {
+    return <EpisodesCard envelope={envelope} projectCode={projectCode} />
+  }
+  if (
+    ['read_text_asset', 'read_file', 'create_text_asset', 'update_text_asset'].includes(tool.name)
+  ) {
+    return <TextCard envelope={envelope} />
+  }
 
   const mediaNames = new Set(['read_image', 'read_video', 'extract_frame'])
   const probeNames = new Set(['probe_media', 'get_asset'])
 
   if (mediaNames.has(tool.name)) return <MediaCard tool={tool} envelope={envelope} />
   if (probeNames.has(tool.name)) {
-    return str(envelope.data, 'kind') === 'audio' ? (
-      <AudioCard envelope={envelope} />
-    ) : (
-      <MediaInfoCard envelope={envelope} />
-    )
+    const kind = str(envelope.data, 'kind')
+    if (kind === 'text') return <TextCard envelope={envelope} />
+    return kind === 'audio' ? <AudioCard envelope={envelope} /> : <MediaInfoCard envelope={envelope} />
   }
   if (tool.name === 'read_audio') return <AudioCard envelope={envelope} />
   if (tool.name === 'list_assets') return <AssetGridCard envelope={envelope} />
