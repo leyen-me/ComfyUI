@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from . import assets, generation, interaction, media_tools, workspace
+from . import assets, generation, interaction, media_tools, web, workspace
 from .base import (
     Tool,
     ToolContext,
@@ -23,7 +23,7 @@ def ensure_registered() -> None:
     global _REGISTERED
     if _REGISTERED:
         return
-    for module in (workspace, assets, media_tools, generation, interaction):
+    for module in (workspace, assets, media_tools, generation, interaction, web):
         module.register_tools()
     _REGISTERED = True
 

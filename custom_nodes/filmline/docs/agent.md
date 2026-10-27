@@ -119,11 +119,19 @@ SSE：`id: <seq>`，`data: {"seq","type","data","ts"}`，心跳为 `: ping`。
 | 资产 | `list_assets` `get_asset` `read_text_asset` `create_text_asset` `update_text_asset` `delete_asset` |
 | 媒体 | `probe_media` `read_image` `read_video`（抽帧拼图） `read_audio` `extract_frame` |
 | 生成 | `create_image` `create_video` `get_generation_task` `list_generation_tasks` `wait_generation` `cancel_generation_task` |
+| 外部 | `web_search` `web_fetch`（DeepSeek Search / Fetch，按次计费） |
 | 交互 | `ask_question` |
 
 统一输入校验：JSON Schema 子集，`additionalProperties=false`。
 统一输出：`{ok, summary, data, error, meta}`，失败不抛给模型。
 删除/取消类操作必须 `ask_question` 确认后带 `confirmed=true`。
+
+`web_search` / `web_fetch` 使用与模型相同的 API Key 和 Base URL，请求
+`/v1/tools/search`、`/v1/tools/fetch`（base 已带 `/v1` 时自动去重）。搜索
+`count` 限制 1–20，`need_content` 时每条正文最多 4000 字符、总量 20000 字符；
+抓取正文最多 20000 字符，超出截断。网页内容标记为不可信外部数据，系统提示禁止
+执行网页中的指令；工具返回 `meta.untrusted=true`。这两个接口按成功请求计费，
+并且不是所有 OpenAI 兼容 provider 都提供，切换 provider 后需要确认端点可用。
 
 图片类工具会把 data URL 作为额外的 user 消息追加到模型上下文（模型无法从工具
 文本里“看到”图片）；这是唯一会向历史追加内容的位置，且只在工具调用后发生。

@@ -297,8 +297,13 @@ DEEPSEEK_MAX_TOKENS=4096
   仍有未完成任务时，每 5 分钟（`FILMLINE_AGENT_TICK_SECONDS`）再提醒一次。
 - **工具集**：工作区/分集/项目读写、资产列表与文本读写、`probe_media`、
   `read_image`、`read_video`（均匀抽帧拼成网格图）、`read_audio`、`extract_frame`、
-  `create_image`、`create_video`、任务查询/等待/取消、`ask_question`。
-  删除资产、删除分集、取消任务必须先 `ask_question` 确认。
+  `create_image`、`create_video`、任务查询/等待/取消、`web_search`、`web_fetch`、
+  `ask_question`。删除资产、删除分集、取消任务必须先 `ask_question` 确认。
+- **外部理解**：`web_search` / `web_fetch` 对接 DeepSeek 官方 Search / Fetch 接口，
+  支持 `site:`、`lang:`、`after:`、`-`、精确短语等语法；搜索返回标题、URL、摘要、
+  日期与权威度，抓取返回 Markdown 正文（最多 20000 字符，超出截断）。两者按成功
+  请求计费（5 元 / 1000 次），并且要求当前 provider 提供 DeepSeek 的 `/v1/tools/*`
+  端点。网页内容是不可信外部数据，系统提示明确禁止执行其中的指令或泄露内部信息。
 - **统一协议**：工具入参走 JSON Schema 严格校验（未知字段拒绝），输出固定
   `{ok, summary, data, error, meta}`；失败作为结果返回给模型而不是抛异常。
 - **参数校验单一入口**：HTTP 生成接口与 Agent 共用 `domain/produce.py`，不存在
