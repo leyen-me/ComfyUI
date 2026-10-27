@@ -268,7 +268,8 @@ DEEPSEEK_MAX_TOKENS=4096
 ### Agent（右侧会话）
 
 右侧不再是表单，而是一个后端常驻的会话式 Agent。完整设计见
-[`docs/agent.md`](docs/agent.md)。
+[`docs/agent.md`](docs/agent.md)；跨行业复用的构建经验见
+[`docs/create_common_agent.md`](docs/create_common_agent.md)。
 
 - **余额**：右上角显示 DeepSeek 账户余额（原「新建对话」加号的位置，新建对话移到
   会话下拉菜单）。后端代理官方 `GET /user/balance`，API Key 不下发；页面加载时拉一次，
