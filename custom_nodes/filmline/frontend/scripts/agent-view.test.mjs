@@ -99,6 +99,42 @@ const deduped = run([
 assert.equal(deduped.lastSeq, 1)
 assert.equal(deduped.turns[0].steps[0].content, 'A')
 
+const resumed = run([
+  event(1, 'step.started', { turn: 1, step: 0 }),
+  event(2, 'step.finished', {
+    turn: 1,
+    step: 0,
+    content: '第一步',
+    reasoning: '',
+    tool_calls: [{ id: 'c1', function: { name: 'read_video', arguments: '{}' } }],
+  }),
+  event(3, 'tool.started', {
+    turn: 1,
+    tool_call_id: 'c1',
+    name: 'read_video',
+    label: '查看视频',
+    args_raw: '{}',
+  }),
+  event(4, 'tool.finished', { turn: 1, tool_call_id: 'c1', status: 'ok', result_raw: '{}' }),
+  event(5, 'step.started', { turn: 1, step: 1 }),
+  event(6, 'reasoning.delta', { text: '半截思考' }),
+  event(7, 'session.status', { status: 'interrupted' }),
+  event(8, 'run.started', { turn: 1 }),
+  event(9, 'step.started', { turn: 1, step: 2 }),
+  event(10, 'step.finished', {
+    turn: 1,
+    step: 2,
+    content: '恢复后的回答',
+    reasoning: '',
+    tool_calls: [],
+  }),
+])
+assert.equal(resumed.turns[0].steps.length, 2)
+assert.equal(resumed.turns[0].steps[0].step, 0)
+assert.equal(resumed.turns[0].steps[1].step, 2)
+assert.equal(resumed.turns[0].steps.some((step) => step.content === '半截思考'), false)
+assert.equal(finalStep(resumed.turns[0])?.content, '恢复后的回答')
+
 const question = run([
   event(1, 'question', {
     tool_call_id: 'q1',

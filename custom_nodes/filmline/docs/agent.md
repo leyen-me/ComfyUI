@@ -51,7 +51,17 @@ DeepSeek 的上下文缓存要求前缀完全稳定。因此：
     恢复后模型能看到工具被暂停，自行决定重试或换方案。
 - 单个工具暂停：只取消该工具，写入 paused 结果，run 继续，模型可立即补救。
 
-### 5. 异步生成与通知
+### 5. ask_question 的交互
+
+- 面板固定在输入框上方，**非模态**：不用 `<dialog>`、不加遮罩，左侧素材与中间资产面板
+  仍然可操作；用户可以先看素材、把素材拖进输入框，再回答问题。
+- 面板可收起成一条“待回答”提示，展开后保留选项与自由输入。
+- 问题本身是 `question` 事件，随会话 `seq` 入库。刷新浏览器/断线重连会回放事件，
+  未回答的问题会再次出现（选项不会丢，但未提交的本地选择不保留）。
+- 后端进程重启会把 `waiting_input` 标成 `interrupted`；点“继续”时该工具调用会被补成
+  `interrupted` 结果，模型通常会重新提问，不会假装用户已经回答。
+
+### 6. 异步生成与通知
 
 `create_image` / `create_video` 只提交任务并立即返回 `task_id`，同时写入
 `agent_task_watch`。模型可以：
@@ -62,7 +72,7 @@ DeepSeek 的上下文缓存要求前缀完全稳定。因此：
 另外每 `FILMLINE_AGENT_TICK_SECONDS`（默认 300 秒）对仍有未完成任务的空闲会话
 发一次自检通知，避免长时间无声。
 
-### 6. 崩溃恢复
+### 7. 崩溃恢复
 
 - 启动时把 `running` / `waiting_input` 会话标记为 `interrupted`；
 - 恢复时补齐缺失的 tool 结果：有账本用账本，否则写入 `interrupted` 错误；
@@ -87,7 +97,7 @@ SSE：`id: <seq>`，`data: {"seq","type","data","ts"}`，心跳为 `: ping`。
 | `tool.started` | `tool_call_id,name,label,args_raw,write,destructive` | 工具开始 |
 | `tool.progress` | `text,percent` | 工具进度 |
 | `tool.finished` | `status,result_raw,summary,elapsed_ms` | 工具结束（ok/error/paused） |
-| `question` | `tool_call_id,questions` | ask_question 弹窗 |
+| `question` | `tool_call_id,questions` | ask_question 内联面板 |
 | `question.answered` | `tool_call_id,answers` | 用户回答 |
 | `usage` | `prompt_tokens,completion_tokens,cache_hit_tokens,context_window` | 上下文占用 |
 | `error` | `code,message,retryable` | 运行错误 |

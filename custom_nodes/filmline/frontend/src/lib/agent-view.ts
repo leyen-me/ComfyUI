@@ -248,9 +248,15 @@ export function applyEvent(view: AgentView, event: AgentEvent): AgentView {
     case 'session.status': {
       const next = text(data, 'status')
       if (next) status = next
+      // 进程重启/暂停后，未落库的半截 step 不会再有后续增量，先清掉
+      if (next === 'interrupted' || next === 'paused') {
+        for (const turn of turns) turn.steps = turn.steps.filter((step) => step.done)
+      }
       break
     }
     case 'run.started': {
+      const turn = ensureTurn(turns, turnNumber)
+      turn.steps = turn.steps.filter((step) => step.done)
       status = 'running'
       break
     }

@@ -6,6 +6,7 @@ import asyncio
 import hashlib
 import json
 
+import aiohttp
 from aiohttp import web
 
 from .. import config
@@ -291,7 +292,12 @@ def register_agent_routes(routes: web.RouteTableDef) -> None:
                     continue
                 await response.write(frame(event))
                 last = event["seq"]
-        except (ConnectionResetError, asyncio.CancelledError, BrokenPipeError):
+        except (
+            ConnectionResetError,
+            BrokenPipeError,
+            asyncio.CancelledError,
+            aiohttp.ClientConnectionError,
+        ):
             pass
         finally:
             BUS.unsubscribe(session_id, queue)

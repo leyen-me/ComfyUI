@@ -221,12 +221,12 @@ const agentSession = {
   id: 1,
   project_id: 1,
   title: '竖屏预告方案',
-  status: 'idle',
+  status: 'waiting_input',
   model: 'deepseek-flash',
   context_window: 1_000_000,
   usage: { prompt_tokens: 31_500, context_window: 1_000_000 },
   turn: 1,
-  last_seq: 14,
+  last_seq: 16,
   created_at: '2026-10-24T07:00:00.000Z',
   updated_at: '2026-10-24T07:20:00.000Z',
 }
@@ -284,6 +284,22 @@ const agentEvents = [
     },
   },
   { type: 'run.finished', data: { status: 'done', turn: 1 } },
+  { type: 'session.status', data: { status: 'waiting_input' } },
+  {
+    type: 'question',
+    data: {
+      turn: 1,
+      tool_call_id: 'q1',
+      questions: [
+        {
+          id: 'next',
+          header: '下一步',
+          question: '要先看素材再决定吗？',
+          options: [{ label: '先看素材' }, { label: '直接继续' }],
+        },
+      ],
+    },
+  },
 ]
 
 const agentFrames = agentEvents.map((event, index) => {
@@ -503,6 +519,26 @@ const agentPromptExpanded =
   rootText().includes('deepseek-flash') &&
   rootText().includes('2 个工具') &&
   rootText().includes('sha256 aaaaaaaaaaaa')
+
+// —— ask_question：输入框上方内联面板，不遮挡左侧素材 ——
+const agentQuestionInline = Boolean(document.querySelector('[data-agent-question]'))
+const agentQuestionText = document.querySelector('[data-agent-question]')?.textContent ?? ''
+const agentQuestionNotModal =
+  agentQuestionText.includes('Agent 需要你的确认') &&
+  agentQuestionText.includes('先看素材') &&
+  ![...document.querySelectorAll('dialog[open]')].some((dialog) =>
+    dialog.textContent?.includes('Agent 需要你的确认'),
+  )
+;[...document.querySelectorAll('[data-agent-question] button')]
+  .find((el) => el.textContent?.trim() === '收起')
+  ?.click()
+await wait(150)
+const agentQuestionCollapsed =
+  (document.querySelector('[data-agent-question]')?.textContent ?? '').includes('待回答')
+;[...document.querySelectorAll('[data-agent-question] button')]
+  .find((el) => el.textContent?.includes('展开回答'))
+  ?.click()
+await wait(150)
 
 const optionsTrigger = document.querySelector('button[aria-label="尺寸与分辨率"]')
 const panel = {
@@ -983,6 +1019,9 @@ const checks = [
   ['Agent 显示上下文占用', agentContext],
   ['顶部显示系统提示', agentPromptVisible],
   ['系统提示可展开查看原文与元信息', agentPromptExpanded],
+  ['ask 问题以内联面板显示', agentQuestionInline],
+  ['ask 面板不是模态弹窗', agentQuestionNotModal],
+  ['ask 面板可收起，不挡素材', agentQuestionCollapsed],
   ['复制失败时兜底弹窗可手动复制', fallbackShown],
   ['视频卡片下半部分可打开预览', videoPreviewOpened],
   ['视频列表为无控制条的缩略预览', videoListNoControls],

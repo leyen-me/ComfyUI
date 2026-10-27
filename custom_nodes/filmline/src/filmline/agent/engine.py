@@ -130,6 +130,19 @@ class AgentEngine:
             interrupted = await asyncio.to_thread(store.mark_interrupted)
             if interrupted:
                 _LOG.info("标记 %s 个中断的 Agent 会话", interrupted)
+            # 补发状态事件：否则客户端重连回放时看不到 interrupted，
+            # 界面会停留在旧的 running、看起来像卡死。
+            for session_id in interrupted:
+                try:
+                    event = await asyncio.to_thread(
+                        store.append_event,
+                        session_id,
+                        "session.status",
+                        {"status": "interrupted"},
+                    )
+                    BUS.publish(session_id, event)
+                except Exception:
+                    _LOG.exception("写入 interrupted 状态事件失败: session=%s", session_id)
         except Exception:
             _LOG.exception("恢复 Agent 会话状态失败")
         self._notifier = asyncio.create_task(self._notify_loop(), name="filmline-agent-notify")
@@ -294,8 +307,14 @@ class AgentEngine:
             await self._repair(session_id)
             info = await asyncio.to_thread(store.get_session, session_id)
             turn = info.turn
+            # 恢复同一轮时从已落库的 step 数继续编号；否则重新从 0 开始，
+            # 会覆盖前端上一轮已完成/半截的 step。
+            step_offset = await asyncio.to_thread(
+                store.assistant_steps_in_turn, session_id, turn
+            )
             await self._emit(session_id, "run.started", {"turn": turn, "model": info.model})
-            for step in range(MAX_STEPS):
+            for index in range(MAX_STEPS):
+                step = step_offset + index
                 if run.pause.is_set():
                     await self._finish_paused(session_id)
                     return

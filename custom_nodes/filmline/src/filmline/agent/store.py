@@ -404,8 +404,12 @@ def sessions_with_pending_watch() -> list[int]:
 # ---------------------------------------------------------------------------
 
 
-def mark_interrupted() -> int:
-    """进程启动时把上次没跑完的会话标成 interrupted，等待用户继续。"""
+def mark_interrupted() -> list[int]:
+    """进程启动时把上次没跑完的会话标成 interrupted，等待用户继续。
+
+    返回会话 id，调用方据此补发 ``session.status`` 事件；否则重连的客户端
+    回放历史时只能看到旧的 running，界面会一直显示“运行中”。
+    """
     with _lock, session_scope() as session:
         rows = (
             session.execute(
@@ -417,9 +421,10 @@ def mark_interrupted() -> int:
             .scalars()
             .all()
         )
+        ids = [row.id for row in rows]
         for row in rows:
             row.status = "interrupted"
-        return len(rows)
+        return ids
 
 
 def pending_tool_calls(session_id: int) -> list[tuple[str, str]]:
@@ -462,6 +467,22 @@ def pending_tool_calls(session_id: int) -> list[tuple[str, str]]:
                 if call_id and call_id not in answered:
                     pending.append((call_id, name))
         return pending
+
+
+def assistant_steps_in_turn(session_id: int, turn: int) -> int:
+    """该轮已经落库的 assistant step 数，用于恢复后继续编号、避免前端串步。"""
+    with session_scope() as session:
+        return int(
+            session.execute(
+                select(func.count())
+                .select_from(AgentMessage)
+                .where(
+                    AgentMessage.session_id == session_id,
+                    AgentMessage.turn == turn,
+                    AgentMessage.role == "assistant",
+                )
+            ).scalar_one()
+        )
 
 
 def count_messages(session_id: int) -> int:

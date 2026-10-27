@@ -248,6 +248,11 @@ class AgentStoreTest(DbTestCase):
         asyncio.run(ctx.notify("拼图", 20))
         self.assertEqual(received, [("拼图", 20)])
 
+    def test_mark_interrupted_returns_session_ids(self) -> None:
+        store.update_session(self.session.id, status="running")
+        self.assertEqual(store.mark_interrupted(), [self.session.id])
+        self.assertEqual(store.get_session(self.session.id).status, "interrupted")
+
     def test_pending_tool_calls_detected(self) -> None:
         store.append_message(
             self.session.id,
@@ -577,6 +582,41 @@ class AgentEngineTest(AsyncDbTestCase):
         events = store.list_events(self.session.id)
         finished = [e for e in events if e["type"] == "tool.finished"]
         self.assertEqual(finished[-1]["data"]["status"], "paused")
+
+    async def test_resume_continues_step_numbering(self) -> None:
+        """恢复同一轮时 step 从已落库数量继续，避免前端覆盖旧 step。"""
+        self._user("继续")
+        store.append_message(
+            self.session.id,
+            turn=1,
+            role="assistant",
+            content="上一步",
+            reasoning="",
+        )
+        engine = AgentEngine()
+        engine._client = FakeClient(
+            [
+                [
+                    {
+                        "type": "done",
+                        "content": "新回答",
+                        "reasoning": "",
+                        "tool_calls": [],
+                        "usage": {},
+                    }
+                ]
+            ]
+        )
+        await self._run(engine)
+        events = store.list_events(self.session.id)
+        steps = [
+            event["data"]["step"]
+            for event in events
+            if event["type"] == "step.started"
+        ]
+        self.assertEqual(steps, [1])
+        finished = [event for event in events if event["type"] == "step.finished"]
+        self.assertEqual(finished[-1]["data"]["step"], 1)
 
     async def test_repair_fills_interrupted_tool_result(self) -> None:
         self._user("继续")

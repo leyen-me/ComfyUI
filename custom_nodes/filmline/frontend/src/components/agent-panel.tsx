@@ -36,7 +36,7 @@ import { hasAssetDrag, readAssetDrag, type AssetDragPayload } from '@/lib/asset-
 import { formatRelative } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import { AgentPromptBar } from './agent-prompt-bar'
-import { AgentQuestionDialog } from './agent-question-dialog'
+import { AgentQuestionPanel } from './agent-question-panel'
 import { AgentToolDialog } from './agent-tool-dialog'
 import { AgentTurn } from './agent-turn'
 import { Toast, type ToastMessage } from './toast'
@@ -151,11 +151,13 @@ export function AgentPanel({ project }: { project: Project }) {
       .getSession(activeId)
       .then((session) => {
         if (disposed) return
-        setView((previous) =>
-          previous.lastSeq > 0
-            ? previous
-            : { ...previous, status: session.status, usage: session.usage },
-        )
+        // REST 快照是重连时的权威状态：进程重启后会话可能是 interrupted，
+        // 但回放历史里只有旧的 running；这里必须先纠正，后续事件再覆盖。
+        setView((previous) => ({
+          ...previous,
+          status: session.status,
+          usage: session.usage ?? previous.usage,
+        }))
       })
       .catch(() => {
         if (!disposed) setConnection('closed')
@@ -495,6 +497,20 @@ export function AgentPanel({ project }: { project: Project }) {
         </div>
       </div>
 
+      <AgentQuestionPanel
+        state={
+          question?.question
+            ? {
+                toolCallId: question.question.toolCallId,
+                questions: question.question.questions,
+              }
+            : null
+        }
+        onAnswer={handleAnswer}
+        onPause={() => void handlePause()}
+        busy={busy}
+      />
+
       <form
         onSubmit={(event) => {
           event.preventDefault()
@@ -546,9 +562,11 @@ export function AgentPanel({ project }: { project: Project }) {
             value={text}
             rows={1}
             placeholder={
-              running
-                ? 'Agent 运行中，可以先想下一步；暂停后才能发送新消息'
-                : '描述你要做的事，或者把左侧素材拖进来…'
+              status === 'waiting_input'
+                ? '请先回答上方的问题，再继续对话'
+                : running
+                  ? 'Agent 运行中，可以先想下一步；暂停后才能发送新消息'
+                  : '描述你要做的事，或者把左侧素材拖进来…'
             }
             aria-label="给 Agent 的消息"
             className="block max-h-[200px] min-h-[52px] w-full resize-none bg-transparent px-2 py-2 text-[14px] leading-relaxed text-foreground placeholder:text-muted-foreground/70 focus:outline-none"
@@ -611,19 +629,6 @@ export function AgentPanel({ project }: { project: Project }) {
       </form>
 
       <AgentToolDialog tool={tool} onClose={() => setTool(null)} />
-      <AgentQuestionDialog
-        state={
-          question?.question
-            ? {
-                toolCallId: question.question.toolCallId,
-                questions: question.question.questions,
-              }
-            : null
-        }
-        onAnswer={handleAnswer}
-        onPause={() => void handlePause()}
-        busy={busy}
-      />
       <Toast message={toast} />
     </aside>
   )
