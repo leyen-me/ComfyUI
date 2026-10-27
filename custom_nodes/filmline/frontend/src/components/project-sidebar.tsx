@@ -1,30 +1,31 @@
 import { Clapperboard, Layers, Plus } from 'lucide-react'
 import { Link, useLocation } from 'react-router-dom'
 
-import type { Episode, Project } from '@/lib/api'
+import type { Episode } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import { MoreMenu } from './ui/more-menu'
 
 interface ProjectSidebarProps {
-  project: Project
   episodes: Episode[]
+  basePath: string
   onCreateEpisode: () => void
   onEditEpisode: (episode: Episode) => void
   onDeleteEpisode: (episode: Episode) => void
 }
 
 export function ProjectSidebar({
-  project,
   episodes,
+  basePath,
   onCreateEpisode,
   onEditEpisode,
   onDeleteEpisode,
 }: ProjectSidebarProps) {
   const { pathname } = useLocation()
-  // 按路径段判断，避免 /episodes/EP01/assets/text 同时命中“资产”“分集”和分集项
-  const parts = pathname.split('/').filter(Boolean) // projects / {code} / ...
-  const inProjectAssets = parts[2] === 'assets'
-  const inEpisodeOverview = parts[2] === 'episodes' && parts.length === 3
+  // 按相对 basePath 的剩余路径判断，兼容 /s/:sessionId 前缀
+  const tail = pathname.startsWith(basePath) ? pathname.slice(basePath.length) : pathname
+  const parts = tail.split('/').filter(Boolean)
+  const inProjectAssets = parts[0] === 'assets'
+  const inEpisodeOverview = parts[0] === 'episodes' && parts.length === 1
 
   const itemClass = (active: boolean) =>
     cn(
@@ -38,7 +39,7 @@ export function ProjectSidebar({
     <aside className="flex w-56 shrink-0 flex-col border-r border-border">
       <nav className="flex min-h-0 flex-1 flex-col gap-0.5 p-2.5" aria-label="项目导航">
         <Link
-          to={`/projects/${project.code}/assets/text`}
+          to={`${basePath}/assets/text`}
           className={itemClass(inProjectAssets)}
           aria-current={inProjectAssets ? 'page' : undefined}
         >
@@ -46,7 +47,7 @@ export function ProjectSidebar({
           项目资产
         </Link>
         <Link
-          to={`/projects/${project.code}/episodes`}
+          to={`${basePath}/episodes`}
           className={itemClass(inEpisodeOverview)}
           aria-current={inEpisodeOverview ? 'page' : undefined}
         >
@@ -83,7 +84,7 @@ export function ProjectSidebar({
             </button>
           ) : null}
           {episodes.map((episode) => {
-            const active = parts[2] === 'episodes' && parts[3] === episode.code
+            const active = parts[0] === 'episodes' && parts[1] === episode.code
             return (
               <div
                 key={episode.id}
@@ -93,7 +94,7 @@ export function ProjectSidebar({
                 )}
               >
                 <Link
-                  to={`/projects/${project.code}/episodes/${episode.code}/assets/text`}
+                  to={`${basePath}/episodes/${episode.code}/assets/text`}
                   aria-current={active ? 'page' : undefined}
                   className={cn(
                     'flex h-full min-w-0 flex-1 items-center gap-2.5 rounded-lg pl-2.5 text-[13px]',

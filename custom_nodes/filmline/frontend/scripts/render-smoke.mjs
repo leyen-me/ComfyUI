@@ -738,6 +738,7 @@ window.history.pushState({}, '', '/studio/projects/PRJ-0001')
 window.dispatchEvent(new window.PopStateEvent('popstate'))
 await wait(500)
 const detailText = rootText()
+const sessionPathOnOpen = window.location.pathname.includes('/s/1/')
 
 // —— Agent 面板：会话、最终回答、折叠思考、工具详情、上下文占用 ——
 const agentPrompt = Boolean(document.querySelector('textarea[aria-label="给 Agent 的消息"]'))
@@ -822,6 +823,7 @@ await wait(150)
 await wait(400)
 const switchedSession =
   rootText().includes('等待确认的会话') && !rootText().includes('已经看完参考图')
+const switchedPath = window.location.pathname.includes('/s/2/')
 const switchedDraftCleared =
   (document.querySelector('textarea[aria-label="给 Agent 的消息"]')?.value ?? '') === ''
 
@@ -856,6 +858,7 @@ await wait(400)
 const draftRestored =
   (document.querySelector('textarea[aria-label="给 Agent 的消息"]')?.value ?? '') === '草稿 A'
 const questionGoneOnOtherSession = !document.querySelector('[data-agent-question]')
+const restoredPath = window.location.pathname.includes('/s/1/')
 
 const optionsTrigger = document.querySelector('button[aria-label="尺寸与分辨率"]')
 const panel = {
@@ -1350,6 +1353,9 @@ const checks = [
   ['ask 面板可收起，不挡素材', agentQuestionCollapsed],
   ['可选择会话级思考强度', effortChanged],
   ['切换会话更新标题与消息视图', switchedSession],
+  ['打开会话后 path 带 session', sessionPathOnOpen],
+  ['切换会话后 path 更新', switchedPath],
+  ['切回会话后 path 恢复', restoredPath],
   ['切换会话不清空另一个会话的草稿', switchedDraftCleared],
   ['切换会话后问题面板不串会话', questionGoneOnOtherSession],
   ['切回会话恢复原草稿', draftRestored],

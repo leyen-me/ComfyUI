@@ -1,14 +1,14 @@
 import { Plus } from 'lucide-react'
 import { Link } from 'react-router-dom'
 
-import type { Episode, Project } from '@/lib/api'
+import type { Episode } from '@/lib/api'
 import { formatTime } from '@/lib/format'
 import { Button } from './ui/button'
 import { MoreMenu } from './ui/more-menu'
 
 interface EpisodeOverviewProps {
-  project: Project
   episodes: Episode[]
+  basePath: string
   loading: boolean
   onCreate: () => void
   onEdit: (episode: Episode) => void
@@ -16,8 +16,8 @@ interface EpisodeOverviewProps {
 }
 
 export function EpisodeOverview({
-  project,
   episodes,
+  basePath,
   loading,
   onCreate,
   onEdit,
@@ -84,7 +84,7 @@ export function EpisodeOverview({
               </div>
 
               <Link
-                to={`/projects/${project.code}/episodes/${episode.code}/assets/text`}
+                to={`${basePath}/episodes/${episode.code}/assets/text`}
                 aria-label={`打开 ${episode.code} ${episode.title}`}
                 className="absolute inset-0 rounded-xl focus-visible:ring-2 focus-visible:ring-ring/60 focus-visible:outline-none"
               />

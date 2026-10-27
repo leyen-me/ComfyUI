@@ -62,7 +62,15 @@ const STATUS_LABEL: Record<AgentSession['status'], string> = {
 
 const MAX_ATTACHMENTS = 12
 
-export function AgentPanel({ project }: { project: Project }) {
+export function AgentPanel({
+  project,
+  sessionId,
+  onSessionChange,
+}: {
+  project: Project
+  sessionId?: number
+  onSessionChange?: (id: number | null) => void
+}) {
   const [sessions, setSessions] = useState<AgentSession[]>([])
   const [activeId, setActiveId] = useState<number | null>(null)
   const [view, setView] = useState<AgentView>(emptyView)
@@ -93,6 +101,7 @@ export function AgentPanel({ project }: { project: Project }) {
   const [balanceToken, setBalanceToken] = useState(0)
 
   const scrollRef = useRef<HTMLDivElement>(null)
+  const contentRef = useRef<HTMLDivElement>(null)
   const stick = useRef(true)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const titleRef = useRef<HTMLButtonElement>(null)
@@ -144,7 +153,12 @@ export function AgentPanel({ project }: { project: Project }) {
           thinking: data.thinking ?? 'auto',
           reasoning_effort: data.reasoning_effort ?? 'high',
         })
-        setActiveId((current) => current ?? data.items[0]?.id ?? null)
+        const wanted =
+          sessionId !== undefined && data.items.some((item) => item.id === sessionId)
+            ? sessionId
+            : (data.items[0]?.id ?? null)
+        setActiveId(wanted)
+        if (wanted !== (sessionId ?? null)) onSessionChange?.(wanted)
       })
       .catch((cause) => {
         if (!disposed) notify(cause instanceof ApiError ? cause.fullMessage : '加载会话失败', 'error')
@@ -156,6 +170,21 @@ export function AgentPanel({ project }: { project: Project }) {
       disposed = true
     }
   }, [project.code, notify])
+
+  // 浏览器前进/后退或直接改 URL 时，跟随 path 里的 session
+  useEffect(() => {
+    if (sessionId === undefined) return
+    if (sessions.some((item) => item.id === sessionId) && sessionId !== activeId) {
+      setActiveId(sessionId)
+    }
+  }, [sessionId, sessions, activeId])
+
+  // 旧链接（没有 /s/:id）自动补上当前会话，刷新后仍停在同一个会话
+  useEffect(() => {
+    if (sessionId === undefined && activeId !== null) {
+      onSessionChange?.(activeId)
+    }
+  }, [sessionId, activeId, onSessionChange])
 
   // 切换会话：保存上一个会话的草稿，恢复下一个会话的草稿；关掉上一个会话的
   // 工具详情、重置滚动位置。运行中的会话在后端继续，不受切换影响。
@@ -256,8 +285,41 @@ export function AgentPanel({ project }: { project: Project }) {
   useEffect(() => {
     const element = scrollRef.current
     if (!element || !stick.current) return
-    element.scrollTop = element.scrollHeight
-  }, [view.lastSeq, view.turns.length])
+    const frame = requestAnimationFrame(() => {
+      element.scrollTop = element.scrollHeight
+    })
+    return () => cancelAnimationFrame(frame)
+  }, [activeId, view.lastSeq, view.turns.length])
+
+  // 打开/切换会话时无条件落到底部：旧会话回放完成后内容高度可能还在变，
+  // 再补一次延时滚动，避免停在半截。
+  useEffect(() => {
+    stick.current = true
+    const element = scrollRef.current
+    if (!element) return
+    const frame = requestAnimationFrame(() => {
+      element.scrollTop = element.scrollHeight
+    })
+    const timer = window.setTimeout(() => {
+      if (stick.current) element.scrollTop = element.scrollHeight
+    }, 160)
+    return () => {
+      cancelAnimationFrame(frame)
+      window.clearTimeout(timer)
+    }
+  }, [activeId])
+
+  // 图片、字体、折叠面板改变高度时，如果用户仍在底部就继续贴底
+  useEffect(() => {
+    const element = scrollRef.current
+    const content = contentRef.current
+    if (!element || !content || typeof ResizeObserver === 'undefined') return
+    const observer = new ResizeObserver(() => {
+      if (stick.current) element.scrollTop = element.scrollHeight
+    })
+    observer.observe(content)
+    return () => observer.disconnect()
+  }, [])
 
   useEffect(() => {
     const element = textareaRef.current
@@ -304,6 +366,7 @@ export function AgentPanel({ project }: { project: Project }) {
     activeIdRef.current = created.id
     setSessions((previous) => [created, ...previous])
     setActiveId(created.id)
+    onSessionChange?.(created.id)
     return created.id
   }
 
@@ -406,6 +469,7 @@ export function AgentPanel({ project }: { project: Project }) {
       const created = await agentApi.createSession(project.code)
       setSessions((previous) => [created, ...previous])
       setActiveId(created.id)
+      onSessionChange?.(created.id)
       setMenuOpen(false)
     } catch (cause) {
       notify(cause instanceof ApiError ? cause.fullMessage : '新建会话失败', 'error')
@@ -420,6 +484,7 @@ export function AgentPanel({ project }: { project: Project }) {
       if (activeId === id) {
         const next = sessions.find((item) => item.id !== id)
         setActiveId(next?.id ?? null)
+        onSessionChange?.(next?.id ?? null)
       }
       setMenuOpen(false)
     } catch (cause) {
@@ -507,6 +572,7 @@ export function AgentPanel({ project }: { project: Project }) {
                 type="button"
                 onClick={() => {
                   setActiveId(item.id)
+                  onSessionChange?.(item.id)
                   setMenuOpen(false)
                 }}
                 className="min-w-0 flex-1 cursor-pointer px-2.5 py-2 text-left"
@@ -541,7 +607,7 @@ export function AgentPanel({ project }: { project: Project }) {
         }}
         className="min-h-0 flex-1 overflow-y-auto"
       >
-        <div className="mx-auto w-full max-w-3xl px-6 py-4">
+        <div ref={contentRef} className="mx-auto w-full max-w-3xl px-6 py-4">
           {loading ? (
             <div className="flex h-40 items-center justify-center gap-2 text-[13px] text-muted-foreground">
               <Loader2 className="size-4 animate-spin" />

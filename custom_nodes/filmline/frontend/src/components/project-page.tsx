@@ -17,12 +17,31 @@ import { Button } from './ui/button'
 import { Dialog } from './ui/dialog'
 
 export function ProjectPage() {
-  const { ref = '' } = useParams()
+  const { ref = '', sessionId: sessionParam } = useParams()
   const navigate = useNavigate()
   const { pathname } = useLocation()
-  // 生成产物要落到当前作用域：在分集里就归到该集
+  const projectCode = ref
+  // 切换会话时把 session 写进 path，保留当前资产/分集位置
+  const handleSessionChange = useCallback(
+    (next: number | null) => {
+      const prefix = `/projects/${projectCode}`
+      let rest = pathname.startsWith(prefix) ? pathname.slice(prefix.length) : ''
+      if (rest.startsWith('/s/')) {
+        const segments = rest.split('/').filter(Boolean)
+        rest = segments.length > 2 ? `/${segments.slice(2).join('/')}` : ''
+      }
+      const base = next ? `${prefix}/s/${next}` : prefix
+      navigate(`${base}${rest}`, { replace: true })
+    },
+    [navigate, pathname, projectCode],
+  )
+  const sessionId = /^\d+$/.test(sessionParam ?? '') ? Number(sessionParam) : undefined
+  const basePath = `/projects/${projectCode}${sessionId ? `/s/${sessionId}` : ''}`
+  // 生成产物要落到当前作用域：在分集里就归到该集。
+  // 路径可能是 /projects/PRJ/assets/... 或 /projects/PRJ/s/1/assets/...
   const parts = pathname.split('/').filter(Boolean)
-  const episodeCode = parts[2] === 'episodes' ? parts[3] : undefined
+  const offset = parts[2] === 's' ? 4 : 2
+  const episodeCode = parts[offset] === 'episodes' ? parts[offset + 1] : undefined
 
   const [project, setProject] = useState<Project | null>(null)
   const [loading, setLoading] = useState(true)
@@ -79,7 +98,7 @@ export function ProjectPage() {
       notify(`已删除「${deletingEpisode.code}」`)
       setDeletingEpisode(null)
       reloadEpisodes()
-      navigate(`/projects/${project?.code}/episodes`, { replace: true })
+      navigate(`${basePath}/episodes`, { replace: true })
     } catch (cause) {
       notify(cause instanceof ApiError ? cause.fullMessage : '删除失败', 'error')
     } finally {
@@ -125,7 +144,7 @@ export function ProjectPage() {
           </Link>
           <ChevronRight className="size-3.5 shrink-0 text-muted-foreground/50" />
           <Link
-            to={`/projects/${project.code}`}
+            to={basePath}
             className={
               currentEpisode
                 ? 'min-w-0 truncate rounded-md px-1.5 py-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground'
@@ -151,8 +170,8 @@ export function ProjectPage() {
 
       <div className="flex min-h-0 flex-1">
       <ProjectSidebar
-        project={project}
         episodes={episodes}
+        basePath={basePath}
         onCreateEpisode={openEpisodeCreate}
         onEditEpisode={openEpisodeEdit}
         onDeleteEpisode={setDeletingEpisode}
@@ -176,8 +195,8 @@ export function ProjectPage() {
             path="episodes"
             element={
               <EpisodeOverview
-                project={project}
                 episodes={episodes}
+                basePath={basePath}
                 loading={episodesLoading}
                 onCreate={openEpisodeCreate}
                 onEdit={openEpisodeEdit}
@@ -192,6 +211,7 @@ export function ProjectPage() {
               <EpisodeAssetRoute
                 project={project}
                 episodes={episodes}
+                basePath={basePath}
                 loading={episodesLoading}
                 onEditEpisode={openEpisodeEdit}
                 onDeleteEpisode={setDeletingEpisode}
@@ -203,7 +223,11 @@ export function ProjectPage() {
         </Routes>
       </section>
 
-      <AgentPanel project={project} />
+      <AgentPanel
+        project={project}
+        sessionId={sessionId}
+        onSessionChange={handleSessionChange}
+      />
       </div>
 
       <ProjectDialog
@@ -282,12 +306,14 @@ function ProjectAssetRoute({
 function EpisodeAssetRoute({
   project,
   episodes,
+  basePath,
   loading,
   onEditEpisode,
   onDeleteEpisode,
 }: {
   project: Project
   episodes: Episode[]
+  basePath: string
   loading: boolean
   onEditEpisode: (episode: Episode) => void
   onDeleteEpisode: (episode: Episode) => void
@@ -309,7 +335,7 @@ function EpisodeAssetRoute({
       <div className="flex h-full flex-col items-center justify-center gap-3 px-4 text-center">
         <p className="text-xs text-muted-foreground">分集不存在：{ep}</p>
         <Link
-          to={`/projects/${project.code}/episodes`}
+          to={`${basePath}/episodes`}
           className="text-xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
         >
           返回分集列表
@@ -319,7 +345,7 @@ function EpisodeAssetRoute({
   }
 
   if (!isAssetKind(kind)) {
-    return <Navigate to={`/projects/${project.code}/episodes/${episode.code}/assets/text`} replace />
+    return <Navigate to={`${basePath}/episodes/${episode.code}/assets/text`} replace />
   }
 
   return (

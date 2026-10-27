@@ -58,6 +58,7 @@ export default function App() {
     <>
       <Routes>
         <Route path="/" element={<HomePage />} />
+        <Route path="/projects/:ref/s/:sessionId/*" element={<ProjectPage />} />
         <Route path="/projects/:ref/*" element={<ProjectPage />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
