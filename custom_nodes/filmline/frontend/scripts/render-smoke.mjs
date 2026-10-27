@@ -221,14 +221,24 @@ const agentSession = {
   id: 1,
   project_id: 1,
   title: '竖屏预告方案',
-  status: 'waiting_input',
+  status: 'idle',
   model: 'deepseek-flash',
   context_window: 1_000_000,
   usage: { prompt_tokens: 31_500, context_window: 1_000_000 },
   turn: 1,
-  last_seq: 16,
+  last_seq: 14,
   created_at: '2026-10-24T07:00:00.000Z',
   updated_at: '2026-10-24T07:20:00.000Z',
+}
+
+const agentSession2 = {
+  ...agentSession,
+  id: 2,
+  title: '等待确认的会话',
+  status: 'waiting_input',
+  usage: null,
+  turn: 1,
+  last_seq: 7,
 }
 
 const agentEvents = [
@@ -284,7 +294,34 @@ const agentEvents = [
     },
   },
   { type: 'run.finished', data: { status: 'done', turn: 1 } },
-  { type: 'session.status', data: { status: 'waiting_input' } },
+]
+
+const questionEvents = [
+  { type: 'user.message', data: { turn: 1, text: '这个镜头怎么处理？', assets: [] } },
+  { type: 'run.started', data: { turn: 1 } },
+  { type: 'step.started', data: { turn: 1, step: 0 } },
+  {
+    type: 'step.finished',
+    data: {
+      turn: 1,
+      step: 0,
+      content: '',
+      reasoning: '需要用户决定',
+      tool_calls: [
+        { id: 'q1', type: 'function', function: { name: 'ask_question', arguments: '{}' } },
+      ],
+    },
+  },
+  {
+    type: 'tool.started',
+    data: {
+      turn: 1,
+      tool_call_id: 'q1',
+      name: 'ask_question',
+      label: '询问用户',
+      args_raw: '{}',
+    },
+  },
   {
     type: 'question',
     data: {
@@ -300,12 +337,18 @@ const agentEvents = [
       ],
     },
   },
+  { type: 'session.status', data: { status: 'waiting_input' } },
 ]
 
-const agentFrames = agentEvents.map((event, index) => {
-  const seq = index + 1
-  return `id: ${seq}\ndata: ${JSON.stringify({ seq, type: event.type, data: event.data })}\n\n`
-})
+function framesFor(events) {
+  return events.map((event, index) => {
+    const seq = index + 1
+    return `id: ${seq}\ndata: ${JSON.stringify({ seq, type: event.type, data: event.data })}\n\n`
+  })
+}
+
+const agentFrames = framesFor(agentEvents)
+const questionFrames = framesFor(questionEvents)
 
 globalThis.fetch = async (input, init = {}) => {
   const path = new URL(String(input), 'http://127.0.0.1:8188').pathname
@@ -406,7 +449,7 @@ globalThis.fetch = async (input, init = {}) => {
     }
   } else if (path.endsWith('/agent/sessions') && method === 'GET') {
     data = {
-      items: [{ ...agentSession }],
+      items: [{ ...agentSession }, { ...agentSession2 }],
       model: 'deepseek-flash',
       context_window: 1_000_000,
       configured: true,
@@ -414,13 +457,14 @@ globalThis.fetch = async (input, init = {}) => {
   } else if (path.endsWith('/agent/sessions') && method === 'POST') {
     data = { ...agentSession }
   } else if (/\/agent\/sessions\/\d+$/.test(path)) {
-    data = { ...agentSession }
+    data = path.endsWith('/2') ? { ...agentSession2 } : { ...agentSession }
   } else if (/\/agent\/sessions\/\d+\/events$/.test(path)) {
+    const sessionId = Number(path.match(/sessions\/(\d+)\/events$/)?.[1] || 0)
     const after = Number(
       new URL(String(input), 'http://127.0.0.1:8188').searchParams.get('after') || 0,
     )
     const encoder = new TextEncoder()
-    const frames = after === 0 ? agentFrames : []
+    const frames = after === 0 ? (sessionId === 1 ? agentFrames : questionFrames) : []
     const body = new ReadableStream({
       start(controller) {
         for (const frame of frames) controller.enqueue(encoder.encode(frame))
@@ -520,6 +564,26 @@ const agentPromptExpanded =
   rootText().includes('2 个工具') &&
   rootText().includes('sha256 aaaaaaaaaaaa')
 
+// —— 切换会话：草稿隔离，问题面板只属于对应会话 ——
+const composer = document.querySelector('textarea[aria-label="给 Agent 的消息"]')
+const setComposer = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value')?.set
+setComposer?.call(composer, '草稿 A')
+composer?.dispatchEvent(new window.Event('input', { bubbles: true }))
+await wait(120)
+
+;[...document.querySelectorAll('button')]
+  .find((el) => el.textContent?.includes('竖屏预告方案'))
+  ?.click()
+await wait(150)
+;[...document.querySelectorAll('button')]
+  .find((el) => el.textContent?.includes('等待确认的会话'))
+  ?.click()
+await wait(400)
+const switchedSession =
+  rootText().includes('等待确认的会话') && !rootText().includes('已经看完参考图')
+const switchedDraftCleared =
+  (document.querySelector('textarea[aria-label="给 Agent 的消息"]')?.value ?? '') === ''
+
 // —— ask_question：输入框上方内联面板，不遮挡左侧素材 ——
 const agentQuestionInline = Boolean(document.querySelector('[data-agent-question]'))
 const agentQuestionText = document.querySelector('[data-agent-question]')?.textContent ?? ''
@@ -539,6 +603,18 @@ const agentQuestionCollapsed =
   .find((el) => el.textContent?.includes('展开回答'))
   ?.click()
 await wait(150)
+
+;[...document.querySelectorAll('button')]
+  .find((el) => el.textContent?.includes('等待确认的会话'))
+  ?.click()
+await wait(150)
+;[...document.querySelectorAll('button')]
+  .find((el) => el.textContent?.includes('竖屏预告方案'))
+  ?.click()
+await wait(400)
+const draftRestored =
+  (document.querySelector('textarea[aria-label="给 Agent 的消息"]')?.value ?? '') === '草稿 A'
+const questionGoneOnOtherSession = !document.querySelector('[data-agent-question]')
 
 const optionsTrigger = document.querySelector('button[aria-label="尺寸与分辨率"]')
 const panel = {
@@ -1022,6 +1098,10 @@ const checks = [
   ['ask 问题以内联面板显示', agentQuestionInline],
   ['ask 面板不是模态弹窗', agentQuestionNotModal],
   ['ask 面板可收起，不挡素材', agentQuestionCollapsed],
+  ['切换会话更新标题与消息视图', switchedSession],
+  ['切换会话不清空另一个会话的草稿', switchedDraftCleared],
+  ['切换会话后问题面板不串会话', questionGoneOnOtherSession],
+  ['切回会话恢复原草稿', draftRestored],
   ['复制失败时兜底弹窗可手动复制', fallbackShown],
   ['视频卡片下半部分可打开预览', videoPreviewOpened],
   ['视频列表为无控制条的缩略预览', videoListNoControls],

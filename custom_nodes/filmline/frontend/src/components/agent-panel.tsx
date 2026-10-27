@@ -85,6 +85,13 @@ export function AgentPanel({ project }: { project: Project }) {
   const stick = useRef(true)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const titleRef = useRef<HTMLButtonElement>(null)
+  // 每个会话独立保存输入草稿与附件，切换时不串、也不丢
+  const drafts = useRef(new Map<number, { text: string; attachments: AssetDragPayload[] }>())
+  const draftRef = useRef({ text: '', attachments: [] as AssetDragPayload[] })
+  draftRef.current = { text, attachments }
+  const activeIdRef = useRef<number | null>(null)
+  activeIdRef.current = activeId
+  const previousId = useRef<number | null>(null)
 
   const notify = useCallback((message: string, tone: ToastMessage['tone'] = 'ok') => {
     setToast({ id: Date.now(), text: message, tone })
@@ -137,6 +144,22 @@ export function AgentPanel({ project }: { project: Project }) {
     }
   }, [project.code, notify])
 
+  // 切换会话：保存上一个会话的草稿，恢复下一个会话的草稿；关掉上一个会话的
+  // 工具详情、重置滚动位置。运行中的会话在后端继续，不受切换影响。
+  useEffect(() => {
+    const previous = previousId.current
+    if (previous !== null && previous !== activeId) {
+      drafts.current.set(previous, draftRef.current)
+    }
+    const saved = activeId !== null ? drafts.current.get(activeId) : undefined
+    setText(saved?.text ?? '')
+    setAttachments(saved?.attachments ?? [])
+    setSending(false)
+    setTool(null)
+    stick.current = true
+    previousId.current = activeId
+  }, [activeId])
+
   useEffect(() => {
     if (activeId === null) {
       setView(emptyView)
@@ -158,6 +181,19 @@ export function AgentPanel({ project }: { project: Project }) {
           status: session.status,
           usage: session.usage ?? previous.usage,
         }))
+        setSessions((previous) =>
+          previous.map((item) =>
+            item.id === activeId
+              ? {
+                  ...item,
+                  title: session.title,
+                  status: session.status,
+                  usage: session.usage,
+                  updated_at: session.updated_at,
+                }
+              : item,
+          ),
+        )
       })
       .catch(() => {
         if (!disposed) setConnection('closed')
@@ -236,6 +272,9 @@ export function AgentPanel({ project }: { project: Project }) {
   async function ensureSession(): Promise<number> {
     if (activeId !== null) return activeId
     const created = await agentApi.createSession(project.code)
+    // 先把当前草稿挂到新会话下，避免 activeId 切换时被“恢复草稿”逻辑清空
+    drafts.current.set(created.id, draftRef.current)
+    activeIdRef.current = created.id
     setSessions((previous) => [created, ...previous])
     setActiveId(created.id)
     return created.id
@@ -256,8 +295,12 @@ export function AgentPanel({ project }: { project: Project }) {
         body,
         attachments.map((item) => item.assetId),
       )
-      setText('')
-      setAttachments([])
+      drafts.current.delete(id)
+      // 发送途中可能已经切到别的会话，不能清空新会话的输入
+      if (activeIdRef.current === id) {
+        setText('')
+        setAttachments([])
+      }
       stick.current = true
       const refreshed = await agentApi.getSession(id)
       setSessions((previous) =>
@@ -329,6 +372,7 @@ export function AgentPanel({ project }: { project: Project }) {
   async function removeSession(id: number) {
     try {
       await agentApi.deleteSession(id)
+      drafts.current.delete(id)
       setSessions((previous) => previous.filter((item) => item.id !== id))
       if (activeId === id) {
         const next = sessions.find((item) => item.id !== id)
