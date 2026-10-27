@@ -62,6 +62,52 @@ class _Delta:
     last_flush: float = field(default_factory=time.monotonic)
 
 
+def _canonical_rows(rows: list[store.StoredMessage]) -> list[store.StoredMessage]:
+    """把历史消息整理成合法顺序。
+
+    OpenAI/DeepSeek 要求 assistant 的 ``tool_calls`` 后面紧跟所有对应的 tool 消息；
+    早期版本会在一组工具结果之间插入图片 user 消息，导致 400。这里在重建请求时
+    把 tool 结果按调用顺序前移，其余消息（图片观察）排在其后。
+    正确顺序的历史不会被改动。
+    """
+    ordered: list[store.StoredMessage] = []
+    index = 0
+    while index < len(rows):
+        row = rows[index]
+        if row.role == "assistant" and row.tool_calls_raw:
+            try:
+                calls = json.loads(row.tool_calls_raw)
+            except json.JSONDecodeError:
+                calls = []
+            call_ids = [
+                str(call.get("id"))
+                for call in calls
+                if isinstance(call, dict) and call.get("id")
+            ]
+            ordered.append(row)
+            index += 1
+            block: list[store.StoredMessage] = []
+            while index < len(rows) and rows[index].role != "assistant":
+                block.append(rows[index])
+                index += 1
+            by_id = {
+                item.tool_call_id: item
+                for item in block
+                if item.role == "tool" and item.tool_call_id in call_ids
+            }
+            for call_id in call_ids:
+                if call_id in by_id:
+                    ordered.append(by_id[call_id])
+            for item in block:
+                if item.role == "tool" and item.tool_call_id in call_ids:
+                    continue
+                ordered.append(item)
+        else:
+            ordered.append(row)
+            index += 1
+    return ordered
+
+
 class AgentEngine:
     def __init__(self, settings: AgentSettings | None = None) -> None:
         self._settings = settings or config.agent_settings()
@@ -196,7 +242,7 @@ class AgentEngine:
 
     def _build_messages(self, session_id: int) -> list[dict[str, Any]]:
         messages: list[dict[str, Any]] = [{"role": "system", "content": SYSTEM_PROMPT}]
-        for row in store.list_messages(session_id):
+        for row in _canonical_rows(store.list_messages(session_id)):
             if row.role == "assistant":
                 item: dict[str, Any] = {
                     "role": "assistant",
@@ -313,14 +359,22 @@ class AgentEngine:
                     )
                     return
 
+                pending_images: list[dict] = []
                 for call in tool_calls:
                     if run.pause.is_set():
-                        await self._finish_paused(session_id)
-                        return
-                    await self._run_tool(run, session_id, turn, call)
+                        break
+                    outcome = await self._run_tool(run, session_id, turn, call)
+                    if outcome is not None and outcome.images:
+                        pending_images.extend(outcome.images)
                     if run.pause.is_set():
-                        await self._finish_paused(session_id)
-                        return
+                        break
+                # 图片观察必须排在这一组 tool 结果之后，否则 assistant(tool_calls)
+                # 与 tool 消息之间会夹入 user 消息，DeepSeek 直接 400。
+                if pending_images:
+                    await self._append_images(session_id, turn, pending_images)
+                if run.pause.is_set():
+                    await self._finish_paused(session_id)
+                    return
             await self._emit(
                 session_id,
                 "error",
@@ -484,7 +538,7 @@ class AgentEngine:
     # 工具
     # ------------------------------------------------------------------
 
-    async def _run_tool(self, run: _Run, session_id: int, turn: int, call: dict) -> None:
+    async def _run_tool(self, run: _Run, session_id: int, turn: int, call: dict):
         call_id = str(call.get("id") or "")
         function = call.get("function") or {}
         name = str(function.get("name") or "")
@@ -521,7 +575,7 @@ class AgentEngine:
                     "turn": turn,
                 },
             )
-            return
+            return None
 
         try:
             arguments = json.loads(args_raw) if args_raw.strip() else {}
@@ -544,7 +598,7 @@ class AgentEngine:
 
         if outcome is None:
             # 全局暂停：结果已在 _execute_tool 内写入
-            return
+            return None
 
         payload = json.dumps(
             outcome.as_payload(), ensure_ascii=False, separators=(",", ":")
@@ -582,8 +636,7 @@ class AgentEngine:
             },
         )
 
-        if outcome.images:
-            await self._append_images(session_id, turn, call_id, name, outcome.images)
+        return outcome
 
     async def _execute_tool(
         self,
@@ -710,16 +763,20 @@ class AgentEngine:
         return answers
 
     async def _append_images(
-        self, session_id: int, turn: int, call_id: str, name: str, images: list[dict]
+        self, session_id: int, turn: int, images: list[dict]
     ) -> None:
-        text = f"以下是工具 {name} 读取到的图片，请结合画面继续。"
+        labels = "\n".join(
+            f"[图片 {index + 1}] {image.get('label') or '未命名'}"
+            for index, image in enumerate(images)
+        )
+        text = f"以下是这一组工具读取到的图片，请结合画面继续。\n{labels}"
         await asyncio.to_thread(
             store.append_message,
             session_id,
             turn=turn,
             role="user",
             content=text,
-            meta={"synthetic": "tool_images", "tool_call_id": call_id, "images": images},
+            meta={"synthetic": "tool_images", "images": images},
         )
 
     # ------------------------------------------------------------------

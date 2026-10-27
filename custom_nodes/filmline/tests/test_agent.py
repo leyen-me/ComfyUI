@@ -14,6 +14,7 @@ from filmline.agent import store
 from filmline.agent.engine import AgentEngine
 from filmline.agent.provider import StreamClient
 from filmline.agent.schema import SchemaError, validate
+from filmline.agent.tools.base import ToolContext, ToolOutcome
 from filmline.config import AgentSettings
 from filmline.domain.projects import ProjectService
 from filmline.domain.schemas import ProjectCreate
@@ -189,6 +190,64 @@ class AgentStoreTest(DbTestCase):
         tool = next(item for item in messages if item["role"] == "tool")
         self.assertEqual(tool["tool_call_id"], "call_1")
 
+    def test_build_messages_moves_tool_results_before_image_observation(self) -> None:
+        """历史里被图片 user 消息插开的 tool 结果，重建时必须前移成连续块。"""
+        store.append_message(
+            self.session.id,
+            turn=1,
+            role="assistant",
+            content="",
+            reasoning="看两张图",
+            tool_calls_raw=json.dumps(
+                [
+                    {"id": "c1", "type": "function", "function": {"name": "read_image", "arguments": "{}"}},
+                    {"id": "c2", "type": "function", "function": {"name": "read_image", "arguments": "{}"}},
+                ]
+            ),
+        )
+        store.append_message(
+            self.session.id, turn=1, role="tool", content="{}", tool_call_id="c1", tool_name="read_image"
+        )
+        store.append_message(
+            self.session.id,
+            turn=1,
+            role="user",
+            content="图片 1",
+            meta={"synthetic": "tool_images", "images": [{"label": "a", "data_url": "data:image/jpeg;base64,AA"}]},
+        )
+        store.append_message(
+            self.session.id, turn=1, role="tool", content="{}", tool_call_id="c2", tool_name="read_image"
+        )
+        store.append_message(
+            self.session.id,
+            turn=1,
+            role="user",
+            content="图片 2",
+            meta={"synthetic": "tool_images", "images": [{"label": "b", "data_url": "data:image/jpeg;base64,BB"}]},
+        )
+        engine = AgentEngine(settings=_settings())
+        messages = engine._build_messages(self.session.id)
+        roles = [item["role"] for item in messages]
+        self.assertEqual(roles, ["system", "assistant", "tool", "tool", "user", "user"])
+        self.assertEqual(messages[2]["tool_call_id"], "c1")
+        self.assertEqual(messages[3]["tool_call_id"], "c2")
+
+    def test_notify_accepts_positional_percent(self) -> None:
+        received: list[tuple] = []
+
+        async def progress(text: str, percent: int | None) -> None:
+            received.append((text, percent))
+
+        ctx = ToolContext(
+            session_id=1,
+            project_id=1,
+            project_code="PRJ-0001",
+            project_name="测试",
+            progress=progress,
+        )
+        asyncio.run(ctx.notify("拼图", 20))
+        self.assertEqual(received, [("拼图", 20)])
+
     def test_pending_tool_calls_detected(self) -> None:
         store.append_message(
             self.session.id,
@@ -325,6 +384,65 @@ class AgentEngineTest(AsyncDbTestCase):
         self.assertEqual(store.get_session(self.session.id).status, "idle")
         events = store.list_events(self.session.id)
         self.assertTrue(any(event["type"] == "tool.finished" for event in events))
+
+    async def test_multiple_image_tools_keep_tool_block_contiguous(self) -> None:
+        self._user("看看这两张图")
+        engine = AgentEngine()
+        engine._client = FakeClient(
+            [
+                [
+                    {
+                        "type": "done",
+                        "content": "",
+                        "reasoning": "看图",
+                        "tool_calls": [
+                            {
+                                "id": "c1",
+                                "type": "function",
+                                "function": {"name": "read_image", "arguments": '{"asset_id":1}'},
+                            },
+                            {
+                                "id": "c2",
+                                "type": "function",
+                                "function": {"name": "read_image", "arguments": '{"asset_id":2}'},
+                            },
+                        ],
+                        "usage": {},
+                    }
+                ],
+                [
+                    {
+                        "type": "done",
+                        "content": "都看完了。",
+                        "reasoning": "",
+                        "tool_calls": [],
+                        "usage": {},
+                    }
+                ],
+            ]
+        )
+
+        async def fake_execute(name, arguments, ctx):
+            return ToolOutcome(
+                summary="已读取",
+                data={"asset_id": arguments["asset_id"]},
+                images=[
+                    {
+                        "label": f"图{arguments['asset_id']}",
+                        "data_url": "data:image/jpeg;base64,AA",
+                    }
+                ],
+            )
+
+        with mock.patch("filmline.agent.engine.execute", side_effect=fake_execute):
+            await self._run(engine)
+
+        rows = store.list_messages(self.session.id)
+        roles = [row.role for row in rows]
+        self.assertEqual(roles, ["user", "assistant", "tool", "tool", "user", "assistant"])
+        self.assertEqual([row.tool_call_id for row in rows[2:4]], ["c1", "c2"])
+        images = (rows[4].meta or {}).get("images") or []
+        self.assertEqual(len(images), 2)
 
     async def test_pause_discards_partial_step(self) -> None:
         self._user("写点什么")

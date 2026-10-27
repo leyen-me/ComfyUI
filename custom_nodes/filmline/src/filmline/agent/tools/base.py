@@ -68,7 +68,7 @@ class ToolContext:
     watch_task: Callable[[int], None] | None = None
     runner: Any = None
 
-    async def notify(self, text: str, *, percent: int | None = None) -> None:
+    async def notify(self, text: str, percent: int | None = None) -> None:
         if self.progress is not None:
             await self.progress(text, percent)
 

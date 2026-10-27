@@ -109,6 +109,10 @@ SSE：`id: <seq>`，`data: {"seq","type","data","ts"}`，心跳为 `: ping`。
 
 图片类工具会把 data URL 作为额外的 user 消息追加到模型上下文（模型无法从工具
 文本里“看到”图片）；这是唯一会向历史追加内容的位置，且只在工具调用后发生。
+必须等同一批 `tool_calls` 的所有 tool 结果都写完后，再追加这条 user 消息：
+DeepSeek 要求 assistant 的 `tool_calls` 后紧跟对应的全部 tool 消息，中间夹 user
+消息会直接返回 400。`_build_messages` 还会对旧历史做一次顺序归一化，修复早期
+版本留下的“tool 结果与图片观察交错”的消息。
 
 ## HTTP 接口
 
