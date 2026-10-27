@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { ChevronDown, ChevronUp, CircleHelp, Loader2 } from 'lucide-react'
 
 import type { AgentQuestion } from '@/lib/agent'
@@ -31,12 +31,35 @@ export function AgentQuestionPanel({
   const [collapsed, setCollapsed] = useState(false)
   const [selected, setSelected] = useState<Record<string, string[]>>({})
   const [custom, setCustom] = useState<Record<string, string>>({})
+  // 切换会话时把未提交的选项/展开状态按 toolCallId 暂存，切回来不丢
+  const memory = useRef(
+    new Map<
+      string,
+      {
+        collapsed: boolean
+        selected: Record<string, string[]>
+        custom: Record<string, string>
+      }
+    >(),
+  )
+  const lastId = useRef<string | undefined>(undefined)
+  const currentId = state?.toolCallId
 
   useEffect(() => {
-    setCollapsed(false)
-    setSelected({})
-    setCustom({})
-  }, [state?.toolCallId])
+    const previous = lastId.current
+    if (previous && previous !== currentId) {
+      memory.current.set(previous, { collapsed, selected, custom })
+    }
+    if (currentId) {
+      const saved = memory.current.get(currentId)
+      setCollapsed(saved?.collapsed ?? false)
+      setSelected(saved?.selected ?? {})
+      setCustom(saved?.custom ?? {})
+    }
+    lastId.current = currentId
+    // 只在问题切换时保存/恢复；选择变化不触发这里
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentId])
 
   if (!state) return null
 
