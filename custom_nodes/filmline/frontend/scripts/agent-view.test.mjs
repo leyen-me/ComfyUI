@@ -160,10 +160,43 @@ const retried = run([
   }),
 ])
 assert.equal(finalStep(retried.turns[0])?.content, '重试成功')
-assert.equal(retried.turns[0].retries.length, 1)
-assert.equal(retried.turns[0].retries[0].attempt, 1)
+// 新的一次尝试已开始，重试提示不再挂在 turn 上
+assert.equal(retried.turns[0].retries.length, 0)
 assert.equal(retried.turns[0].steps[0].content, '重试成功')
 assert.equal(retried.turns[0].steps[0].discarded, false)
+
+const retryWaiting = run([
+  event(1, 'run.started', { turn: 1 }),
+  event(2, 'step.started', { turn: 1, step: 0 }),
+  event(3, 'step.discarded', { turn: 1, step: 0, reason: 'retry' }),
+  event(4, 'retry', {
+    turn: 1,
+    step: 0,
+    attempt: 1,
+    max_attempts: 3,
+    delay_ms: 2000,
+    code: 'network',
+    message: '连接模型服务失败，请检查网络',
+  }),
+])
+assert.equal(retryWaiting.turns[0].retries.length, 1)
+
+const retryPaused = run([
+  event(1, 'run.started', { turn: 1 }),
+  event(2, 'step.started', { turn: 1, step: 0 }),
+  event(3, 'step.discarded', { turn: 1, step: 0, reason: 'retry' }),
+  event(4, 'retry', {
+    turn: 1,
+    step: 0,
+    attempt: 1,
+    max_attempts: 3,
+    delay_ms: 2000,
+    code: 'network',
+    message: '连接模型服务失败，请检查网络',
+  }),
+  event(5, 'run.finished', { status: 'paused', turn: 1 }),
+])
+assert.equal(retryPaused.turns[0].retries.length, 0)
 
 const question = run([
   event(1, 'question', {

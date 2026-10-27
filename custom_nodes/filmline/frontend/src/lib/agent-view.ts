@@ -160,6 +160,8 @@ export function applyEvent(view: AgentView, event: AgentEvent): AgentView {
       step.tools = []
       step.done = false
       step.discarded = false
+      // 重试提示只用于等待期间，新的尝试一开始就不再展示
+      turn.retries = []
       status = 'running'
       break
     }
@@ -282,22 +284,28 @@ export function applyEvent(view: AgentView, event: AgentEvent): AgentView {
       // 进程重启/暂停后，未落库的半截 step 不会再有后续增量，先清掉
       if (next === 'interrupted' || next === 'paused') {
         for (const turn of turns) turn.steps = turn.steps.filter((step) => step.done)
+        for (const turn of turns) turn.retries = []
       }
       break
     }
     case 'run.started': {
       const turn = ensureTurn(turns, turnNumber)
       turn.steps = turn.steps.filter((step) => step.done)
+      turn.retries = []
       status = 'running'
       break
     }
     case 'run.finished': {
       const next = text(data, 'status')
+      // 重试是过程状态，本轮结束后不再留在界面上；失败由 error 单独展示
+      const turn = turns.find((item) => item.turn === turnNumber)
+      if (turn) turn.retries = []
       status = next === 'paused' ? 'paused' : next === 'error' ? 'error' : 'idle'
       break
     }
     case 'error': {
       const turn = ensureTurn(turns, turnNumber)
+      turn.retries = []
       turn.errors.push(text(data, 'message') || '发生错误')
       status = 'error'
       break

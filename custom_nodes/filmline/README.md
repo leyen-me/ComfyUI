@@ -305,6 +305,7 @@ DEEPSEEK_MAX_TOKENS=4096
   3 次，指数退避（2s、4s，上限 20s），优先遵守 `Retry-After`。每次重试会先作废半截
   step，不会把重复内容写进上下文；重试期间点暂停会立即停止。`400 / 401 / 402 / 413 / 422`
   不重试。工具里 `web_search` / `web_fetch` 也有一次显式重试；写工具不会自动重放，避免副作用。
+  重试提示只在等待期间显示，新一次尝试开始或本轮结束后即从界面移除，不会一直挂在历史消息里。
 - **Token 记录**：每次响应记录 `prompt_tokens`、`completion_tokens`、`total_tokens`、
   缓存命中/未命中、`reasoning_tokens` 和会话累计 token；上下文占用显示使用
   `total_tokens / context_window`。图片 token 由官方按尺寸折算并包含在 `usage` 里，

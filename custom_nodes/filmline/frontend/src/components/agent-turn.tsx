@@ -284,7 +284,7 @@ export function AgentTurn({
           等待你回答问题，确认后继续。
         </div>
       ) : null}
-      {turn.question?.answers ? (
+      {turn.question?.answers && running && !final?.content.trim() ? (
         <p className="mt-2 text-[11.5px] text-muted-foreground">已回答，Agent 继续执行。</p>
       ) : null}
 
