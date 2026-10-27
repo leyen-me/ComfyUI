@@ -439,6 +439,11 @@ class AgentEngine:
                             continue
                         await self._emit(
                             session_id,
+                            "step.discarded",
+                            {"turn": turn, "step": step, "reason": "error"},
+                        )
+                        await self._emit(
+                            session_id,
                             "error",
                             {
                                 "code": exc.code,
