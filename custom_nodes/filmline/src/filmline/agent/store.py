@@ -384,33 +384,70 @@ def watch_task(session_id: int, task_id: int) -> None:
             session.add(AgentTaskWatch(session_id=session_id, task_id=task_id))
 
 
+def _pending_watch_filter():
+    """还需要推送完成通知的关注：既没通知过，Agent 也没在对话里读到过终态。"""
+    return AgentTaskWatch.notified_at.is_(None), AgentTaskWatch.observed_at.is_(None)
+
+
 def pending_watches() -> list[tuple[int, int]]:
     with session_scope() as session:
         rows = session.execute(
             select(AgentTaskWatch.session_id, AgentTaskWatch.task_id).where(
-                AgentTaskWatch.notified_at.is_(None)
+                *_pending_watch_filter()
             )
         ).all()
         return [(int(row[0]), int(row[1])) for row in rows]
 
 
-def mark_watched(session_id: int, task_id: int) -> None:
+def observe_tasks(session_id: int, task_ids: Iterable[int]) -> None:
+    """标记这些任务的结果已被 Agent 在对话中读到，之后不再推送完成通知。"""
+    ids = [int(task_id) for task_id in task_ids]
+    if not ids:
+        return
+    now = utcnow()
     with _lock, session_scope() as session:
-        row = session.execute(
-            select(AgentTaskWatch).where(
-                AgentTaskWatch.session_id == session_id,
-                AgentTaskWatch.task_id == task_id,
+        rows = (
+            session.execute(
+                select(AgentTaskWatch).where(
+                    AgentTaskWatch.session_id == session_id,
+                    AgentTaskWatch.task_id.in_(ids),
+                    AgentTaskWatch.notified_at.is_(None),
+                    AgentTaskWatch.observed_at.is_(None),
+                )
             )
-        ).scalar_one_or_none()
-        if row is not None:
-            row.notified_at = utcnow()
+            .scalars()
+            .all()
+        )
+        for row in rows:
+            row.observed_at = now
+
+
+def mark_watched(session_id: int, task_ids: Iterable[int]) -> None:
+    ids = [int(task_id) for task_id in task_ids]
+    if not ids:
+        return
+    now = utcnow()
+    with _lock, session_scope() as session:
+        rows = (
+            session.execute(
+                select(AgentTaskWatch).where(
+                    AgentTaskWatch.session_id == session_id,
+                    AgentTaskWatch.task_id.in_(ids),
+                    AgentTaskWatch.notified_at.is_(None),
+                )
+            )
+            .scalars()
+            .all()
+        )
+        for row in rows:
+            row.notified_at = now
 
 
 def sessions_with_pending_watch() -> list[int]:
     with session_scope() as session:
         rows = session.execute(
             select(AgentTaskWatch.session_id)
-            .where(AgentTaskWatch.notified_at.is_(None))
+            .where(*_pending_watch_filter())
             .distinct()
         ).all()
         return [int(row[0]) for row in rows]

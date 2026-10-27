@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 
 from ..clock import to_iso, utcnow
 from ..db import session_scope
-from ..db.models import Asset
+from ..db.models import Asset, Episode
 from ..errors import InvalidArgument, NotFound
 from .schemas import (
     AssetCounts,
@@ -271,6 +271,48 @@ class AssetService:
                 setattr(row, field, value)
             session.flush()
             return _to_out(row)
+
+    def move_many(
+        self, project_id: int, asset_ids: list[int], *, episode_id: int | None
+    ) -> list[AssetOut]:
+        """批量调整资产归属：episode_id 为 None 表示移到项目级。
+
+        只改数据库归属，不移动磁盘文件：生成中的任务仍按原路径读取，
+        避免移动后正在跑的任务找不到文件。整批在同一事务里，失败全部回滚。
+        """
+        ids = list(dict.fromkeys(asset_ids))
+        if not ids:
+            raise InvalidArgument("至少选择一个资产")
+        if len(ids) != len(asset_ids):
+            raise InvalidArgument("资产列表有重复")
+
+        with self._scope() as session:
+            if episode_id is not None:
+                episode = session.get(Episode, episode_id)
+                if (
+                    episode is None
+                    or episode.deleted_at is not None
+                    or episode.project_id != project_id
+                ):
+                    raise InvalidArgument("目标分集不存在或不属于当前项目")
+
+            rows = (
+                session.execute(
+                    select(Asset).where(Asset.id.in_(ids), Asset.deleted_at.is_(None))
+                )
+                .scalars()
+                .all()
+            )
+            if len(rows) != len(ids):
+                raise NotFound("部分资产不存在或已删除")
+            by_id = {row.id: row for row in rows}
+            if any(by_id[asset_id].project_id != project_id for asset_id in ids):
+                raise InvalidArgument("资产不属于当前项目")
+
+            for asset_id in ids:
+                by_id[asset_id].episode_id = episode_id
+            session.flush()
+            return [_to_out(by_id[asset_id]) for asset_id in ids]
 
     def get_row_for_content(self, asset_id: int) -> tuple[str, str]:
         """返回（相对路径, mime），供文件下载使用。"""

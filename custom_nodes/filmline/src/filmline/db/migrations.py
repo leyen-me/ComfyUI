@@ -342,6 +342,11 @@ def _migration_010_agent_files(conn: Connection) -> None:
     conn.exec_driver_sql("CREATE INDEX ix_agent_files_expires_at ON agent_files (expires_at)")
 
 
+def _migration_011_agent_watch_observed(conn: Connection) -> None:
+    """记录 Agent 已读到的终态，避免重复推送完成通知。"""
+    conn.exec_driver_sql("ALTER TABLE agent_task_watch ADD COLUMN observed_at DATETIME")
+
+
 MIGRATIONS: list[tuple[int, object]] = [
     (1, _migration_001_initial),
     (2, _migration_002_drop_project_status),
@@ -353,6 +358,7 @@ MIGRATIONS: list[tuple[int, object]] = [
     (8, _migration_008_agent),
     (9, _migration_009_agent_thinking),
     (10, _migration_010_agent_files),
+    (11, _migration_011_agent_watch_observed),
 ]
 
 

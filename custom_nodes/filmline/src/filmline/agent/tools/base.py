@@ -68,11 +68,17 @@ class ToolContext:
     pause_requested: Callable[[], bool] | None = None
     # 注册需要完成通知的生成任务
     watch_task: Callable[[int], None] | None = None
+    # 标记任务终态已被 Agent 读到，抑制重复完成通知
+    observe_tasks: Callable[[list[int]], None] | None = None
     runner: Any = None
 
     async def notify(self, text: str, percent: int | None = None) -> None:
         if self.progress is not None:
             await self.progress(text, percent)
+
+    def observe(self, task_ids: list[int]) -> None:
+        if self.observe_tasks is not None:
+            self.observe_tasks(task_ids)
 
     def paused(self) -> bool:
         return bool(self.pause_requested and self.pause_requested())

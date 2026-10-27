@@ -316,6 +316,44 @@ class AgentStoreTest(DbTestCase):
         asyncio.run(ctx.notify("拼图", 20))
         self.assertEqual(received, [("拼图", 20)])
 
+    def test_observed_task_is_not_notified_again(self) -> None:
+        store.watch_task(self.session.id, 106)
+        store.watch_task(self.session.id, 107)
+        self.assertEqual(store.pending_watches(), [(self.session.id, 106), (self.session.id, 107)])
+
+        # Agent 已经用 wait_generation/get_generation_task 读到终态
+        store.observe_tasks(self.session.id, [106])
+        self.assertEqual(store.pending_watches(), [(self.session.id, 107)])
+        self.assertEqual(store.sessions_with_pending_watch(), [self.session.id])
+
+        store.observe_tasks(self.session.id, [107])
+        self.assertEqual(store.pending_watches(), [])
+        self.assertEqual(store.sessions_with_pending_watch(), [])
+
+    def test_mark_watched_accepts_batch(self) -> None:
+        store.watch_task(self.session.id, 1)
+        store.watch_task(self.session.id, 2)
+        store.mark_watched(self.session.id, [1, 2])
+        self.assertEqual(store.pending_watches(), [])
+        # 已通知的任务不会被后续 observe 覆盖成“未通知”
+        store.observe_tasks(self.session.id, [1])
+        self.assertEqual(store.pending_watches(), [])
+
+    def test_task_notice_merges_multiple_tasks(self) -> None:
+        from types import SimpleNamespace
+
+        tasks = [
+            SimpleNamespace(id=106, kind="image", status="succeeded", asset_ids=[183], error=None),
+            SimpleNamespace(id=107, kind="video", status="failed", asset_ids=[], error="显存不足"),
+        ]
+        text = AgentEngine._task_notice(tasks)
+        self.assertIn("合并通知", text)
+        self.assertIn("#106", text)
+        self.assertIn("产物资产 #183", text)
+        self.assertIn("#107", text)
+        self.assertIn("显存不足", text)
+        self.assertIn("不要重复完整汇报", text)
+
     def test_mark_interrupted_returns_session_ids(self) -> None:
         store.update_session(self.session.id, status="running")
         self.assertEqual(store.mark_interrupted(), [self.session.id])
@@ -766,6 +804,81 @@ class AgentEngineTest(AsyncDbTestCase):
         tool_rows = [row for row in rows if row.role == "tool"]
         self.assertEqual(len(tool_rows), 1)
         self.assertIn("interrupted", tool_rows[0].content)
+
+
+class GenerationObserveTest(AsyncDbTestCase):
+    """查询/等待工具读到终态后，必须抑制这条任务的完成通知。"""
+
+    async def asyncSetUp(self) -> None:
+        await super().asyncSetUp()
+        from filmline.domain.tasks import TaskService
+
+        self.project = ProjectService().create(ProjectCreate(name="观察测试"))
+        self.session = store.create_session(
+            self.project.id, title="新对话", model="deepseek-flash", context_window=1_000_000
+        )
+        self.service = TaskService()
+
+    def _finished_task(self):
+        task = self.service.create(
+            project_id=self.project.id,
+            episode_id=None,
+            kind="image",
+            prompt="x",
+            payload={"graph": {}, "meta": {}, "scope": "project"},
+        )
+        self.service.mark_succeeded(task.id, asset_ids=[183], elapsed_ms=100)
+        store.watch_task(self.session.id, task.id)
+        return task
+
+    def _ctx(self, observed: list[int]) -> ToolContext:
+        def observe(task_ids: list[int]) -> None:
+            observed.extend(task_ids)
+            store.observe_tasks(self.session.id, task_ids)
+
+        return ToolContext(
+            session_id=self.session.id,
+            project_id=self.project.id,
+            project_code=self.project.code,
+            project_name=self.project.name,
+            observe_tasks=observe,
+        )
+
+    async def test_get_generation_task_observes_terminal(self) -> None:
+        from filmline.agent.tools.generation import _get_task
+
+        task = self._finished_task()
+        observed: list[int] = []
+        await _get_task(self._ctx(observed), {"task_id": task.id})
+        self.assertEqual(observed, [task.id])
+        self.assertEqual(store.pending_watches(), [])
+
+    async def test_wait_generation_observes_terminal(self) -> None:
+        from filmline.agent.tools.generation import _wait
+
+        task = self._finished_task()
+        observed: list[int] = []
+        await _wait(
+            self._ctx(observed), {"task_ids": [task.id], "timeout_seconds": 5}
+        )
+        self.assertEqual(observed, [task.id])
+        self.assertEqual(store.pending_watches(), [])
+
+    async def test_running_task_stays_pending(self) -> None:
+        from filmline.agent.tools.generation import _get_task
+
+        task = self.service.create(
+            project_id=self.project.id,
+            episode_id=None,
+            kind="image",
+            prompt="y",
+            payload={"graph": {}, "meta": {}, "scope": "project"},
+        )
+        store.watch_task(self.session.id, task.id)
+        observed: list[int] = []
+        await _get_task(self._ctx(observed), {"task_id": task.id})
+        self.assertEqual(observed, [])
+        self.assertEqual(store.pending_watches(), [(self.session.id, task.id)])
 
 
 if __name__ == "__main__":

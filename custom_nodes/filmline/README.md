@@ -324,7 +324,9 @@ DEEPSEEK_MAX_TOKENS=4096
   本轮状态为 `waiting_input`。后端进程重启则会话变为 `interrupted`，点“继续”后由模型重新询问。
 - **生成是异步的**：`create_image` / `create_video` 立即返回 `task_id`。模型可以选择
   `wait_generation` 阻塞等待（最长 15 分钟、可暂停），也可以先结束本轮；
-  任务完成时后端会以“系统通知”的形式代替用户发一条消息并让 Agent 自检。
+  任务完成时后端会以“系统通知”的形式代替用户发一条消息并让 Agent 自检；
+  同一会话的多条完成通知会合并成一条，且 Agent 已经通过 `wait_generation` /
+  `get_generation_task` 读到终态的任务不会再次通知，避免模型重复汇报同一结果。
   仍有未完成任务时，每 5 分钟（`FILMLINE_AGENT_TICK_SECONDS`）再提醒一次。
 - **Markdown**：回答与中间内容在完成后用懒加载的 Markdown 渲染（GFM 表格、列表、代码块复制、
   安全外链），流式阶段仍用纯文本，避免未闭合语法闪烁；禁用原始 HTML、远程图片自动加载和
@@ -340,7 +342,7 @@ DEEPSEEK_MAX_TOKENS=4096
   `list_episodes` 显示分集列表。原始输入/输出仍可点开查看。
 - **工具集**：工作区/分集/项目读写、资产列表与文本读写、`probe_media`、
   `read_image`、`read_video`（均匀抽帧拼成网格图）、`read_audio`、`extract_frame`、
-  `create_image`、`create_video`、任务查询/等待/取消、`web_search`、`web_fetch`、
+  `create_image`、`create_video`、任务查询/等待/取消、资产移动、`web_search`、`web_fetch`、
   `ask_question`。删除资产、删除分集、取消任务必须先 `ask_question` 确认。
 - **外部理解**：`web_search` / `web_fetch` 对接 DeepSeek 官方 Search / Fetch 接口，
   支持 `site:`、`lang:`、`after:`、`-`、精确短语等语法；搜索返回标题、URL、摘要、

@@ -8,7 +8,7 @@ from dataclasses import asdict
 from ... import generation, progress
 from ...domain.produce import submit_generation
 from ...domain.projects import ProjectService
-from ...domain.tasks import ACTIVE_STATUSES, TaskService
+from ...domain.tasks import ACTIVE_STATUSES, TERMINAL_STATUSES, TaskService
 from ...errors import InvalidArgument, NotFound
 from .base import Tool, ToolContext, ToolOutcome, register
 
@@ -34,9 +34,10 @@ def _task_brief(task) -> dict:
 
 async def _submit(ctx: ToolContext, payload: dict, label: str) -> ToolOutcome:
     project = await asyncio.to_thread(ProjectService().get, ctx.project_code)
+    episode = payload.pop("episode", None)
     task = await submit_generation(
         project,
-        episode_code=payload.pop("episode", None),
+        episode_code=episode,
         payload=payload,
         runner=ctx.runner,
         client_label=label,
@@ -48,10 +49,12 @@ async def _submit(ctx: ToolContext, payload: dict, label: str) -> ToolOutcome:
             "asset.watch",
             {"task_id": task.id, "kind": task.kind, "status": task.status},
         )
+    scope = f"分集 {str(episode).upper()} 的" if episode else "项目级的"
     return ToolOutcome(
         summary=(
-            f"已提交{('图片' if task.kind == 'image' else '视频')}任务 #{task.id}，"
-            "正在排队/生成；可稍后用 wait_generation 查询，完成后会自动通知"
+            f"已提交{scope}{('图片' if task.kind == 'image' else '视频')}任务 #{task.id}，"
+            "正在排队/生成；可稍后用 wait_generation 查询，完成后会自动通知。"
+            + ("" if episode else "产物会落在项目级；如果它属于某一集，完成后用 move_assets 移过去。")
         ),
         data=_task_brief(task),
         meta={"task_id": task.id, "async": True},
@@ -105,6 +108,8 @@ async def _get_task(ctx: ToolContext, args: dict) -> ToolOutcome:
     task = await asyncio.to_thread(TaskService().get, args["task_id"])
     if task.project_id != ctx.project_id:
         raise NotFound("任务不属于当前项目")
+    if task.status in TERMINAL_STATUSES:
+        ctx.observe([task.id])
     data = _task_brief(task)
     data["progress"] = progress.snapshot(task.id)
     return ToolOutcome(
@@ -145,6 +150,9 @@ async def _wait(ctx: ToolContext, args: dict) -> ToolOutcome:
             if last.get(task.id) != f"{text}:{percent}":
                 last[task.id] = f"{text}:{percent}"
                 await ctx.notify(text, percent)
+
+        # 结果已经作为工具返回值进入上下文，完成通知不必再重复推一次。
+        ctx.observe([task.id for task in tasks if task.status in TERMINAL_STATUSES])
 
         if all(task.status not in ACTIVE_STATUSES for task in tasks):
             succeeded = [task for task in tasks if task.status == "succeeded"]
@@ -200,6 +208,7 @@ async def _cancel(ctx: ToolContext, args: dict) -> ToolOutcome:
     if task.project_id != ctx.project_id:
         raise NotFound("任务不属于当前项目")
     if task.status not in ACTIVE_STATUSES:
+        ctx.observe([task.id])
         return ToolOutcome(
             ok=False,
             summary=f"任务 #{task.id} 已经结束（{task.status}）",
@@ -208,6 +217,8 @@ async def _cancel(ctx: ToolContext, args: dict) -> ToolOutcome:
         )
     service = TaskService()
     await asyncio.to_thread(service.mark_cancelled, task.id)
+    # 取消是 Agent 自己发起的，结果已知，无需再补一条完成通知。
+    ctx.observe([task.id])
     updated = await asyncio.to_thread(service.get, task.id)
     if updated.prompt_id:
         await generation.cancel(updated.prompt_id)

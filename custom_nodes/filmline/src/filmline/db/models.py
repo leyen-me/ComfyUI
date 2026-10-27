@@ -229,7 +229,11 @@ class AgentFile(Base):
 
 
 class AgentTaskWatch(Base):
-    """Agent 关注的生成任务：完成通知与定时自检都从这里取。"""
+    """Agent 关注的生成任务：完成通知与定时自检都从这里取。
+
+    Agent 在对话中已经读到终态（wait_generation / get_generation_task）时写入
+    ``observed_at``：结果已经进入上下文，不必再用通知把同一条结果推一遍。
+    """
 
     __tablename__ = "agent_task_watch"
 
@@ -240,6 +244,8 @@ class AgentTaskWatch(Base):
     task_id: Mapped[int] = mapped_column(Integer, index=True, nullable=False)
     # 完成后通知的时间；为空表示还没通知
     notified_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    # Agent 已在对话中读到终态的时间；非空表示无需再通知
+    observed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
     __table_args__ = (

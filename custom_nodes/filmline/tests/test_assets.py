@@ -6,10 +6,116 @@ from urllib.parse import quote
 
 from aiohttp import FormData
 
-from base import ApiTestCase
+from base import ApiTestCase, AsyncDbTestCase, DbTestCase
+from filmline.agent.tools.base import ToolContext
+from filmline.domain.assets import AssetService
+from filmline.domain.episodes import EpisodeService
+from filmline.domain.projects import ProjectService
+from filmline.domain.schemas import EpisodeCreate, ProjectCreate, TextAssetCreate
+from filmline.errors import InvalidArgument, NotFound
 
 PNG_BYTES = b"\x89PNG\r\n\x1a\n" + b"\x00" * 32
 MP4_BYTES = b"\x00\x00\x00\x18ftypmp42" + b"\x00" * 32
+
+
+class AssetMoveTest(DbTestCase):
+    """资产归属移动：项目级 <-> 分集，整批原子生效。"""
+
+    def setUp(self) -> None:
+        super().setUp()
+        self.project = ProjectService().create(ProjectCreate(name="移动测试"))
+        self.episode = EpisodeService().create(
+            self.project.id, EpisodeCreate(title="第一集")
+        )
+        self.service = AssetService()
+
+    def _asset(self, name: str):
+        return self.service.create_text(
+            self.project.id, TextAssetCreate(name=name, content="x")
+        )
+
+    def test_move_to_episode_and_back_to_project(self) -> None:
+        asset = self._asset("尾帧")
+        moved = self.service.move_many(
+            self.project.id, [asset.id], episode_id=self.episode.id
+        )
+        self.assertEqual(moved[0].episode_id, self.episode.id)
+        self.assertEqual(self.service.get(asset.id).episode_id, self.episode.id)
+
+        back = self.service.move_many(self.project.id, [asset.id], episode_id=None)
+        self.assertIsNone(back[0].episode_id)
+        self.assertIsNone(self.service.get(asset.id).episode_id)
+
+    def test_rejects_foreign_episode_without_partial_write(self) -> None:
+        first, second = self._asset("a"), self._asset("b")
+        other = ProjectService().create(ProjectCreate(name="别的项目"))
+        foreign = EpisodeService().create(other.id, EpisodeCreate(title="别的集"))
+        with self.assertRaises(InvalidArgument):
+            self.service.move_many(
+                self.project.id, [first.id, second.id], episode_id=foreign.id
+            )
+        self.assertIsNone(self.service.get(first.id).episode_id)
+        self.assertIsNone(self.service.get(second.id).episode_id)
+
+    def test_rejects_missing_asset_without_partial_write(self) -> None:
+        asset = self._asset("a")
+        with self.assertRaises(NotFound):
+            self.service.move_many(self.project.id, [asset.id, 999_999], episode_id=None)
+        self.assertIsNone(self.service.get(asset.id).episode_id)
+
+    def test_rejects_duplicates_and_empty(self) -> None:
+        asset = self._asset("a")
+        with self.assertRaises(InvalidArgument):
+            self.service.move_many(
+                self.project.id, [asset.id, asset.id], episode_id=self.episode.id
+            )
+        with self.assertRaises(InvalidArgument):
+            self.service.move_many(self.project.id, [], episode_id=None)
+
+
+class AssetMoveToolTest(AsyncDbTestCase):
+    async def asyncSetUp(self) -> None:
+        await super().asyncSetUp()
+        self.project = ProjectService().create(ProjectCreate(name="移动工具"))
+        self.episode = EpisodeService().create(
+            self.project.id, EpisodeCreate(title="第一集")
+        )
+        self.service = AssetService()
+        self.asset = self.service.create_text(
+            self.project.id, TextAssetCreate(name="尾帧", content="x")
+        )
+
+    def _ctx(self) -> ToolContext:
+        return ToolContext(
+            session_id=1,
+            project_id=self.project.id,
+            project_code=self.project.code,
+            project_name=self.project.name,
+        )
+
+    async def test_move_by_episode_code_and_back(self) -> None:
+        from filmline.agent.tools.assets import _move_assets
+
+        outcome = await _move_assets(
+            self._ctx(), {"asset_ids": [self.asset.id], "episode": "ep01"}
+        )
+        self.assertTrue(outcome.ok)
+        self.assertEqual(outcome.data["episode"], "EP01")
+        self.assertEqual(self.service.get(self.asset.id).episode_id, self.episode.id)
+
+        outcome = await _move_assets(self._ctx(), {"asset_ids": [self.asset.id]})
+        self.assertTrue(outcome.ok)
+        self.assertIsNone(outcome.data["episode"])
+        self.assertIsNone(self.service.get(self.asset.id).episode_id)
+
+    async def test_unknown_episode_is_rejected(self) -> None:
+        from filmline.agent.tools.assets import _move_assets
+
+        with self.assertRaises(NotFound):
+            await _move_assets(
+                self._ctx(), {"asset_ids": [self.asset.id], "episode": "EP99"}
+            )
+        self.assertIsNone(self.service.get(self.asset.id).episode_id)
 
 
 class AssetApiTest(ApiTestCase):

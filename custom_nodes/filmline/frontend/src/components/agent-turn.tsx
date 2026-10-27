@@ -172,7 +172,9 @@ export function AgentTurn({
           <div className="mb-3 flex items-start gap-2 rounded-lg border border-dashed border-border bg-muted/30 px-3 py-2 text-[12px] leading-relaxed text-muted-foreground">
             <Info className="mt-0.5 size-3.5 shrink-0" />
             <p className="min-w-0 whitespace-pre-wrap break-words">
-              <span className="mr-1.5 font-medium text-foreground/70">系统通知</span>
+              {turn.user.text.trimStart().startsWith('系统') ? null : (
+                <span className="mr-1.5 font-medium text-foreground/70">系统通知</span>
+              )}
               {turn.user.text}
             </p>
           </div>

@@ -121,6 +121,24 @@ async def _update_text(ctx: ToolContext, args: dict) -> ToolOutcome:
     return ToolOutcome(summary=f"已更新「{updated.name}」", data=_asset_brief(updated))
 
 
+async def _move_assets(ctx: ToolContext, args: dict) -> ToolOutcome:
+    code = (args.get("episode") or "").strip()
+    episode_id = await asyncio.to_thread(_episode_id, ctx, code or None)
+    items = await asyncio.to_thread(
+        AssetService().move_many, ctx.project_id, args["asset_ids"], episode_id=episode_id
+    )
+    scope = code.upper() if code else "项目级"
+    names = "、".join(f"「{item.name}」" for item in items[:5])
+    suffix = " 等" if len(items) > 5 else ""
+    return ToolOutcome(
+        summary=f"已将 {len(items)} 个资产移到{scope}：{names}{suffix}",
+        data={
+            "episode": code.upper() or None,
+            "items": [_asset_brief(item) for item in items],
+        },
+    )
+
+
 async def _delete_asset(ctx: ToolContext, args: dict) -> ToolOutcome:
     if not args.get("confirmed"):
         return ToolOutcome(
@@ -260,6 +278,32 @@ def register_tools() -> None:
                 "additionalProperties": False,
             },
             handler=_update_text,
+            write=True,
+        )
+    )
+    register(
+        Tool(
+            name="move_assets",
+            label="移动资产",
+            description=(
+                "批量调整资产归属：移到某个分集（episode=EP01）或移到项目级（省略 episode）。"
+                "用于生成时漏传 episode、产物落在项目级的补救；只改归属，不改内容和文件。"
+            ),
+            parameters={
+                "type": "object",
+                "properties": {
+                    "asset_ids": {
+                        "type": "array",
+                        "items": {"type": "integer", "minimum": 1},
+                        "minItems": 1,
+                        "maxItems": 50,
+                    },
+                    "episode": {"type": "string", "maxLength": 16},
+                },
+                "required": ["asset_ids"],
+                "additionalProperties": False,
+            },
+            handler=_move_assets,
             write=True,
         )
     )

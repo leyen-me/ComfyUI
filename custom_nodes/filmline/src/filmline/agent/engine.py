@@ -57,6 +57,8 @@ class _Run:
     question_future: asyncio.Future | None = None
     question_call_id: str | None = None
     stopping: bool = False
+    # 本次工具调用读到终态的任务；结果落库后才标记，避免“读到但没返回”时漏报
+    observed_task_ids: list[int] = field(default_factory=list)
 
 
 @dataclass
@@ -278,11 +280,15 @@ class AgentEngine:
         await asyncio.to_thread(store.set_status, session_id, status)
         await self._emit(session_id, "session.status", {"status": status})
 
-    async def notify(self, session_id: int, text: str, *, source: str = "task") -> None:
-        """代替用户发送一条专业通知，并让 Agent 自检。"""
+    async def notify(self, session_id: int, text: str, *, source: str = "task") -> bool:
+        """代替用户发送一条专业通知，并让 Agent 自检。
+
+        返回 False 表示会话还在忙，通知没有写入；调用方应保留待通知状态，
+        等会话空闲后的下一个 tick 再发，而不是直接标记为已通知。
+        """
         info = await asyncio.to_thread(store.get_session, session_id)
         if info.status not in ("idle", "error"):
-            return
+            return False
         turn = info.turn + 1
         await asyncio.to_thread(store.update_session, session_id, turn=turn)
         await asyncio.to_thread(
@@ -295,6 +301,7 @@ class AgentEngine:
         )
         await self._emit(session_id, "notice", {"text": text, "source": source, "turn": turn})
         await self.start_session(session_id)
+        return True
 
     # ------------------------------------------------------------------
     # 上下文
@@ -735,6 +742,7 @@ class AgentEngine:
             },
         )
 
+        run.observed_task_ids.clear()
         cached = await asyncio.to_thread(store.ledger_result, session_id, call_id)
         if cached is not None:
             status, result_raw = cached
@@ -812,6 +820,12 @@ class AgentEngine:
                 "turn": turn,
             },
         )
+        if run.observed_task_ids:
+            # 结果已经写进上下文，完成通知不必再重复推一次
+            await asyncio.to_thread(
+                store.observe_tasks, session_id, list(run.observed_task_ids)
+            )
+            run.observed_task_ids.clear()
 
         return outcome
 
@@ -836,6 +850,7 @@ class AgentEngine:
             ask=lambda questions: self._ask(run, session_id, call_id, questions),
             pause_requested=lambda: run.pause.is_set() or call_id in run.tool_pause_ids,
             watch_task=lambda task_id: store.watch_task(session_id, task_id),
+            observe_tasks=run.observed_task_ids.extend,
             runner=self._task_runner,
         )
         task = asyncio.create_task(execute(name, arguments, ctx))
@@ -965,6 +980,30 @@ class AgentEngine:
         info = store.get_session(session_id)
         return ProjectService().get(str(info.project_id))
 
+    @staticmethod
+    def _task_notice(tasks: list) -> str:
+        """把同一会话所有待通知的终态任务合成一条通知，避免连续多轮重复汇报。"""
+        lines = []
+        for task in tasks:
+            kind = {"image": "图片", "video": "视频"}.get(task.kind, "生成")
+            line = f"- #{task.id} {kind}任务 {task.status}"
+            if task.status == "succeeded" and task.asset_ids:
+                line += "，产物资产 " + "、".join(f"#{asset_id}" for asset_id in task.asset_ids)
+            elif task.status == "failed" and task.error:
+                line += f"，原因：{task.error[:200]}"
+            lines.append(line)
+        head = (
+            "系统通知：生成任务已结束："
+            if len(tasks) == 1
+            else f"系统通知：{len(tasks)} 个生成任务已结束（合并通知）："
+        )
+        return (
+            f"{head}\n" + "\n".join(lines) + "\n"
+            "请用 get_generation_task 核对详情和产物资产，检查是否符合预期后向用户汇报。"
+            "如果某个结果你已经在之前的回复里汇报过，只需一句话确认，不要重复完整汇报；"
+            "失败的任务要说明原因并给出下一步建议。"
+        )
+
     async def _notify_loop(self) -> None:
         """任务完成通知 + 定时自检。"""
         from ..domain.tasks import TERMINAL_STATUSES, TaskService
@@ -973,28 +1012,28 @@ class AgentEngine:
         while True:
             try:
                 watches = await asyncio.to_thread(store.pending_watches)
-                finished: list[tuple[int, int, str]] = []
+                finished: dict[int, list] = {}
                 for session_id, task_id in watches:
                     try:
                         task = await asyncio.to_thread(TaskService().get, task_id)
                     except Exception:
                         # 任务已被清理：结束关注，避免永久重试
-                        await asyncio.to_thread(store.mark_watched, session_id, task_id)
+                        await asyncio.to_thread(store.mark_watched, session_id, [task_id])
                         continue
                     if task.status in TERMINAL_STATUSES:
-                        finished.append((session_id, task_id, task.status))
-                for session_id, task_id, status in finished:
+                        finished.setdefault(session_id, []).append(task)
+                for session_id, tasks in finished.items():
                     info = await asyncio.to_thread(store.get_session, session_id)
                     if info.status not in ("idle", "error"):
                         # 正在对话中：保留未通知状态，等会话空闲后再发
                         continue
-                    await asyncio.to_thread(store.mark_watched, session_id, task_id)
-                    await self.notify(
-                        session_id,
-                        f"系统通知：生成任务 #{task_id} 已结束，状态 {status}。"
-                        "请用 get_generation_task 查看结果和产物资产，检查是否符合预期，"
-                        "然后向用户汇报；如果失败，说明原因并给出下一步建议。",
-                        source="task",
+                    if not await self.notify(
+                        session_id, self._task_notice(tasks), source="task"
+                    ):
+                        # 会话刚好又开始运行：保持待通知，下一个 tick 重试
+                        continue
+                    await asyncio.to_thread(
+                        store.mark_watched, session_id, [task.id for task in tasks]
                     )
                 if not finished:
                     await self._periodic_tick()
