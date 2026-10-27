@@ -10,13 +10,14 @@ const POSTER_TIME = 0.1
 interface VideoThumbProps {
   src: string
   className?: string
+  onError?: () => void
 }
 
 /**
  * 静音缩略视频：静止时显示首帧与时长，悬停才播放并显示进度。
  * 不带原生控制条，点击交给外层打开详情。外层需要有 `group` 类名。
  */
-export function VideoThumb({ src, className }: VideoThumbProps) {
+export function VideoThumb({ src, className, onError }: VideoThumbProps) {
   const ref = useRef<HTMLVideoElement>(null)
   const [duration, setDuration] = useState<number | null>(null)
   const [progress, setProgress] = useState(0)
@@ -51,6 +52,7 @@ export function VideoThumb({ src, className }: VideoThumbProps) {
         playsInline
         draggable={false}
         className="block size-full bg-black object-cover"
+        onError={onError}
         onLoadedMetadata={(event) => {
           const value = event.currentTarget.duration
           setDuration(Number.isFinite(value) ? value : null)

@@ -49,6 +49,10 @@ async def _read_image(ctx: ToolContext, args: dict) -> ToolOutcome:
         raise NotFound("图片文件已丢失")
     data_url = await asyncio.to_thread(media.image_data_url, target)
     await ctx.notify("读取图片")
+    try:
+        preview = await asyncio.to_thread(media.shrink_data_url, data_url, 480)
+    except Exception:
+        preview = None
     uploaded = await ensure_file(data_url, asset.name)
     return ToolOutcome(
         summary=f"已读取图片「{asset.name}」",
@@ -68,6 +72,7 @@ async def _read_image(ctx: ToolContext, args: dict) -> ToolOutcome:
                 "file_expires_at": uploaded.expires_at if uploaded else None,
             }
         ],
+        preview=preview,
         meta={"image_count": 1},
     )
 

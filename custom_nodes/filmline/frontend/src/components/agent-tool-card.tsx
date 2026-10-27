@@ -18,7 +18,7 @@ import {
   XCircle,
 } from 'lucide-react'
 
-import { api, type Asset, type TaskInfo, type TaskStatus } from '@/lib/api'
+import { ApiError, api, type Asset, type TaskInfo, type TaskStatus } from '@/lib/api'
 import type { ToolView } from '@/lib/agent-view'
 import { copyText } from '@/lib/clipboard'
 import { formatSeconds, formatTime } from '@/lib/format'
@@ -75,6 +75,12 @@ function Lightbox({
   item: { src: string; title: string; kind: 'image' | 'video' | 'audio' } | null
   onClose: () => void
 }) {
+  const [failed, setFailed] = useState(false)
+
+  useEffect(() => {
+    setFailed(false)
+  }, [item?.src])
+
   return (
     <Dialog
       open={item !== null}
@@ -98,10 +104,15 @@ function Lightbox({
     >
       {item ? (
         <div className="max-h-[72vh] overflow-y-auto pb-3">
-          {item.kind === 'image' ? (
+          {failed ? (
+            <p className="rounded-lg border border-dashed border-border px-4 py-8 text-center text-[12px] text-muted-foreground">
+              素材不可用，可能已被删除或文件已移动。
+            </p>
+          ) : item.kind === 'image' ? (
             <img
               src={item.src}
               alt={item.title}
+              onError={() => setFailed(true)}
               className="mx-auto max-h-[66vh] w-auto max-w-full rounded-lg bg-black/30 object-contain"
             />
           ) : item.kind === 'video' ? (
@@ -109,10 +120,17 @@ function Lightbox({
               src={item.src}
               controls
               autoPlay
+              onError={() => setFailed(true)}
               className="mx-auto max-h-[66vh] w-full rounded-lg bg-black object-contain"
             />
           ) : (
-            <audio src={item.src} controls autoPlay className="w-full" />
+            <audio
+              src={item.src}
+              controls
+              autoPlay
+              onError={() => setFailed(true)}
+              className="w-full"
+            />
           )}
         </div>
       ) : null}
@@ -129,23 +147,35 @@ function Thumb({
   onOpen: () => void
   className?: string
 }) {
+  const [failed, setFailed] = useState(false)
+
+  useEffect(() => {
+    setFailed(false)
+  }, [item.src])
+
   return (
     <button
       type="button"
       onClick={onOpen}
-      title={item.title}
+      title={failed ? `${item.title}（素材不可用或已删除）` : item.title}
       className={cn(
         'group relative block cursor-zoom-in overflow-hidden rounded-lg border border-border bg-muted/40 transition-colors hover:border-foreground/25 focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none',
         className ?? 'size-20',
       )}
     >
-      {item.kind === 'video' ? (
-        <VideoThumb src={item.src} className="size-full" />
+      {failed ? (
+        <span className="flex size-full flex-col items-center justify-center gap-1 px-1 text-center text-[9px] leading-tight text-muted-foreground">
+          <ImageIcon className="size-4 opacity-60" />
+          已删除/不可用
+        </span>
+      ) : item.kind === 'video' ? (
+        <VideoThumb src={item.src} className="size-full" onError={() => setFailed(true)} />
       ) : item.kind === 'image' ? (
         <img
           src={item.src}
           alt={item.title}
           loading="lazy"
+          onError={() => setFailed(true)}
           className="size-full object-cover"
         />
       ) : (
@@ -153,7 +183,7 @@ function Thumb({
           <Music className="size-6" />
         </span>
       )}
-      {item.kind === 'video' ? (
+      {item.kind === 'video' && !failed ? (
         <span className="pointer-events-none absolute right-1 bottom-1 rounded bg-black/65 p-0.5 text-white">
           <Play className="size-2.5 fill-current" />
         </span>
@@ -209,6 +239,7 @@ const STATUS_TEXT: Record<TaskStatus, string> = {
 function TaskMiniCard({ initial }: { initial: TaskInfo }) {
   const [task, setTask] = useState(initial)
   const [assets, setAssets] = useState<Asset[]>([])
+  const [missing, setMissing] = useState(false)
   const [lightbox, setLightbox] = useState<{
     src: string
     title: string
@@ -218,7 +249,7 @@ function TaskMiniCard({ initial }: { initial: TaskInfo }) {
   const active = ACTIVE_TASK.has(task.status)
 
   useEffect(() => {
-    if (!task.id || !active) return
+    if (!task.id || !active || missing) return
     let disposed = false
     const timer = window.setInterval(() => {
       void api.tasks
@@ -226,13 +257,17 @@ function TaskMiniCard({ initial }: { initial: TaskInfo }) {
         .then((next) => {
           if (!disposed) setTask(next)
         })
-        .catch(() => undefined)
+        .catch((cause) => {
+          if (!disposed && cause instanceof ApiError && cause.status === 404) {
+            setMissing(true)
+          }
+        })
     }, 3000)
     return () => {
       disposed = true
       window.clearInterval(timer)
     }
-  }, [task.id, active])
+  }, [task.id, active, missing])
 
   useEffect(() => {
     if (!assetKey) {
@@ -253,6 +288,14 @@ function TaskMiniCard({ initial }: { initial: TaskInfo }) {
 
   const percent = task.progress?.percent ?? null
   const stage = task.progress?.stage || (task.status === 'queued' ? '排队中' : '生成中')
+
+  if (missing) {
+    return (
+      <div className="mt-1.5 rounded-lg border border-dashed border-border px-2.5 py-2 text-[11px] text-muted-foreground">
+        任务 #{task.id} · 任务记录已被清理，无法继续查询进度；如果产物还在，左侧资产列表仍可查看。
+      </div>
+    )
+  }
 
   return (
     <div className="mt-1.5 rounded-lg border border-border bg-card/70 p-2">
@@ -427,11 +470,13 @@ function AudioCard({ envelope }: { envelope: Envelope }) {
   const data = envelope.data
   const src = str(data, 'content_url') || assetUrl(data)
   const name = str(data, 'name') || '音频'
-  if (!src) {
+  const [failed, setFailed] = useState(false)
+  const meta = `${formatSeconds(num(data, 'duration') ?? 0)} · ${num(data, 'sample_rate') ?? '?'}Hz · ${num(data, 'channels') ?? '?'} 声道`
+  if (!src || failed) {
     return (
       <p className="mt-1 text-[11px] text-muted-foreground">
-        {formatSeconds(num(data, 'duration') ?? 0)} · {num(data, 'sample_rate') ?? '?'}Hz ·{' '}
-        {num(data, 'channels') ?? '?'} 声道
+        {name} · {meta}
+        {failed ? ' · 音频已删除或不可用' : ''}
       </p>
     )
   }
@@ -440,11 +485,15 @@ function AudioCard({ envelope }: { envelope: Envelope }) {
       <div className="mb-1 flex items-center gap-1.5 text-[11px] text-muted-foreground">
         <AudioLines className="size-3 text-primary" />
         <span className="truncate text-foreground">{name}</span>
-        <span className="ml-auto font-mono">
-          {formatSeconds(num(data, 'duration') ?? 0)}
-        </span>
+        <span className="ml-auto font-mono">{meta}</span>
       </div>
-      <audio src={src} controls preload="metadata" className="h-8 w-full" />
+      <audio
+        src={src}
+        controls
+        preload="metadata"
+        onError={() => setFailed(true)}
+        className="h-8 w-full"
+      />
     </div>
   )
 }
