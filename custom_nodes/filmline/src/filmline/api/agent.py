@@ -11,6 +11,7 @@ from aiohttp import web
 
 from .. import config
 from ..agent import store
+from ..agent.balance import fetch_balance
 from ..agent.bus import BUS
 from ..agent.engine import ENGINE_KEY, AgentEngine
 from ..agent.prompt import SYSTEM_PROMPT
@@ -122,6 +123,12 @@ def register_agent_routes(routes: web.RouteTableDef) -> None:
                 ),
             }
         )
+
+    @routes.get(f"{API_PREFIX}/agent/balance")
+    @handle_errors
+    async def balance(request: web.Request) -> web.Response:
+        force = request.query.get("force") in ("1", "true", "yes")
+        return ok(await fetch_balance(settings, force=force))
 
     @routes.get(f"{API_PREFIX}/projects/{{ref}}/agent/sessions")
     @handle_errors

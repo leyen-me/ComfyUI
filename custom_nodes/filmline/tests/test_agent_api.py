@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+from unittest import mock
 
 from base import ApiTestCase
 from filmline.agent.prompt import SYSTEM_PROMPT
@@ -28,6 +29,23 @@ class AgentSessionApiTest(ApiTestCase):
         body = await response.json()
         self.assertEqual(response.status, 201, body)
         return body["data"]
+
+    async def test_balance_endpoint(self) -> None:
+        payload = {
+            "configured": True,
+            "available": True,
+            "items": [
+                {"currency": "CNY", "total": "42.31", "granted": "2.31", "topped_up": "40.00"}
+            ],
+            "fetched_at": "2026-10-27T04:00:00Z",
+        }
+        with mock.patch(
+            "filmline.api.agent.fetch_balance", mock.AsyncMock(return_value=payload)
+        ):
+            response = await self.client.get("/studio/api/agent/balance")
+            body = await response.json()
+        self.assertEqual(response.status, 200, body)
+        self.assertEqual(body["data"]["items"][0]["total"], "42.31")
 
     async def test_session_lifecycle(self) -> None:
         project = await self._project()

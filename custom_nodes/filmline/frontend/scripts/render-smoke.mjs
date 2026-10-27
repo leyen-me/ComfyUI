@@ -352,6 +352,8 @@ function framesFor(events) {
 const agentFrames = framesFor(agentEvents)
 const questionFrames = framesFor(questionEvents)
 
+let balanceCalls = 0
+
 globalThis.fetch = async (input, init = {}) => {
   const path = new URL(String(input), 'http://127.0.0.1:8188').pathname
   const method = (init.method ?? 'GET').toUpperCase()
@@ -422,6 +424,21 @@ globalThis.fetch = async (input, init = {}) => {
   } else if (/^\/studio\/api\/projects\/[^/]+$/.test(path)) {
     if (method === 'PATCH') Object.assign(project, JSON.parse(init.body))
     data = project
+  } else if (path.endsWith('/agent/balance')) {
+    balanceCalls += 1
+    data = {
+      configured: true,
+      available: true,
+      items: [
+        {
+          currency: 'CNY',
+          total: '42.31',
+          granted: '2.31',
+          topped_up: '40.00',
+        },
+      ],
+      fetched_at: '2026-10-27T04:00:00Z',
+    }
   } else if (path.endsWith('/agent/system-prompt')) {
     data = {
       prompt: '你是 Filmline 的影视制片 Agent。\n\n工作方式\n- 先理解目标。',
@@ -569,6 +586,11 @@ const agentPromptExpanded =
   rootText().includes('deepseek-flash') &&
   rootText().includes('2 个工具') &&
   rootText().includes('sha256 aaaaaaaaaaaa')
+
+// —— 右上角余额：加载后显示金额，run.finished 后再刷新一次 ——
+await wait(900)
+const balanceShown = rootText().includes('¥42.31')
+const balanceRefreshed = balanceCalls >= 2
 
 // —— 输入框右下角：会话级思考强度 ——
 document.querySelector('button[title="思考强度（仅对当前会话生效）"]')?.click()
@@ -1112,6 +1134,8 @@ const checks = [
   ['Agent 显示上下文占用', agentContext],
   ['顶部显示系统提示', agentPromptVisible],
   ['系统提示可展开查看原文与元信息', agentPromptExpanded],
+  ['右上角显示 DeepSeek 余额', balanceShown],
+  ['每轮结束刷新余额', balanceRefreshed],
   ['ask 问题以内联面板显示', agentQuestionInline],
   ['ask 面板不是模态弹窗', agentQuestionNotModal],
   ['ask 面板可收起，不挡素材', agentQuestionCollapsed],

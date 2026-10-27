@@ -78,6 +78,20 @@ export interface AgentToolInfo {
   destructive: boolean
 }
 
+export interface AgentBalanceItem {
+  currency: string
+  total: string
+  granted: string
+  topped_up: string
+}
+
+export interface AgentBalanceInfo {
+  configured: boolean
+  available: boolean
+  items: AgentBalanceItem[]
+  fetched_at: string | null
+}
+
 export interface AgentSystemPrompt {
   prompt: string
   chars: number
@@ -129,6 +143,10 @@ async function call<T>(path: string, init: RequestInit = {}): Promise<T> {
 export const agentApi = {
   systemPrompt() {
     return call<AgentSystemPrompt>('/agent/system-prompt')
+  },
+
+  balance(force = false) {
+    return call<AgentBalanceInfo>(`/agent/balance${force ? '?force=1' : ''}`)
   },
 
   listSessions(projectCode: string) {

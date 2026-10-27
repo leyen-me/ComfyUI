@@ -8,7 +8,6 @@ import {
   Music,
   Pause,
   Play,
-  Plus,
   SendHorizontal,
   Sparkles,
   Trash2,
@@ -35,6 +34,7 @@ import {
 import { hasAssetDrag, readAssetDrag, type AssetDragPayload } from '@/lib/asset-drag'
 import { formatRelative } from '@/lib/format'
 import { cn } from '@/lib/utils'
+import { AgentBalanceBadge } from './agent-balance'
 import { AgentEffortSelect, type EffortChoice } from './agent-effort-select'
 import { AgentPromptBar } from './agent-prompt-bar'
 import { AgentQuestionPanel } from './agent-question-panel'
@@ -90,6 +90,7 @@ export function AgentPanel({ project }: { project: Project }) {
   })
   const [pendingSettings, setPendingSettings] = useState<EffortChoice | null>(null)
   const [systemPrompt, setSystemPrompt] = useState<AgentSystemPrompt | null>(null)
+  const [balanceToken, setBalanceToken] = useState(0)
 
   const scrollRef = useRef<HTMLDivElement>(null)
   const stick = useRef(true)
@@ -233,6 +234,10 @@ export function AgentPanel({ project }: { project: Project }) {
               item.id === activeId ? { ...item, updated_at: new Date().toISOString() } : item,
             ),
           )
+        }
+        // 每轮结束刷新余额；计费按请求发生，暂停/错误也可能已产生费用
+        if (event.type === 'run.finished') {
+          setBalanceToken((value) => value + 1)
         }
       },
       onState: setConnection,
@@ -471,14 +476,7 @@ export function AgentPanel({ project }: { project: Project }) {
           <span className="font-mono tabular-nums" title="上下文占用">
             {context}
           </span>
-          <button
-            type="button"
-            onClick={createSession}
-            title="新建对话"
-            className="cursor-pointer rounded-md p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-          >
-            <Plus className="size-4" />
-          </button>
+          <AgentBalanceBadge refreshToken={balanceToken} />
         </div>
       </header>
 

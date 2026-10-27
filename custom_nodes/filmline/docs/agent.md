@@ -155,6 +155,7 @@ DeepSeek 要求 assistant 的 `tool_calls` 后紧跟对应的全部 tool 消息�
 | 方法 | 路径 |
 |---|---|
 | GET | `/studio/api/agent/system-prompt` |
+| GET | `/studio/api/agent/balance` |
 | GET | `/studio/api/projects/{ref}/agent/sessions` |
 | POST | `/studio/api/projects/{ref}/agent/sessions` |
 | GET/PATCH/DELETE | `/studio/api/agent/sessions/{id}` |
@@ -167,6 +168,17 @@ DeepSeek 要求 assistant 的 `tool_calls` 后紧跟对应的全部 tool 消息�
 
 会话按项目归属、所有人共享；与分集无关。所有写操作仍走原有领域服务与校验，
 生成参数校验收敛在 `domain/produce.py`，HTTP 与工具共用，不存在第二套规则。
+
+## 余额
+
+`GET /studio/api/agent/balance` 代理 DeepSeek 官方 `GET /user/balance`，返回
+`is_available` 与 `balance_infos`（CNY/USD、总额、赠金、充值）。结果缓存 3 秒，
+`?force=1` 强制刷新；没有配置 API Key 时返回 `configured=false`，不报错。
+
+前端在右上角（原「新建对话」加号的位置）展示主币种总额，点击查看明细；页面加载、
+每轮 `run.finished` 后各刷新一次，金额用 `requestAnimationFrame` 做滚动动画，
+并尊重 `prefers-reduced-motion`。余额是账户级数据，所有会话共享；新建对话入口
+保留在会话下拉菜单里。
 
 ## 系统提示可见
 

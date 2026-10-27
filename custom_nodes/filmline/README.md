@@ -83,6 +83,7 @@ npm run test:logic   # 纯函数单测（页码、提示词、拖拽载荷等）
 | POST | `/studio/api/tasks/{id}/cancel` | 取消排队/运行中的 Filmline 任务 |
 | POST | `/studio/api/prompts/optimize` | DeepSeek 提示词优化（仅视频，后端代理） |
 | GET | `/studio/api/agent/system-prompt` | 原样返回系统提示、sha256、模型、思考模式与工具目录 |
+| GET | `/studio/api/agent/balance` | DeepSeek 余额代理，`?force=1` 跳过 3 秒缓存 |
 | GET | `/studio/api/projects/{ref}/agent/sessions` | 项目的 Agent 会话列表（含模型与上下文窗口） |
 | POST | `/studio/api/projects/{ref}/agent/sessions` | 新建会话 |
 | GET/PATCH/DELETE | `/studio/api/agent/sessions/{id}` | 会话详情 / 改名 / 修改思考强度 / 软删除 |
@@ -263,6 +264,9 @@ DEEPSEEK_MAX_TOKENS=4096
 右侧不再是表单，而是一个后端常驻的会话式 Agent。完整设计见
 [`docs/agent.md`](docs/agent.md)。
 
+- **余额**：右上角显示 DeepSeek 账户余额（原「新建对话」加号的位置，新建对话移到
+  会话下拉菜单）。后端代理官方 `GET /user/balance`，API Key 不下发；页面加载时拉一次，
+  每轮 `run.finished` 后再刷新，数值变化带数字滚动动画。点击余额可查看赠金/充值明细并手动刷新。
 - **系统提示可见**：右侧顶部固定一条「系统提示」，收起时显示原文预览与字符数，
   展开后原样展示每次请求实际发送的 prompt，并附模型、思考模式、工具数量与
   sha256；可一键复制。工具定义、历史消息和项目数据不在系统提示里，界面会注明。
