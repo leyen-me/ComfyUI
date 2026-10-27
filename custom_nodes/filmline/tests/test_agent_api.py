@@ -63,6 +63,36 @@ class AgentSessionApiTest(ApiTestCase):
         body = await response.json()
         self.assertEqual(body["data"]["items"], [])
 
+    async def test_session_thinking_settings(self) -> None:
+        project = await self._project()
+        response = await self.client.post(
+            f"/studio/api/projects/{project['code']}/agent/sessions",
+            json={"thinking": "enabled", "reasoning_effort": "low"},
+        )
+        session = (await response.json())["data"]
+        self.assertEqual(session["thinking"], "enabled")
+        self.assertEqual(session["reasoning_effort"], "low")
+
+        response = await self.client.patch(
+            f"/studio/api/agent/sessions/{session['id']}",
+            json={"thinking": "enabled", "reasoning_effort": "max"},
+        )
+        body = await response.json()
+        self.assertEqual(body["data"]["reasoning_effort"], "max")
+
+        response = await self.client.patch(
+            f"/studio/api/agent/sessions/{session['id']}",
+            json={"reasoning_effort": "超高"},
+        )
+        self.assertEqual(response.status, 400)
+
+        response = await self.client.patch(
+            f"/studio/api/agent/sessions/{session['id']}",
+            json={"thinking": "auto"},
+        )
+        body = await response.json()
+        self.assertEqual(body["data"]["thinking"], "auto")
+
     async def test_session_isolated_by_project(self) -> None:
         first = await self._project("甲")
         second = await self._project("乙")

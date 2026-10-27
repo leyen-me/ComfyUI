@@ -1,6 +1,6 @@
 # Agent 设计说明（ADR）
 
-状态：已实现（schema v8）。
+状态：已实现（schema v9）。
 
 ## 背景
 
@@ -51,7 +51,17 @@ DeepSeek 的上下文缓存要求前缀完全稳定。因此：
     恢复后模型能看到工具被暂停，自行决定重试或换方案。
 - 单个工具暂停：只取消该工具，写入 paused 结果，run 继续，模型可立即补救。
 
-### 5. ask_question 的交互
+### 5. 会话级思考强度
+
+- `agent_sessions.thinking`：`auto | enabled | disabled`；
+- `agent_sessions.reasoning_effort`：`low | high | max`（接口也接受官方映射表中的其它值）；
+- 输入框右下角提供 `默认 / 低 / 高 / 最高 / 关闭`，PATCH 会话即时保存；
+- 引擎每一步模型请求前重新读取会话设置，因此运行中切换 effort 会从下一步生效；
+- 新建会话可通过 `POST .../agent/sessions` 的 `thinking` / `reasoning_effort` 指定，
+  不传则继承全局 `FILMLINE_AGENT_*`；
+- `auto` 不发送 `thinking` 字段；`enabled` 才发送 `reasoning_effort`；`disabled` 不发送 effort。
+
+### 6. ask_question 的交互
 
 - 面板固定在输入框上方，**非模态**：不用 `<dialog>`、不加遮罩，左侧素材与中间资产面板
   仍然可操作；用户可以先看素材、把素材拖进输入框，再回答问题。
@@ -61,7 +71,7 @@ DeepSeek 的上下文缓存要求前缀完全稳定。因此：
 - 后端进程重启会把 `waiting_input` 标成 `interrupted`；点“继续”时该工具调用会被补成
   `interrupted` 结果，模型通常会重新提问，不会假装用户已经回答。
 
-### 6. 切换会话
+### 7. 切换会话
 
 - 切换只影响浏览器侧：旧 SSE 取消订阅，新会话从 0 回放事件；后端 run 不受影响；
 - 每个会话单独保存输入框草稿与附件，切换时保存旧草稿、恢复新草稿，避免发错会话；
@@ -69,7 +79,7 @@ DeepSeek 的上下文缓存要求前缀完全稳定。因此：
 - 切换回正在运行的会话时，从已有事件继续，状态以服务端快照为准；
 - 删除当前会话时，草稿一并清理。
 
-### 7. 异步生成与通知
+### 8. 异步生成与通知
 
 `create_image` / `create_video` 只提交任务并立即返回 `task_id`，同时写入
 `agent_task_watch`。模型可以：
@@ -80,7 +90,7 @@ DeepSeek 的上下文缓存要求前缀完全稳定。因此：
 另外每 `FILMLINE_AGENT_TICK_SECONDS`（默认 300 秒）对仍有未完成任务的空闲会话
 发一次自检通知，避免长时间无声。
 
-### 8. 崩溃恢复
+### 9. 崩溃恢复
 
 - 启动时把 `running` / `waiting_input` 会话标记为 `interrupted`；
 - 恢复时补齐缺失的 tool 结果：有账本用账本，否则写入 `interrupted` 错误；

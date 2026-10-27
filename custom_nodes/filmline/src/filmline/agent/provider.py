@@ -39,9 +39,17 @@ class StreamClient:
         self,
         messages: list[dict[str, Any]],
         tools: list[dict[str, Any]],
+        *,
+        thinking: str | None = None,
+        effort: str | None = None,
     ) -> dict[str, Any]:
-        """按官方 OpenAI 格式组装请求；thinking 参数保持顶层（raw HTTP，不需要 extra_body）。"""
+        """按官方 OpenAI 格式组装请求；thinking 参数保持顶层（raw HTTP，不需要 extra_body）。
+
+        ``thinking`` / ``effort`` 由会话级设置传入；为 None 时回落到全局配置。
+        """
         settings = self._settings
+        mode = settings.thinking if thinking is None else thinking
+        level = settings.reasoning_effort if effort is None else effort
         body: dict[str, Any] = {
             "model": settings.model,
             "messages": messages,
@@ -53,22 +61,25 @@ class StreamClient:
         }
         # auto：不发送思考字段。DeepSeek 默认开启且 effort=high，
         # 其它 provider 也不会收到不认识的参数。
-        if settings.thinking != "auto":
-            body["thinking"] = {"type": settings.thinking}
-        if settings.thinking == "enabled":
-            body["reasoning_effort"] = settings.reasoning_effort
+        if mode != "auto":
+            body["thinking"] = {"type": mode}
+        if mode == "enabled":
+            body["reasoning_effort"] = level
         return body
 
     async def stream(
         self,
         messages: list[dict[str, Any]],
         tools: list[dict[str, Any]],
+        *,
+        thinking: str | None = None,
+        effort: str | None = None,
     ) -> AsyncIterator[dict[str, Any]]:
         settings = self._settings
         if not settings.api_key:
             raise ProviderError("未配置模型 API Key", code="not_configured")
 
-        body = self.request_body(messages, tools)
+        body = self.request_body(messages, tools, thinking=thinking, effort=effort)
         headers = {
             "Authorization": f"Bearer {settings.api_key}",
             "Content-Type": "application/json",

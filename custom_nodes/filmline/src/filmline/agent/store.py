@@ -41,6 +41,8 @@ class SessionInfo:
     title: str
     status: str
     model: str
+    thinking: str
+    reasoning_effort: str
     context_window: int
     last_seq: int
     turn: int
@@ -60,6 +62,8 @@ def _session_out(row: AgentSession) -> SessionInfo:
         title=row.title,
         status=row.status,
         model=row.model,
+        thinking=row.thinking,
+        reasoning_effort=row.reasoning_effort,
         context_window=row.context_window,
         last_seq=row.last_seq,
         turn=row.turn,
@@ -69,13 +73,23 @@ def _session_out(row: AgentSession) -> SessionInfo:
     )
 
 
-def create_session(project_id: int, *, title: str, model: str, context_window: int) -> SessionInfo:
+def create_session(
+    project_id: int,
+    *,
+    title: str,
+    model: str,
+    context_window: int,
+    thinking: str = "auto",
+    reasoning_effort: str = "high",
+) -> SessionInfo:
     with _lock, session_scope() as session:
         row = AgentSession(
             project_id=project_id,
             title=title,
             status="idle",
             model=model,
+            thinking=thinking,
+            reasoning_effort=reasoning_effort,
             context_window=context_window,
         )
         session.add(row)
@@ -118,6 +132,8 @@ def update_session(session_id: int, **fields: Any) -> None:
         "title",
         "status",
         "model",
+        "thinking",
+        "reasoning_effort",
         "context_window",
         "usage",
         "turn",

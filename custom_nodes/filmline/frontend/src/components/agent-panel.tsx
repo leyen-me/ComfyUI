@@ -35,6 +35,7 @@ import {
 import { hasAssetDrag, readAssetDrag, type AssetDragPayload } from '@/lib/asset-drag'
 import { formatRelative } from '@/lib/format'
 import { cn } from '@/lib/utils'
+import { AgentEffortSelect, type EffortChoice } from './agent-effort-select'
 import { AgentPromptBar } from './agent-prompt-bar'
 import { AgentQuestionPanel } from './agent-question-panel'
 import { AgentToolDialog } from './agent-tool-dialog'
@@ -74,11 +75,20 @@ export function AgentPanel({ project }: { project: Project }) {
   const [menuOpen, setMenuOpen] = useState(false)
   const [tool, setTool] = useState<ToolView | null>(null)
   const [toast, setToast] = useState<ToastMessage | null>(null)
-  const [model, setModel] = useState<{ model: string; context_window: number; configured: boolean }>({
+  const [model, setModel] = useState<{
+    model: string
+    context_window: number
+    configured: boolean
+    thinking: string
+    reasoning_effort: string
+  }>({
     model: '',
     context_window: 1_000_000,
     configured: true,
+    thinking: 'auto',
+    reasoning_effort: 'high',
   })
+  const [pendingSettings, setPendingSettings] = useState<EffortChoice | null>(null)
   const [systemPrompt, setSystemPrompt] = useState<AgentSystemPrompt | null>(null)
 
   const scrollRef = useRef<HTMLDivElement>(null)
@@ -130,6 +140,8 @@ export function AgentPanel({ project }: { project: Project }) {
           model: data.model,
           context_window: data.context_window,
           configured: data.configured,
+          thinking: data.thinking ?? 'auto',
+          reasoning_effort: data.reasoning_effort ?? 'high',
         })
         setActiveId((current) => current ?? data.items[0]?.id ?? null)
       })
@@ -253,6 +265,15 @@ export function AgentPanel({ project }: { project: Project }) {
     () => sessions.find((item) => item.id === activeId) ?? null,
     [sessions, activeId],
   )
+  const effort = activeSession
+    ? {
+        thinking: activeSession.thinking ?? 'auto',
+        reasoning_effort: activeSession.reasoning_effort ?? 'high',
+      }
+    : (pendingSettings ?? {
+        thinking: model.thinking,
+        reasoning_effort: model.reasoning_effort,
+      })
   const status = view.status ?? activeSession?.status ?? 'idle'
   const running = status === 'running' || status === 'waiting_input'
   const paused = status === 'paused' || status === 'interrupted' || status === 'error'
@@ -271,7 +292,8 @@ export function AgentPanel({ project }: { project: Project }) {
 
   async function ensureSession(): Promise<number> {
     if (activeId !== null) return activeId
-    const created = await agentApi.createSession(project.code)
+    const created = await agentApi.createSession(project.code, pendingSettings ?? undefined)
+    setPendingSettings(null)
     // 先把当前草稿挂到新会话下，避免 activeId 切换时被“恢复草稿”逻辑清空
     drafts.current.set(created.id, draftRef.current)
     activeIdRef.current = created.id
@@ -310,6 +332,22 @@ export function AgentPanel({ project }: { project: Project }) {
       notify(cause instanceof ApiError ? cause.fullMessage : '发送失败', 'error')
     } finally {
       setSending(false)
+    }
+  }
+
+  async function handleEffortChange(choice: EffortChoice) {
+    if (activeId === null) {
+      setPendingSettings(choice)
+      return
+    }
+    const target = activeId
+    try {
+      const updated = await agentApi.updateSessionSettings(target, choice)
+      setSessions((previous) =>
+        previous.map((item) => (item.id === target ? { ...item, ...updated } : item)),
+      )
+    } catch (cause) {
+      notify(cause instanceof ApiError ? cause.fullMessage : '修改思考强度失败', 'error')
     }
   }
 
@@ -627,6 +665,10 @@ export function AgentPanel({ project }: { project: Project }) {
               {model.configured ? 'Enter 发送 · Shift+Enter 换行' : '未配置模型 API Key'}
             </span>
             <div className="ml-auto flex items-center gap-1.5">
+              <AgentEffortSelect
+                value={effort}
+                onChange={(choice) => void handleEffortChange(choice)}
+              />
               {running ? (
                 <button
                   type="button"

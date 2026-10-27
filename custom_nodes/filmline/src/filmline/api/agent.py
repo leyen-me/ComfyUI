@@ -23,6 +23,8 @@ from .http import handle_errors, ok, parse_int, read_object
 API_PREFIX = "/studio/api"
 MAX_TEXT = 100_000
 MAX_ASSETS = 12
+THINKING_MODES = ("auto", "enabled", "disabled")
+REASONING_EFFORTS = ("minimal", "low", "medium", "high", "xhigh", "max", "ultra")
 
 
 def _engine(request: web.Request) -> AgentEngine:
@@ -50,6 +52,8 @@ def _session_out(info: store.SessionInfo) -> dict:
         "title": info.title,
         "status": info.status,
         "model": info.model,
+        "thinking": info.thinking,
+        "reasoning_effort": info.reasoning_effort,
         "context_window": info.context_window,
         "usage": info.usage,
         "turn": info.turn,
@@ -130,6 +134,8 @@ def register_agent_routes(routes: web.RouteTableDef) -> None:
                 "model": settings.model,
                 "context_window": settings.context_window,
                 "configured": settings.configured,
+                "thinking": settings.thinking,
+                "reasoning_effort": settings.reasoning_effort,
             }
         )
 
@@ -144,12 +150,20 @@ def register_agent_routes(routes: web.RouteTableDef) -> None:
             except InvalidArgument:
                 payload = {}
         title = str(payload.get("title") or "新对话").strip()[:200] or "新对话"
+        thinking = str(payload.get("thinking") or settings.thinking)
+        if thinking not in THINKING_MODES:
+            raise InvalidArgument("thinking 只支持 auto / enabled / disabled")
+        effort = str(payload.get("reasoning_effort") or settings.reasoning_effort)
+        if effort not in REASONING_EFFORTS:
+            raise InvalidArgument("reasoning_effort 不合法")
         info = await asyncio.to_thread(
             store.create_session,
             project.id,
             title=title,
             model=settings.model,
             context_window=settings.context_window,
+            thinking=thinking,
+            reasoning_effort=effort,
         )
         return ok(_session_out(info), status=201)
 
@@ -164,10 +178,25 @@ def register_agent_routes(routes: web.RouteTableDef) -> None:
     async def patch_session(request: web.Request) -> web.Response:
         session_id = await _session_id(request)
         payload = await read_object(request)
-        title = str(payload.get("title") or "").strip()
-        if not title:
-            raise InvalidArgument("标题不能为空")
-        await asyncio.to_thread(store.update_session, session_id, title=title[:200])
+        changes: dict = {}
+        if "title" in payload:
+            title = str(payload.get("title") or "").strip()
+            if not title:
+                raise InvalidArgument("标题不能为空")
+            changes["title"] = title[:200]
+        if "thinking" in payload:
+            thinking = str(payload.get("thinking") or "")
+            if thinking not in THINKING_MODES:
+                raise InvalidArgument("thinking 只支持 auto / enabled / disabled")
+            changes["thinking"] = thinking
+        if "reasoning_effort" in payload:
+            effort = str(payload.get("reasoning_effort") or "")
+            if effort not in REASONING_EFFORTS:
+                raise InvalidArgument("reasoning_effort 不合法")
+            changes["reasoning_effort"] = effort
+        if not changes:
+            raise InvalidArgument("没有需要更新的字段")
+        await asyncio.to_thread(store.update_session, session_id, **changes)
         return ok(_session_out(await _session(session_id)))
 
     @routes.delete(f"{API_PREFIX}/agent/sessions/{{session_id}}")

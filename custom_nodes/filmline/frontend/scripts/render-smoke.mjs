@@ -223,6 +223,8 @@ const agentSession = {
   title: '竖屏预告方案',
   status: 'idle',
   model: 'deepseek-flash',
+  thinking: 'auto',
+  reasoning_effort: 'high',
   context_window: 1_000_000,
   usage: { prompt_tokens: 31_500, context_window: 1_000_000 },
   turn: 1,
@@ -453,11 +455,15 @@ globalThis.fetch = async (input, init = {}) => {
       model: 'deepseek-flash',
       context_window: 1_000_000,
       configured: true,
+      thinking: 'auto',
+      reasoning_effort: 'high',
     }
   } else if (path.endsWith('/agent/sessions') && method === 'POST') {
     data = { ...agentSession }
   } else if (/\/agent\/sessions\/\d+$/.test(path)) {
-    data = path.endsWith('/2') ? { ...agentSession2 } : { ...agentSession }
+    const target = path.endsWith('/2') ? agentSession2 : agentSession
+    if (method === 'PATCH') Object.assign(target, JSON.parse(init.body))
+    data = { ...target }
   } else if (/\/agent\/sessions\/\d+\/events$/.test(path)) {
     const sessionId = Number(path.match(/sessions\/(\d+)\/events$/)?.[1] || 0)
     const after = Number(
@@ -563,6 +569,17 @@ const agentPromptExpanded =
   rootText().includes('deepseek-flash') &&
   rootText().includes('2 个工具') &&
   rootText().includes('sha256 aaaaaaaaaaaa')
+
+// —— 输入框右下角：会话级思考强度 ——
+document.querySelector('button[title="思考强度（仅对当前会话生效）"]')?.click()
+await wait(180)
+;[...document.querySelectorAll('[role="option"]')]
+  .find((el) => el.textContent?.includes('最高'))
+  ?.click()
+await wait(250)
+const effortChanged = (
+  document.querySelector('button[title="思考强度（仅对当前会话生效）"]')?.textContent ?? ''
+).includes('最高')
 
 // —— 切换会话：草稿隔离，问题面板只属于对应会话 ——
 const composer = document.querySelector('textarea[aria-label="给 Agent 的消息"]')
@@ -1098,6 +1115,7 @@ const checks = [
   ['ask 问题以内联面板显示', agentQuestionInline],
   ['ask 面板不是模态弹窗', agentQuestionNotModal],
   ['ask 面板可收起，不挡素材', agentQuestionCollapsed],
+  ['可选择会话级思考强度', effortChanged],
   ['切换会话更新标题与消息视图', switchedSession],
   ['切换会话不清空另一个会话的草稿', switchedDraftCleared],
   ['切换会话后问题面板不串会话', questionGoneOnOtherSession],

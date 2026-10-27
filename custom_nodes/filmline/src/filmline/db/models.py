@@ -124,6 +124,13 @@ class AgentSession(Base):
     # idle | running | waiting_input | paused | interrupted | error
     status: Mapped[str] = mapped_column(String(20), nullable=False, index=True)
     model: Mapped[str] = mapped_column(String(120), default="", server_default="")
+    # 会话级思考策略：auto / enabled / disabled；effort 仅 enabled 时发送
+    thinking: Mapped[str] = mapped_column(
+        String(16), default="auto", server_default="auto", nullable=False
+    )
+    reasoning_effort: Mapped[str] = mapped_column(
+        String(16), default="high", server_default="high", nullable=False
+    )
     context_window: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     # 事件与模型消息使用各自的单调序号，前端按事件序号断点续传
     last_seq: Mapped[int] = mapped_column(Integer, default=0, server_default="0")

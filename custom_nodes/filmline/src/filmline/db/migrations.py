@@ -308,6 +308,16 @@ def _migration_008_agent(conn: Connection) -> None:
     )
 
 
+def _migration_009_agent_thinking(conn: Connection) -> None:
+    """会话级思考策略与强度，默认跟随 provider 默认（auto）。"""
+    conn.exec_driver_sql(
+        "ALTER TABLE agent_sessions ADD COLUMN thinking VARCHAR(16) NOT NULL DEFAULT 'auto'"
+    )
+    conn.exec_driver_sql(
+        "ALTER TABLE agent_sessions ADD COLUMN reasoning_effort VARCHAR(16) NOT NULL DEFAULT 'high'"
+    )
+
+
 MIGRATIONS: list[tuple[int, object]] = [
     (1, _migration_001_initial),
     (2, _migration_002_drop_project_status),
@@ -317,6 +327,7 @@ MIGRATIONS: list[tuple[int, object]] = [
     (6, _migration_006_generation_stats),
     (7, _migration_007_generation_tasks),
     (8, _migration_008_agent),
+    (9, _migration_009_agent_thinking),
 ]
 
 

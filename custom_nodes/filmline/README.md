@@ -85,7 +85,7 @@ npm run test:logic   # 纯函数单测（页码、提示词、拖拽载荷等）
 | GET | `/studio/api/agent/system-prompt` | 原样返回系统提示、sha256、模型、思考模式与工具目录 |
 | GET | `/studio/api/projects/{ref}/agent/sessions` | 项目的 Agent 会话列表（含模型与上下文窗口） |
 | POST | `/studio/api/projects/{ref}/agent/sessions` | 新建会话 |
-| GET/PATCH/DELETE | `/studio/api/agent/sessions/{id}` | 会话详情 / 改名 / 软删除 |
+| GET/PATCH/DELETE | `/studio/api/agent/sessions/{id}` | 会话详情 / 改名 / 修改思考强度 / 软删除 |
 | GET | `/studio/api/agent/sessions/{id}/events?after=N` | SSE 事件流，`after` 断点续传 |
 | POST | `/studio/api/agent/sessions/{id}/messages` | 发送消息（`text` + `asset_ids`），202 启动运行 |
 | POST | `/studio/api/agent/sessions/{id}/pause` | 暂停推理与当前工具 |
@@ -277,6 +277,11 @@ DEEPSEEK_MAX_TOKENS=4096
   单个工具也可以在消息流里点暂停。
 - **恢复**：进程重启后未完成的会话标记为 `interrupted`；缺失的工具结果由账本或
   `interrupted` 错误补齐，已执行的工具不会重复执行。
+- **会话级思考强度**：输入框右下角可选择 `默认 / 低 / 高 / 最高 / 关闭`，只影响当前会话。
+  选择 `低/高/最高` 会显式发送 `thinking=enabled` 与 `reasoning_effort`；`默认` 不发送
+  思考字段；`关闭` 发送 `disabled`。设置存在 `agent_sessions`，运行中修改会从下一步
+  模型请求开始生效；新建会话时也会带上当前选择。全局 `FILMLINE_AGENT_THINKING` 只作为
+  新会话的初始默认值。
 - **深度思考**：默认 `FILMLINE_AGENT_THINKING=auto`，不发送 `thinking` 字段，DeepSeek 按官方
   默认开启并返回 `reasoning_content`；后端流式解析并保存原文，在所有后续请求里完整回传
   （请求携带 `tools` 时官方要求必须回传，即使该轮没有工具调用）。数据库与界面

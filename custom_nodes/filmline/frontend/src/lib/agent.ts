@@ -27,6 +27,8 @@ export interface AgentSession {
   title: string
   status: AgentStatus
   model: string
+  thinking: string
+  reasoning_effort: string
   context_window: number
   usage: AgentUsage | null
   turn: number
@@ -40,6 +42,13 @@ export interface AgentSessionList {
   model: string
   context_window: number
   configured: boolean
+  thinking: string
+  reasoning_effort: string
+}
+
+export interface AgentSessionSettings {
+  thinking: string
+  reasoning_effort: string
 }
 
 export interface AgentAssetRef {
@@ -126,10 +135,10 @@ export const agentApi = {
     return call<AgentSessionList>(`/projects/${encodeURIComponent(projectCode)}/agent/sessions`)
   },
 
-  createSession(projectCode: string) {
+  createSession(projectCode: string, settings?: AgentSessionSettings) {
     return call<AgentSession>(`/projects/${encodeURIComponent(projectCode)}/agent/sessions`, {
       method: 'POST',
-      body: JSON.stringify({}),
+      body: JSON.stringify(settings ?? {}),
     })
   },
 
@@ -141,6 +150,13 @@ export const agentApi = {
     return call<AgentSession>(`/agent/sessions/${sessionId}`, {
       method: 'PATCH',
       body: JSON.stringify({ title }),
+    })
+  },
+
+  updateSessionSettings(sessionId: number, settings: AgentSessionSettings) {
+    return call<AgentSession>(`/agent/sessions/${sessionId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(settings),
     })
   },
 

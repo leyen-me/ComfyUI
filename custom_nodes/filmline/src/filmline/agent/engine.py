@@ -484,8 +484,17 @@ class AgentEngine:
     async def _consume(self, run: _Run, session_id: int, step: int, turn: int) -> dict:
         messages = await asyncio.to_thread(self._build_messages, session_id)
         tools = definitions()
+        # 每步重新读取会话设置：用户在运行中调整 effort 时，下一步立即生效
+        info = await asyncio.to_thread(store.get_session, session_id)
         consume = asyncio.create_task(
-            self._consume_stream(run, session_id, messages, tools),
+            self._consume_stream(
+                run,
+                session_id,
+                messages,
+                tools,
+                info.thinking,
+                info.reasoning_effort,
+            ),
             name=f"filmline-agent-stream-{session_id}",
         )
         pause_wait = asyncio.create_task(run.pause.wait())
@@ -514,7 +523,13 @@ class AgentEngine:
             run.stream_task = None
 
     async def _consume_stream(
-        self, run: _Run, session_id: int, messages: list[dict], tools: list[dict]
+        self,
+        run: _Run,
+        session_id: int,
+        messages: list[dict],
+        tools: list[dict],
+        thinking: str,
+        effort: str,
     ) -> dict:
         delta = _Delta()
         final: dict | None = None
@@ -536,7 +551,9 @@ class AgentEngine:
                 await self._emit(session_id, "content.delta", {"text": text})
             delta.last_flush = now
 
-        async for event in self._client.stream(messages, tools):
+        async for event in self._client.stream(
+            messages, tools, thinking=thinking, effort=effort
+        ):
             kind = event["type"]
             if kind == "reasoning":
                 delta.reasoning.append(event["text"])

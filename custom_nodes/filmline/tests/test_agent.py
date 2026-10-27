@@ -90,6 +90,18 @@ class ThinkingConfigTest(unittest.TestCase):
         self.assertEqual(disabled["thinking"], {"type": "disabled"})
         self.assertNotIn("reasoning_effort", disabled)
 
+        # 会话级覆盖优先于全局配置
+        overridden = StreamClient(_settings()).request_body(
+            messages, tools, thinking="enabled", effort="low"
+        )
+        self.assertEqual(overridden["thinking"], {"type": "enabled"})
+        self.assertEqual(overridden["reasoning_effort"], "low")
+        off = StreamClient(_settings(thinking="enabled")).request_body(
+            messages, tools, thinking="disabled"
+        )
+        self.assertEqual(off["thinking"], {"type": "disabled"})
+        self.assertNotIn("reasoning_effort", off)
+
 
 class SchemaTest(unittest.TestCase):
     def test_required_and_extra(self) -> None:
@@ -156,6 +168,13 @@ class AgentStoreTest(DbTestCase):
         self.assertEqual(rows[0].content, raw)
         self.assertEqual(rows[0].reasoning, "思考\n换行")
         self.assertIn('"arguments":"{\\"a\\": 1}"', rows[0].tool_calls_raw or "")
+
+    def test_session_thinking_defaults_and_update(self) -> None:
+        info = store.get_session(self.session.id)
+        self.assertEqual((info.thinking, info.reasoning_effort), ("auto", "high"))
+        store.update_session(self.session.id, thinking="enabled", reasoning_effort="max")
+        info = store.get_session(self.session.id)
+        self.assertEqual((info.thinking, info.reasoning_effort), ("enabled", "max"))
 
     def test_ledger_is_idempotent(self) -> None:
         self.assertTrue(store.ledger_start(self.session.id, "call_1", "read_image"))
@@ -282,7 +301,7 @@ class FakeClient:
         self._scripts = scripts
         self.calls = 0
 
-    async def stream(self, messages, tools):
+    async def stream(self, messages, tools, **kwargs):
         index = min(self.calls, len(self._scripts) - 1)
         self.calls += 1
         for event in self._scripts[index]:
@@ -293,7 +312,7 @@ class SlowClient:
     def __init__(self) -> None:
         self.release = asyncio.Event()
 
-    async def stream(self, messages, tools):
+    async def stream(self, messages, tools, **kwargs):
         yield {"type": "content", "text": "只写了一半"}
         await self.release.wait()
         yield {

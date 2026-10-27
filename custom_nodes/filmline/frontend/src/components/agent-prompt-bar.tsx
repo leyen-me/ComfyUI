@@ -63,7 +63,7 @@ export function AgentPromptBar({ info }: { info: AgentSystemPrompt | null }) {
           <div className="mb-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-muted-foreground">
             <span className="font-medium text-foreground/80">{info.model}</span>
             <span>·</span>
-            <span>思考：{thinking}</span>
+            <span>全局思考默认：{thinking}</span>
             <span>·</span>
             <span>{info.tool_count} 个工具</span>
             <span>·</span>
