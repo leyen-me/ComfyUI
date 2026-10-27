@@ -808,6 +808,7 @@ class AgentEngine:
                 else ("ok" if outcome.ok else "error"),
                 "summary": outcome.summary,
                 "result_raw": payload,
+                "preview": outcome.preview,
                 "turn": turn,
             },
         )

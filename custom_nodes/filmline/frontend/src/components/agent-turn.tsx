@@ -21,6 +21,7 @@ import {
 import type { ToolView, TurnView } from '@/lib/agent-view'
 import { finalStep } from '@/lib/agent-view'
 import { cn } from '@/lib/utils'
+import { AgentToolCard } from './agent-tool-card'
 
 const KIND_ICON = {
   image: ImageIcon,
@@ -216,12 +217,14 @@ export function AgentTurn({
                     </CollapsibleBlock>
                   ) : null}
                   {step.tools.map((tool) => (
-                    <AgentToolRow
-                      key={tool.id}
-                      tool={tool}
-                      onOpen={() => onOpenTool(tool)}
-                      onPause={() => onPauseTool(tool.id)}
-                    />
+                    <div key={tool.id} className="mb-1.5 last:mb-0">
+                      <AgentToolRow
+                        tool={tool}
+                        onOpen={() => onOpenTool(tool)}
+                        onPause={() => onPauseTool(tool.id)}
+                      />
+                      <AgentToolCard tool={tool} />
+                    </div>
                   ))}
                 </div>
               ))}

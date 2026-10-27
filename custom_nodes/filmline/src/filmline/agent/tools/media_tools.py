@@ -36,6 +36,7 @@ async def _probe(ctx: ToolContext, args: dict) -> ToolOutcome:
             "asset_id": asset.id,
             "name": asset.name,
             "kind": asset.kind,
+            "content_url": f"/studio/api/assets/{asset.id}/content",
             **info.as_dict(),
         },
     )
@@ -56,6 +57,7 @@ async def _read_image(ctx: ToolContext, args: dict) -> ToolOutcome:
             "name": asset.name,
             "transport": "files" if uploaded else "inline",
             "detail": args.get("detail", "high"),
+            "preview_url": f"/studio/api/assets/{asset.id}/content",
         },
         images=[
             {
@@ -89,6 +91,11 @@ async def _read_video(ctx: ToolContext, args: dict) -> ToolOutcome:
         stamps = [start + span * index / (frames - 1) for index in range(frames)]
     await ctx.notify(f"抽取 {frames} 帧并拼图", 20)
     data_url = await asyncio.to_thread(media.video_contact_sheet_data_url, target, stamps)
+    try:
+        preview = await asyncio.to_thread(media.shrink_data_url, data_url, 480)
+    except Exception:
+        # 缩略图失败不能影响模型拿到完整网格图
+        preview = None
     uploaded = await ensure_file(data_url, f"{asset.name} 帧拼图.jpg")
     return ToolOutcome(
         summary=f"「{asset.name}」{start:.2f}–{end:.2f}s，已按 {frames} 帧拼成一张网格图",
@@ -112,6 +119,7 @@ async def _read_video(ctx: ToolContext, args: dict) -> ToolOutcome:
                 "file_expires_at": uploaded.expires_at if uploaded else None,
             }
         ],
+        preview=preview,
         meta={"image_count": 1},
     )
 
@@ -125,6 +133,8 @@ async def _read_audio(ctx: ToolContext, args: dict) -> ToolOutcome:
         data={
             "asset_id": asset.id,
             "name": asset.name,
+            "kind": asset.kind,
+            "content_url": f"/studio/api/assets/{asset.id}/content",
             **info.as_dict(),
             "note": (
                 "当前模型不能直接听音频。本工具只返回时长、采样率、声道等技术信息；"
@@ -167,7 +177,15 @@ async def _extract_frame(ctx: ToolContext, args: dict) -> ToolOutcome:
                 "frame_index": round(seconds * (info.fps or 24)),
             },
         )
-        return {"id": created.id, "name": created.name, "episode_id": created.episode_id}
+        return {
+            "id": created.id,
+            "asset_id": created.id,
+            "name": created.name,
+            "episode_id": created.episode_id,
+            "source_asset_id": asset.id,
+            "at_seconds": round(seconds, 3),
+            "preview_url": f"/studio/api/assets/{created.id}/content",
+        }
 
     created = await asyncio.to_thread(_write)
     return ToolOutcome(

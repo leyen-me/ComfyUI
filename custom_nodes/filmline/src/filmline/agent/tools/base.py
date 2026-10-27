@@ -27,6 +27,8 @@ class ToolOutcome:
     meta: dict[str, Any] = field(default_factory=dict)
     # 需要模型“看”的图片；由引擎在工具结果之后追加一条图片消息
     images: list[dict[str, str]] = field(default_factory=list)
+    # 只给 UI 的小预览（data URL），不会进入模型上下文
+    preview: str | None = None
 
     def as_payload(self) -> dict[str, Any]:
         body: dict[str, Any] = {

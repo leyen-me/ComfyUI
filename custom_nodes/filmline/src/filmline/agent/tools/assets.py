@@ -29,6 +29,7 @@ def _asset_brief(item) -> dict:
         "mime_type": item.mime_type,
         "size_bytes": item.size_bytes,
         "text_length": len(item.text_content or "") if item.text_content is not None else None,
+        "content_url": item.content_url,
         "created_at": item.created_at,
     }
 

@@ -114,7 +114,7 @@ SSE：`id: <seq>`，`data: {"seq","type","data","ts"}`，心跳为 `: ping`。
 | `step.discarded` | `turn,step` | 暂停导致该步作废 |
 | `tool.started` | `tool_call_id,name,label,args_raw,write,destructive` | 工具开始 |
 | `tool.progress` | `text,percent` | 工具进度 |
-| `tool.finished` | `status,result_raw,summary,elapsed_ms` | 工具结束（ok/error/paused） |
+| `tool.finished` | `status,result_raw,summary,elapsed_ms,preview` | 工具结束（ok/error/paused）；`preview` 只给 UI，不进模型上下文 |
 | `question` | `tool_call_id,questions` | ask_question 内联面板 |
 | `question.answered` | `tool_call_id,answers` | 用户回答 |
 | `retry` | `attempt,max_attempts,delay_ms,code,message,status` | 自动重试，UI 清除半截 step |

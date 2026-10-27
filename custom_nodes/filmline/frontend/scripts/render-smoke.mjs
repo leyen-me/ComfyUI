@@ -258,6 +258,9 @@ const agentEvents = [
       reasoning: '先确认资产，再读图。',
       tool_calls: [
         { id: 'call_1', type: 'function', function: { name: 'read_image', arguments: '{"asset_id":10}' } },
+        { id: 'call_2', type: 'function', function: { name: 'read_video', arguments: '{"asset_id":11}' } },
+        { id: 'call_3', type: 'function', function: { name: 'web_search', arguments: '{"query":"DeepSeek"}' } },
+        { id: 'call_4', type: 'function', function: { name: 'create_video', arguments: '{}' } },
       ],
     },
   },
@@ -280,7 +283,111 @@ const agentEvents = [
       tool_call_id: 'call_1',
       status: 'ok',
       summary: '已读取图片',
-      result_raw: '{"ok":true,"summary":"已读取图片","data":{"asset_id":10}}',
+      result_raw: JSON.stringify({
+        ok: true,
+        summary: '已读取图片',
+        data: { asset_id: 10, name: 'project_00001_.png', preview_url: '/studio/api/assets/10/content' },
+      }),
+    },
+  },
+  {
+    type: 'tool.started',
+    data: {
+      turn: 1,
+      tool_call_id: 'call_2',
+      name: 'read_video',
+      label: '查看视频',
+      args_raw: '{"asset_id":11}',
+    },
+  },
+  {
+    type: 'tool.finished',
+    data: {
+      turn: 1,
+      tool_call_id: 'call_2',
+      status: 'ok',
+      summary: '已读取视频',
+      preview: 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==',
+      result_raw: JSON.stringify({
+        ok: true,
+        summary: '已读取视频',
+        data: {
+          asset_id: 11,
+          name: 'project_video_00001_.mp4',
+          duration: 5.17,
+          fps: 24,
+          width: 768,
+          height: 1344,
+          has_audio: true,
+          timestamps: [0, 2.5, 5.0],
+        },
+      }),
+    },
+  },
+  {
+    type: 'tool.started',
+    data: {
+      turn: 1,
+      tool_call_id: 'call_3',
+      name: 'web_search',
+      label: '搜索网页',
+      args_raw: '{"query":"DeepSeek"}',
+    },
+  },
+  {
+    type: 'tool.finished',
+    data: {
+      turn: 1,
+      tool_call_id: 'call_3',
+      status: 'ok',
+      summary: '搜索到 1 条结果',
+      result_raw: JSON.stringify({
+        ok: true,
+        data: {
+          query: 'DeepSeek',
+          count: 1,
+          results: [
+            {
+              title: 'DeepSeek 官方文档',
+              url: 'https://api-docs.deepseek.com',
+              summary: 'DeepSeek API 文档与指南。',
+              site_name: 'DeepSeek',
+              date: '2026-01-01T00:00:00Z',
+              authority: 4,
+            },
+          ],
+        },
+      }),
+    },
+  },
+  {
+    type: 'tool.started',
+    data: {
+      turn: 1,
+      tool_call_id: 'call_4',
+      name: 'create_video',
+      label: '生成视频',
+      args_raw: '{}',
+    },
+  },
+  {
+    type: 'tool.finished',
+    data: {
+      turn: 1,
+      tool_call_id: 'call_4',
+      status: 'ok',
+      summary: '已提交视频任务',
+      result_raw: JSON.stringify({
+        ok: true,
+        data: {
+          task_id: 105,
+          kind: 'video',
+          status: 'queued',
+          project: 'PRJ-0001',
+          prompt_excerpt: '火柴被吸向滤网',
+          asset_ids: [],
+        },
+      }),
     },
   },
   { type: 'step.started', data: { turn: 1, step: 1 } },
@@ -383,7 +490,8 @@ globalThis.fetch = async (input, init = {}) => {
     }
     data = { ...queueTask }
   } else if (/\/tasks\/\d+$/.test(path)) {
-    data = { ...queueTask }
+    const taskId = Number(path.match(/\/tasks\/(\d+)$/)?.[1] || 0)
+    data = { ...queueTask, id: taskId }
   } else if (path.endsWith('/assets/counts')) {
     data = { text: 1, image: 0, video: 0, audio: 0 }
   } else if (path.endsWith('/episodes')) {
@@ -570,6 +678,13 @@ const agentToolDetail =
   agentToolDialogText.includes('输入') &&
   agentToolDialogText.includes('输出') &&
   agentToolDialogText.includes('asset_id')
+const agentImageCard = Boolean(
+  document.querySelector('img[src="/studio/api/assets/10/content"]'),
+)
+const agentVideoCard =
+  rootText().includes('project_video_00001_.mp4') && rootText().includes('2.5s')
+const agentSearchCard = rootText().includes('DeepSeek 官方文档')
+const agentTaskCard = rootText().includes('任务 #105')
 ;[...document.querySelectorAll('dialog[open] button')]
   .find((el) => el.textContent?.trim() === '关闭')
   ?.click()
@@ -1131,6 +1246,10 @@ const checks = [
   ['Agent 思考默认折叠', agentCollapsedByDefault],
   ['Agent 深度思考可展开', agentReasoningShown],
   ['Agent 工具详情含输入输出', agentToolDetail],
+  ['图片工具显示缩略图', agentImageCard],
+  ['视频/媒体工具显示预览', agentVideoCard],
+  ['搜索工具显示结果卡', agentSearchCard],
+  ['生成工具显示任务卡', agentTaskCard],
   ['Agent 显示上下文占用', agentContext],
   ['顶部显示系统提示', agentPromptVisible],
   ['系统提示可展开查看原文与元信息', agentPromptExpanded],

@@ -12,6 +12,8 @@ export interface ToolView {
   status: ToolStatus
   summary?: string
   resultRaw?: string
+  /** 仅 UI 使用的缩略图 data URL（视频网格图等） */
+  preview?: string
   progress?: string
   percent?: number | null
   elapsedMs?: number
@@ -249,6 +251,7 @@ export function applyEvent(view: AgentView, event: AgentEvent): AgentView {
         tool.resultRaw = raw
         tool.elapsedMs = number(data, 'elapsed_ms')
         tool.cached = data.cached === true
+        if (text(data, 'preview')) tool.preview = text(data, 'preview')
       }
       break
     }

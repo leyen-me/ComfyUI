@@ -83,6 +83,24 @@ def image_data_url(path: Path) -> str:
         raise InvalidArgument("无法读取图片，不能发送给 AI 优化") from exc
 
 
+def shrink_data_url(data_url: str, max_edge: int = 480) -> str:
+    """把 data URL 缩成 UI 缩略图；用于视频网格图等内存图片。"""
+    try:
+        header, encoded = data_url.split(",", 1)
+        mime = header[5:].split(";", 1)[0] or "image/jpeg"
+        raw = base64.b64decode(encoded)
+        from PIL import Image
+
+        with Image.open(io.BytesIO(raw)) as source:
+            image = source.convert("RGB")
+            image.thumbnail((max_edge, max_edge))
+            buffer = io.BytesIO()
+            image.save(buffer, format="JPEG", quality=80, optimize=True)
+        return _image_payload(buffer.getvalue(), "image/jpeg")
+    except Exception as exc:
+        raise InvalidArgument("无法生成缩略图") from exc
+
+
 def video_frame_data_url(path: Path, seconds: float) -> str:
     """抽取视频指定时间点的一帧，作为 JPEG data URL 发给 AI 优化。"""
     try:
